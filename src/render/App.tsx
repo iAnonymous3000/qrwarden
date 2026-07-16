@@ -42,7 +42,7 @@ import {
 } from "../image/controller";
 import type { OfflineState, ServiceWorkerClient } from "../sw/client";
 import { detectBraveIos } from "./braveGuidance";
-import { presentFieldValue } from "./fieldPresentation";
+import { fieldLabelForSentence, presentFieldValue } from "./fieldPresentation";
 import { detectInstallGuidance } from "./installGuidance";
 import { reportAsText } from "./reportText";
 import { SIGNAL_GLOSSARY, SIGNAL_GLOSSARY_CODES } from "./signalGlossary";
@@ -362,7 +362,7 @@ function FieldValue({
     }
     return (
       <details>
-        <summary>{COPY.showField(label.toLowerCase())}</summary>
+        <summary>{COPY.showField(fieldLabelForSentence(label))}</summary>
         <bdi dir="auto" class="field-value field-value-long">
           {presentation.value}
         </bdi>
@@ -1400,7 +1400,7 @@ export function App(props: AppProps) {
                               disabled={locked}
                               aria-controls={valueId}
                               aria-expanded={isRevealed}
-                              aria-label={`${isRevealed ? COPY.mask : COPY.reveal} ${field.label.toLowerCase()}`}
+                              aria-label={`${isRevealed ? COPY.mask : COPY.reveal} ${fieldLabelForSentence(field.label)}`}
                               onClick={() => {
                                 setRevealed((current) => {
                                   const next = new Set(current);
@@ -1422,7 +1422,7 @@ export function App(props: AppProps) {
                                 clipboard.copy(event, view.active, field)
                               }
                             >
-                              {COPY.copyField(field.label.toLowerCase())}
+                              {COPY.copyField(fieldLabelForSentence(field.label))}
                             </button>
                           ) : null}
                         </div>

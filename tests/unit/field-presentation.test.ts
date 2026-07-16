@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   MASKED_FIELD_VALUE,
+  fieldLabelForSentence,
   presentFieldValue,
 } from "../../src/render/fieldPresentation";
 
@@ -27,5 +28,19 @@ describe("sensitive field presentation", () => {
       masked: true,
       value: MASKED_FIELD_VALUE,
     });
+  });
+});
+
+describe("field labels used mid-sentence", () => {
+  it("lowercases ordinary words", () => {
+    expect(fieldLabelForSentence("Destination host")).toBe("destination host");
+    expect(fieldLabelForSentence("Path")).toBe("path");
+  });
+
+  it("preserves acronyms, including parenthesized and multi-acronym labels", () => {
+    expect(fieldLabelForSentence("Original QR content")).toBe("original QR content");
+    expect(fieldLabelForSentence("Network name (SSID)")).toBe("network name (SSID)");
+    expect(fieldLabelForSentence("URI scheme")).toBe("URI scheme");
+    expect(fieldLabelForSentence("QR content")).toBe("QR content");
   });
 });
