@@ -121,6 +121,7 @@ export async function withRasterizedFile<T>(
   }
 }
 
+/** Rasterizes a borrowed camera bitmap; the request owner closes the bitmap. */
 export async function withCameraRaster<T>(
   bitmap: ImageBitmap,
   consume: (
@@ -157,7 +158,6 @@ export async function withCameraRaster<T>(
     throw new RasterError();
   } finally {
     imageData = null;
-    bitmap.close();
     if (canvas !== null) {
       canvas.width = 0;
       canvas.height = 0;

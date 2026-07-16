@@ -56,6 +56,7 @@ export class ReportFields {
       id,
       label,
       value: bounded.value,
+      actionValue: value,
       kind: options.kind ?? "text",
       sensitive: options.sensitive ?? false,
       masked: options.masked ?? false,

@@ -59,9 +59,25 @@ function matches(value: bigint, prefix: bigint, bits: number, width: number): bo
   return value >> shift === prefix >> shift;
 }
 
+function parsePinnedIpv4(prefix: string): bigint {
+  const parsed = parseIpv4(prefix);
+  if (parsed === null) {
+    throw new TypeError(`Invalid pinned IANA IPv4 prefix: ${prefix}`);
+  }
+  return BigInt(parsed);
+}
+
+function parsePinnedIpv6(prefix: string): bigint {
+  const parsed = parseIpv6(prefix);
+  if (parsed === null) {
+    throw new TypeError(`Invalid pinned IANA IPv6 prefix: ${prefix}`);
+  }
+  return parsed;
+}
+
 const IPV4_RANGES = IANA_SPECIAL_PURPOSE_SNAPSHOT.ipv4
   .map(([prefix, bits, category, globallyReachable]) => ({
-    prefix: BigInt(parseIpv4(prefix) ?? 0),
+    prefix: parsePinnedIpv4(prefix),
     bits,
     category,
     globallyReachable,
@@ -70,7 +86,7 @@ const IPV4_RANGES = IANA_SPECIAL_PURPOSE_SNAPSHOT.ipv4
 
 const IPV6_RANGES = IANA_SPECIAL_PURPOSE_SNAPSHOT.ipv6
   .map(([prefix, bits, category, globallyReachable]) => ({
-    prefix: parseIpv6(prefix) ?? 0n,
+    prefix: parsePinnedIpv6(prefix),
     bits,
     category,
     globallyReachable,

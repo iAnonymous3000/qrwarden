@@ -33,13 +33,17 @@ export type DisplayFieldKind =
   | "hex";
 
 /**
- * A renderer may render only these inert values as text. `sensitive` and
- * `masked` are display instructions; they never grant an action capability.
+ * A renderer may render only `value`, which is escaped and bounded inert text.
+ * `actionValue` retains the exact analyzed field value for an explicit brokered
+ * action and must never be substituted into markup or another active sink.
+ * `sensitive` and `masked` are display instructions; they never grant an action
+ * capability.
  */
 export interface DisplayField {
   readonly id: string;
   readonly label: string;
   readonly value: string;
+  readonly actionValue: string;
   readonly kind: DisplayFieldKind;
   readonly sensitive: boolean;
   readonly masked: boolean;

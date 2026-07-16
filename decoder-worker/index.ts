@@ -157,16 +157,24 @@ function closePreview(outcome: WorkerDecoderOutcome): void {
   if (outcome.kind === "selection") outcome.preview.close();
 }
 
+function closeCameraBitmap(request: DecoderRequest): void {
+  if (request.type === "decode-camera") request.bitmap.close();
+}
+
 let busy = false;
 
 async function handleRequest(request: DecoderRequest): Promise<void> {
   if (busy) {
-    workerScope.postMessage({
-      type: "failure",
-      jobId: request.jobId,
-      epoch: request.epoch,
-      code: "reader-stopped",
-    } satisfies DecoderResponse);
+    try {
+      workerScope.postMessage({
+        type: "failure",
+        jobId: request.jobId,
+        epoch: request.epoch,
+        code: "reader-stopped",
+      } satisfies DecoderResponse);
+    } finally {
+      closeCameraBitmap(request);
+    }
     return;
   }
   busy = true;
@@ -205,7 +213,7 @@ async function handleRequest(request: DecoderRequest): Promise<void> {
       code: failureCode(error),
     } satisfies DecoderResponse);
   } finally {
-    if (request.type === "decode-camera") request.bitmap.close();
+    closeCameraBitmap(request);
     busy = false;
   }
 }

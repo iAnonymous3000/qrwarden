@@ -102,6 +102,53 @@ test("scans an image locally and requires two-step review", async ({ page }) => 
   await expect(continueButton).toBeFocused();
 });
 
+test("drops a result on a non-persisted pagehide", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('input[type="file"]').setInputFiles(fixture);
+  await expect(
+    page.getByRole("heading", { name: "Review before opening." }),
+  ).toBeVisible({ timeout: 15_000 });
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+  });
+  await expect(
+    page.getByRole("heading", { name: "Review before opening." }),
+  ).toBeVisible();
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false }));
+  });
+  await expect(
+    page.getByRole("heading", { name: COPY.primaryMessage }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Review before opening." }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: COPY.continueToLink })).toHaveCount(0);
+});
+
+test("clears link confirmation while the update gate is locked", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("Ready offline.", { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  await page.locator('input[type="file"]').setInputFiles(fixture);
+  const continueButton = page.getByRole("button", { name: COPY.continueToLink });
+  await expect(continueButton).toBeVisible({ timeout: 15_000 });
+  await continueButton.click();
+  await expect(page.getByRole("dialog", { name: "Open this link?" })).toBeVisible();
+
+  await page.evaluate(() => {
+    navigator.serviceWorker.dispatchEvent(new Event("controllerchange"));
+  });
+  await expect(page.getByRole("dialog", { name: "Open this link?" })).toHaveCount(0);
+  await expect(continueButton).toBeEnabled({ timeout: 20_000 });
+
+  await continueButton.click();
+  await expect(page.getByRole("dialog", { name: "Open this link?" })).toBeVisible();
+});
+
 test("keeps information views in-memory and exposes privacy limits", async ({
   page,
   browserName,
@@ -363,6 +410,35 @@ test("labels selection positions and drops canvas geometry when hidden", async (
     0,
     0,
   ]);
+});
+
+test("fails closed when a selection canvas cannot acquire a 2D context", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      configurable: true,
+      value(
+        this: HTMLCanvasElement,
+        contextId: string,
+        ...args: unknown[]
+      ): RenderingContext | null {
+        if (contextId === "2d" && this.classList.contains("selection-canvas")) {
+          return null;
+        }
+        return Reflect.apply(original, this, [contextId, ...args]) as RenderingContext | null;
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.locator('input[type="file"]').setInputFiles(multiFixture);
+  await expect(
+    page.getByRole("heading", { name: COPY.readerStoppedHeading }),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Choose a QR code" })).toHaveCount(0);
+  await expect(page.locator(".selection-canvas")).toHaveCount(0);
 });
 
 test("serves the closed production response contract", async ({ page, request }) => {

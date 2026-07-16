@@ -33,9 +33,51 @@ describe("active report identity", () => {
       canonicalHref: "https://example.com/",
     });
     const failed = vi.fn();
-    const broker = new NavigationBroker(reports, failed);
+    const broker = new NavigationBroker(reports, failed, () => false);
     broker.openReviewedLink({ isTrusted: false } as MouseEvent, active, null);
     expect(failed).toHaveBeenCalledWith("link-changed");
+  });
+
+  it("preserves trusted unlocked navigation to the reviewed canonical URL", () => {
+    vi.stubGlobal("navigator", { userActivation: { isActive: true } });
+    const anchor = {
+      href: "",
+      target: "",
+      rel: "",
+      referrerPolicy: "",
+      hidden: false,
+      click: vi.fn(),
+      remove: vi.fn(),
+    };
+    const append = vi.fn();
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => anchor),
+      body: { append },
+    });
+    const reports = new ReportStore<{
+      actionPolicy: "open-web";
+      canonicalHref: string;
+    }>();
+    const active = reports.activate({
+      actionPolicy: "open-web",
+      canonicalHref: "https://example.com/reviewed",
+    });
+    const failed = vi.fn();
+    const broker = new NavigationBroker(reports, failed, () => false);
+
+    broker.openReviewedLink({ isTrusted: true } as MouseEvent, active, null);
+
+    expect(append).toHaveBeenCalledExactlyOnceWith(anchor);
+    expect(anchor).toMatchObject({
+      href: "https://example.com/reviewed",
+      target: "_blank",
+      rel: "noopener noreferrer",
+      referrerPolicy: "no-referrer",
+      hidden: true,
+    });
+    expect(anchor.click).toHaveBeenCalledOnce();
+    expect(anchor.remove).toHaveBeenCalledOnce();
+    expect(failed).not.toHaveBeenCalled();
   });
 
   it("cannot revive an old activation by reusing the same report object", () => {
@@ -95,7 +137,7 @@ describe("active report identity", () => {
       canonicalHref: "https://example.com/",
     });
     const failed = vi.fn();
-    const broker = new NavigationBroker(reports, failed);
+    const broker = new NavigationBroker(reports, failed, () => false);
     const confirmation = broker.beginConfirmation(
       { isTrusted: true } as MouseEvent,
       active,
@@ -126,7 +168,7 @@ describe("active report identity", () => {
       canonicalHref: "https://example.com/",
     });
     const failed = vi.fn();
-    const broker = new NavigationBroker(reports, failed);
+    const broker = new NavigationBroker(reports, failed, () => false);
     const first = broker.beginConfirmation(
       { isTrusted: true } as MouseEvent,
       active,
@@ -140,6 +182,79 @@ describe("active report identity", () => {
     broker.openReviewedLink({ isTrusted: true } as MouseEvent, active, first);
 
     expect(failed).toHaveBeenCalledWith("link-changed");
+    expect(broker.confirmation).toBeNull();
+  });
+
+  it("fails closed when confirmation is requested after the app locks", () => {
+    vi.stubGlobal("navigator", { userActivation: { isActive: true } });
+    const reports = new ReportStore<{
+      actionPolicy: "confirm-web";
+      canonicalHref: string;
+    }>();
+    const active = reports.activate({
+      actionPolicy: "confirm-web",
+      canonicalHref: "https://example.com/",
+    });
+    const failed = vi.fn();
+    let locked = false;
+    const broker = new NavigationBroker(reports, failed, () => locked);
+    locked = true;
+
+    expect(
+      broker.beginConfirmation({ isTrusted: true } as MouseEvent, active),
+    ).toBeNull();
+    expect(failed).toHaveBeenCalledExactlyOnceWith("locked");
+    expect(broker.confirmation).toBeNull();
+  });
+
+  it("does not create a navigation sink for a locked open-web action", () => {
+    vi.stubGlobal("navigator", { userActivation: { isActive: true } });
+    const createElement = vi.fn();
+    vi.stubGlobal("document", { createElement });
+    const reports = new ReportStore<{
+      actionPolicy: "open-web";
+      canonicalHref: string;
+    }>();
+    const active = reports.activate({
+      actionPolicy: "open-web",
+      canonicalHref: "https://example.com/",
+    });
+    const failed = vi.fn();
+    const broker = new NavigationBroker(reports, failed, () => true);
+
+    broker.openReviewedLink({ isTrusted: true } as MouseEvent, active, null);
+
+    expect(createElement).not.toHaveBeenCalled();
+    expect(failed).toHaveBeenCalledExactlyOnceWith("locked");
+  });
+
+  it("invalidates a live confirmation if the app locks before opening", () => {
+    vi.stubGlobal("navigator", { userActivation: { isActive: true } });
+    const reports = new ReportStore<{
+      actionPolicy: "confirm-web";
+      canonicalHref: string;
+    }>();
+    const active = reports.activate({
+      actionPolicy: "confirm-web",
+      canonicalHref: "https://example.com/",
+    });
+    const failed = vi.fn();
+    let locked = false;
+    const broker = new NavigationBroker(reports, failed, () => locked);
+    const confirmation = broker.beginConfirmation(
+      { isTrusted: true } as MouseEvent,
+      active,
+    );
+    expect(confirmation).not.toBeNull();
+    locked = true;
+
+    broker.openReviewedLink(
+      { isTrusted: true } as MouseEvent,
+      active,
+      confirmation,
+    );
+
+    expect(failed).toHaveBeenCalledExactlyOnceWith("locked");
     expect(broker.confirmation).toBeNull();
   });
 });

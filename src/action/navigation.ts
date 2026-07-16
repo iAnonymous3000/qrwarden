@@ -17,7 +17,7 @@ export interface OpenConfirmation<
   readonly activeReport: ActiveReport<Report>;
 }
 
-export type NavigationFailure = "link-changed";
+export type NavigationFailure = "link-changed" | "locked";
 
 function hasLiveUserActivation(): boolean {
   if (!("userActivation" in navigator) || navigator.userActivation === null) {
@@ -29,15 +29,18 @@ function hasLiveUserActivation(): boolean {
 export class NavigationBroker<Report extends ReportForActions> {
   readonly #reports: ReportStore<Report>;
   readonly #onFailure: (failure: NavigationFailure) => void;
+  readonly #isLocked: () => boolean;
   #generation = 0;
   #liveConfirmation: OpenConfirmation<Report> | null = null;
 
   constructor(
     reports: ReportStore<Report>,
     onFailure: (failure: NavigationFailure) => void,
+    isLocked: () => boolean,
   ) {
     this.#reports = reports;
     this.#onFailure = onFailure;
+    this.#isLocked = isLocked;
   }
 
   get confirmation(): OpenConfirmation<Report> | null {
@@ -48,6 +51,10 @@ export class NavigationBroker<Report extends ReportForActions> {
     event: MouseEvent,
     candidate: ActiveReport<Report>,
   ): OpenConfirmation<Report> | null {
+    if (this.#isLocked()) {
+      this.#fail("locked");
+      return null;
+    }
     if (
       !event.isTrusted ||
       !hasLiveUserActivation() ||
@@ -80,6 +87,10 @@ export class NavigationBroker<Report extends ReportForActions> {
     candidate: ActiveReport<Report>,
     confirmation: OpenConfirmation<Report> | null,
   ): void {
+    if (this.#isLocked()) {
+      this.#fail("locked");
+      return;
+    }
     const live = this.#reports.active;
     if (
       live === null ||
@@ -178,8 +189,8 @@ export class NavigationBroker<Report extends ReportForActions> {
     return true;
   }
 
-  #fail(): void {
+  #fail(failure: NavigationFailure = "link-changed"): void {
     this.clearConfirmation();
-    this.#onFailure("link-changed");
+    this.#onFailure(failure);
   }
 }

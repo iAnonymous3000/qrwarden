@@ -232,7 +232,13 @@ function problemFromCamera(problem: CameraProblem): ProblemCode | null {
     : null;
 }
 
-function SelectionCanvas({ preview }: { readonly preview: OwnedSelectionPreview }) {
+function SelectionCanvas({
+  preview,
+  onUnavailable,
+}: {
+  readonly preview: OwnedSelectionPreview;
+  readonly onUnavailable: () => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -240,12 +246,19 @@ function SelectionCanvas({ preview }: { readonly preview: OwnedSelectionPreview 
       preview.dispose();
       return;
     }
-    if (!preview.attachCanvas(canvas)) return;
     canvas.width = preview.width;
     canvas.height = preview.height;
     const context = canvas.getContext("2d", { alpha: false });
+    if (context === null) {
+      canvas.width = 0;
+      canvas.height = 0;
+      preview.dispose();
+      onUnavailable();
+      return;
+    }
+    if (!preview.attachCanvas(canvas)) return;
     try {
-      if (context === null || preview.disposed) return;
+      if (preview.disposed) return;
       context.drawImage(preview.bitmap, 0, 0, preview.width, preview.height);
       context.lineWidth = Math.max(3, Math.min(preview.width, preview.height) / 150);
       context.font = `700 ${Math.max(18, Math.min(preview.width, preview.height) / 18)}px system-ui`;
@@ -392,6 +405,7 @@ export function App(props: AppProps) {
   const viewRef = useRef<View>(view);
   const [offlineState, setOfflineState] = useState(props.initialOfflineState);
   const [locked, setLocked] = useState(props.initialLocked);
+  const lockedRef = useRef(props.initialLocked);
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
   const [copyStatus, setCopyStatus] = useState<ClipboardStatus | null>(null);
   const [confirmation, setConfirmation] =
@@ -426,10 +440,12 @@ export function App(props: AppProps) {
 
   const navigation = useMemo(
     () =>
-      new NavigationBroker(reports, () => {
+      new NavigationBroker(reports, (failure) => {
         setConfirmation(null);
-        transitionView({ kind: "error", problem: "link-changed" });
-      }),
+        if (failure === "link-changed") {
+          transitionView({ kind: "error", problem: "link-changed" });
+        }
+      }, () => lockedRef.current),
     [reports],
   );
   const clipboard = useMemo(
@@ -437,6 +453,7 @@ export function App(props: AppProps) {
       new ClipboardBroker({
         reports,
         getWorkGeneration: () => work.generation,
+        isLocked: () => lockedRef.current,
         onStatus: setCopyStatus,
       }),
     [reports, work],
@@ -530,13 +547,20 @@ export function App(props: AppProps) {
         setUpdateActivationFeedback(null);
       }
       if (detail.locked !== undefined) {
+        lockedRef.current = detail.locked;
         setLocked(detail.locked);
-        if (detail.locked) setRevealed(new Set());
+        if (detail.locked) {
+          navigation.clearConfirmation();
+          clipboard.invalidate();
+          setConfirmation(null);
+          setRevealed(new Set());
+          setCopyStatus(null);
+        }
       }
     };
     props.statusEvents.addEventListener("status", handler);
     return () => props.statusEvents.removeEventListener("status", handler);
-  }, [props.statusEvents]);
+  }, [clipboard, navigation, props.statusEvents]);
 
   useEffect(
     () =>
@@ -668,7 +692,7 @@ export function App(props: AppProps) {
     const pageHide = (event: PageTransitionEvent): void => {
       suspendWork(false);
       if (!event.persisted) {
-        reports.drop();
+        props.bridge.dropReport();
       }
     };
     document.addEventListener("visibilitychange", visibilitySuspend);
@@ -677,7 +701,7 @@ export function App(props: AppProps) {
       document.removeEventListener("visibilitychange", visibilitySuspend);
       window.removeEventListener("pagehide", pageHide);
     };
-  }, [clipboard, imageController, navigation, reports, work]);
+  }, [clipboard, imageController, navigation, props.bridge, work]);
 
   const goHome = (): void => {
     work.suspend();
@@ -961,7 +985,12 @@ export function App(props: AppProps) {
               </div>
               <button type="button" class="secondary-button" onClick={goHome}>Cancel</button>
             </div>
-            <SelectionCanvas preview={view.preview} />
+            <SelectionCanvas
+              preview={view.preview}
+              onUnavailable={() =>
+                transitionView({ kind: "error", problem: "reader-stopped" })
+              }
+            />
             <ol class="selection-list">
               {view.entries.map((entry, index) => {
                 const payloadKind =
@@ -1116,7 +1145,7 @@ export function App(props: AppProps) {
                               class="text-button"
                               disabled={locked}
                               onClick={(event) =>
-                                clipboard.copy(event, view.active, field.value)
+                                clipboard.copy(event, view.active, field)
                               }
                             >
                               Copy {field.label.toLowerCase()}

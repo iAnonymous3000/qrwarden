@@ -6,9 +6,18 @@ import {
 
 export type ClipboardStatus = "copied" | "failed";
 
-export interface ClipboardBrokerOptions<Report extends ReportForActions> {
+export interface ClipboardActionField {
+  readonly actionValue: string;
+}
+
+export interface ReportForClipboardActions extends ReportForActions {
+  readonly displayFields: readonly ClipboardActionField[];
+}
+
+export interface ClipboardBrokerOptions<Report extends ReportForClipboardActions> {
   readonly reports: ReportStore<Report>;
   readonly getWorkGeneration: () => number;
+  readonly isLocked: () => boolean;
   readonly onStatus: (status: ClipboardStatus) => void;
 }
 
@@ -23,9 +32,10 @@ function clickIsLive(event: MouseEvent): boolean {
   );
 }
 
-export class ClipboardBroker<Report extends ReportForActions> {
+export class ClipboardBroker<Report extends ReportForClipboardActions> {
   readonly #reports: ReportStore<Report>;
   readonly #getWorkGeneration: () => number;
+  readonly #isLocked: () => boolean;
   readonly #onStatus: (status: ClipboardStatus) => void;
   #copyGeneration = 0;
   #pendingCopies = 0;
@@ -33,6 +43,7 @@ export class ClipboardBroker<Report extends ReportForActions> {
   constructor(options: ClipboardBrokerOptions<Report>) {
     this.#reports = options.reports;
     this.#getWorkGeneration = options.getWorkGeneration;
+    this.#isLocked = options.isLocked;
     this.#onStatus = options.onStatus;
   }
 
@@ -47,16 +58,21 @@ export class ClipboardBroker<Report extends ReportForActions> {
   copy(
     event: MouseEvent,
     candidate: ActiveReport<Report>,
-    reviewedValue: string,
+    reviewedField: Report["displayFields"][number],
   ): void {
     this.#copyGeneration += 1;
     const copyGeneration = this.#copyGeneration;
     const reportGeneration = this.#reports.generation;
     const workGeneration = this.#getWorkGeneration();
 
+    const live = this.#reports.active;
     if (
+      this.#isLocked() ||
       !clickIsLive(event) ||
+      live === null ||
       !this.#reports.isLive(candidate) ||
+      !live.report.displayFields.includes(reviewedField) ||
+      typeof reviewedField.actionValue !== "string" ||
       typeof navigator.clipboard?.writeText !== "function"
     ) {
       this.#settle(
@@ -71,7 +87,7 @@ export class ClipboardBroker<Report extends ReportForActions> {
 
     let write: Promise<void>;
     try {
-      write = navigator.clipboard.writeText(reviewedValue);
+      write = navigator.clipboard.writeText(reviewedField.actionValue);
     } catch {
       this.#settle(
         "failed",

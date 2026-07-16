@@ -67,6 +67,16 @@ function inertReport(kind: PayloadKind, fields: ReportFields): AnalysisReport {
   return createReport({ kind, fields: fields.value, actionPolicy: "inspect-only" });
 }
 
+function maskedUnparsedSensitiveReport(text: string): AnalysisReport {
+  const fields = new ReportFields();
+  fields.add("text", "Text", text, {
+    sensitive: true,
+    masked: true,
+    collapsed: true,
+  });
+  return inertReport("text", fields);
+}
+
 function parseWifi(text: string): AnalysisReport | null {
   if (!text.toUpperCase().startsWith("WIFI:")) return null;
   const parsed = parseDelimitedFields(text.slice(5));
@@ -320,9 +330,15 @@ function parseApplicationUri(text: string): AnalysisReport | null {
 
 /** Ordered structured-payload registry after the HTTP(S) parser. */
 export function analyzeStructuredText(text: string): AnalysisReport | null {
-  if (/^WIFI:/i.test(text)) return parseWifi(text);
-  if (/^(?:otpauth|otpauth-migration):/i.test(text)) return parseOtp(text);
-  if (/^DPP:/i.test(text)) return parseDpp(text);
+  if (/^WIFI:/i.test(text)) {
+    return parseWifi(text) ?? maskedUnparsedSensitiveReport(text);
+  }
+  if (/^(?:otpauth|otpauth-migration):/i.test(text)) {
+    return parseOtp(text) ?? maskedUnparsedSensitiveReport(text);
+  }
+  if (/^DPP:/i.test(text)) {
+    return parseDpp(text) ?? maskedUnparsedSensitiveReport(text);
+  }
   if (/^BEGIN:VCARD(?:\r?\n|\r)/i.test(text)) return parseCardLines(text);
   if (/^MECARD:/i.test(text)) return parseMecard(text);
   if (/^BEGIN:(?:VCALENDAR|VEVENT)(?:\r?\n|\r)/i.test(text)) {

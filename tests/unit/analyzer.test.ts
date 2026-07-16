@@ -157,13 +157,47 @@ describe("ordered payload classification", () => {
   });
 
   it("makes malformed or over-limit structured payloads decline completely", () => {
-    expect(analyzeText("WIFI:T:WPA;P:no-ssid;;").kind).toBe("text");
+    const malformedWifi = analyzeText("WIFI:T:WPA;P:no-ssid;;");
+    expect(malformedWifi.kind).toBe("text");
+    expect(field(malformedWifi, "text")).toMatchObject({
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
     const tooMany = `WIFI:S:network;${Array.from(
       { length: ANALYZER_LIMITS.logicalFields + 1 },
       (_, index) => `X${index}:x;`,
     ).join("")};`;
-    expect(analyzeText(tooMany).kind).toBe("text");
+    expect(field(analyzeText(tooMany), "text")).toMatchObject({
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
+    const danglingEscape = "WIFI:S:network;P:supersecret\\";
+    const declined = analyzeText(danglingEscape);
+    expect(declined.actionPolicy).toBe("inspect-only");
+    expect(field(declined, "text")).toMatchObject({
+      actionValue: danglingEscape,
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
   });
+
+  it.each(["WIFI:S:", "otpauth:", "otpauth-migration:", "DPP:"])(
+    "keeps an over-limit %s payload masked when structured parsing declines it",
+    (prefix) => {
+      const report = analyzeText(`${prefix}${"x".repeat(ANALYZER_LIMITS.fieldScalars + 1)}`);
+
+      expect(report.kind).toBe("text");
+      expect(report.actionPolicy).toBe("inspect-only");
+      expect(field(report, "text")).toMatchObject({
+        sensitive: true,
+        masked: true,
+        collapsed: true,
+      });
+    },
+  );
 });
 
 describe("decoder trust boundary and report bounds", () => {
@@ -204,6 +238,17 @@ describe("decoder trust boundary and report bounds", () => {
   it("bounds fields by Unicode scalar values, not UTF-16 code units", () => {
     const report = analyzeText("😀".repeat(ANALYZER_LIMITS.fieldScalars + 5));
     const text = field(report, "text");
+    expect(Array.from(text.value)).toHaveLength(ANALYZER_LIMITS.fieldScalars);
+    expect(text.truncated).toBe(true);
+  });
+
+  it("keeps the exact action value separate from escaped and truncated display text", () => {
+    const source = `before\u202Eafter${"😀".repeat(ANALYZER_LIMITS.fieldScalars + 5)}`;
+    const text = field(analyzeText(source), "text");
+
+    expect(text.actionValue).toBe(source);
+    expect(text.value).not.toBe(source);
+    expect(text.value).toContain("[U+202E]");
     expect(Array.from(text.value)).toHaveLength(ANALYZER_LIMITS.fieldScalars);
     expect(text.truncated).toBe(true);
   });
