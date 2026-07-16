@@ -1,0 +1,308 @@
+[
+  {
+    "id": "plain-https",
+    "original": "https://example.com",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "example.com", "registrable-domain": "example.com", "port": "443 (effective)", "path": "/" },
+    "signals": [],
+    "actionPolicy": "open-web"
+  },
+  {
+    "id": "case-and-root-normalization",
+    "original": "HTTPS://EXAMPLE.COM",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "example.com" },
+    "signals": [],
+    "actionPolicy": "open-web"
+  },
+  {
+    "id": "idn-context-only",
+    "original": "https://bücher.example",
+    "parseOutcome": true,
+    "canonicalHref": "https://xn--bcher-kva.example/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "xn--bcher-kva.example", "unicode-hostname": "bücher.example" },
+    "signals": ["idn-hostname"],
+    "actionPolicy": "open-web"
+  },
+  {
+    "id": "mixed-confusable-idn",
+    "original": "https://раypal.example",
+    "parseOutcome": true,
+    "canonicalHref": "https://xn--ypal-43d9g.example/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "xn--ypal-43d9g.example", "unicode-hostname": "раypal.example" },
+    "signals": ["idn-hostname", "mixed-scripts", "confusable-label"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "mixed-scripts-across-host-labels",
+    "original": "https://пример.example",
+    "parseOutcome": true,
+    "canonicalHref": "https://xn--e1afmkfd.example/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "xn--e1afmkfd.example", "unicode-hostname": "пример.example" },
+    "signals": ["idn-hostname", "mixed-scripts"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "idna-std3-invalid-fails-closed",
+    "original": "https://under_score.example",
+    "parseOutcome": false,
+    "kind": "web-url",
+    "displayFields": { "original": "https://under_score.example" },
+    "signals": ["malformed-web-url"],
+    "actionPolicy": "inspect-only"
+  },
+  {
+    "id": "http",
+    "original": "http://example.com/path",
+    "parseOutcome": true,
+    "canonicalHref": "http://example.com/path",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "example.com", "port": "80 (effective)", "path": "/path" },
+    "signals": ["http"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "ipv4-loopback",
+    "original": "https://127.0.0.1",
+    "parseOutcome": true,
+    "canonicalHref": "https://127.0.0.1/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "127.0.0.1", "destination-category": "Loopback" },
+    "signals": ["ip-address", "local-or-special-destination"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "ipv6-loopback",
+    "original": "https://[::1]",
+    "parseOutcome": true,
+    "canonicalHref": "https://[::1]/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "[::1]", "destination-category": "Loopback Address" },
+    "signals": ["ip-address", "local-or-special-destination"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "ipv4-mapped-ipv6-recurses",
+    "original": "https://[::ffff:127.0.0.1]",
+    "parseOutcome": true,
+    "canonicalHref": "https://[::ffff:7f00:1]/",
+    "kind": "web-url",
+    "displayFields": { "destination-category": "IPv4-mapped: Loopback" },
+    "signals": ["ip-address", "local-or-special-destination", "material-browser-rewrite"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "iana-global-exception-still-ip",
+    "original": "https://192.0.0.9",
+    "parseOutcome": true,
+    "canonicalHref": "https://192.0.0.9/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "192.0.0.9" },
+    "signals": ["ip-address"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "documentation-address",
+    "original": "https://192.0.2.1",
+    "parseOutcome": true,
+    "canonicalHref": "https://192.0.2.1/",
+    "kind": "web-url",
+    "displayFields": { "destination-category": "Documentation (TEST-NET-1)" },
+    "signals": ["ip-address", "local-or-special-destination"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "local-name",
+    "original": "https://printer.local",
+    "parseOutcome": true,
+    "canonicalHref": "https://printer.local/",
+    "kind": "web-url",
+    "displayFields": { "destination-category": "Multicast DNS .local" },
+    "signals": ["local-or-special-destination"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "non-default-port",
+    "original": "https://example.com:8443/a",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com:8443/a",
+    "kind": "web-url",
+    "displayFields": { "port": "8443 (explicit)" },
+    "signals": ["non-default-port"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "default-port-elision",
+    "original": "https://example.com:443",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com/",
+    "kind": "web-url",
+    "displayFields": { "port": "443 (explicit)" },
+    "signals": [],
+    "actionPolicy": "open-web"
+  },
+  {
+    "id": "trailing-dot-context",
+    "original": "https://example.com.",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com./",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "example.com.", "registrable-domain": "example.com" },
+    "signals": ["trailing-dot-host"],
+    "actionPolicy": "open-web"
+  },
+  {
+    "id": "private-psl-suffix",
+    "original": "https://foo.github.io",
+    "parseOutcome": true,
+    "canonicalHref": "https://foo.github.io/",
+    "kind": "web-url",
+    "displayFields": { "registrable-domain": "foo.github.io" },
+    "signals": [],
+    "actionPolicy": "open-web"
+  },
+  {
+    "id": "username-host-clarity",
+    "original": "https://accounts.google.com@evil.example/login",
+    "parseOutcome": true,
+    "canonicalHref": "https://accounts.google.com@evil.example/login",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "evil.example" },
+    "signals": ["userinfo"],
+    "actionPolicy": "inspect-only"
+  },
+  {
+    "id": "empty-userinfo-delimiter",
+    "original": "https://@example.com",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "example.com" },
+    "signals": ["userinfo"],
+    "actionPolicy": "inspect-only"
+  },
+  {
+    "id": "multiple-userinfo-delimiters",
+    "original": "https://a@b@evil.example",
+    "parseOutcome": true,
+    "canonicalHref": "https://a%40b@evil.example/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "evil.example" },
+    "signals": ["userinfo", "material-browser-rewrite"],
+    "actionPolicy": "inspect-only"
+  },
+  {
+    "id": "non-lexical-http-form",
+    "original": "https:example.com",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "example.com" },
+    "signals": ["material-browser-rewrite"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "spaces-trimmed-by-parser",
+    "original": " https://example.com ",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "example.com" },
+    "signals": ["material-browser-rewrite"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "dot-segment-resolution",
+    "original": "https://example.com/a/../b",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com/b",
+    "kind": "web-url",
+    "displayFields": { "path": "/b" },
+    "signals": ["material-browser-rewrite"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "encoded-dot-segment-resolution",
+    "original": "https://example.com/%2e%2e/admin",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com/admin",
+    "kind": "web-url",
+    "displayFields": { "path": "/admin" },
+    "signals": ["material-browser-rewrite"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "encoded-slash-retained",
+    "original": "https://example.com/%2fkeep",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com/%2fkeep",
+    "kind": "web-url",
+    "displayFields": { "path": "/%2fkeep" },
+    "signals": [],
+    "actionPolicy": "open-web"
+  },
+  {
+    "id": "bidi-outside-authority",
+    "original": "https://example.com/path\u202Efoo",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com/path%E2%80%AEfoo",
+    "kind": "web-url",
+    "displayFields": { "original": "https://example.com/path[U+202E]foo" },
+    "signals": ["hidden-character", "material-browser-rewrite"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "control-in-authority",
+    "original": "https://exa\tmple.com",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com/",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "example.com" },
+    "signals": ["forbidden-authority-character", "material-browser-rewrite"],
+    "actionPolicy": "inspect-only"
+  },
+  {
+    "id": "query-and-fragment-values-collapsed",
+    "original": "https://example.com?token=secret&mode=x#section",
+    "parseOutcome": true,
+    "canonicalHref": "https://example.com/?token=secret&mode=x#section",
+    "kind": "web-url",
+    "displayFields": { "query-names": "token, mode", "fragment": "Present" },
+    "signals": [],
+    "actionPolicy": "open-web"
+  },
+  {
+    "id": "malformed-authority",
+    "original": "https://",
+    "parseOutcome": false,
+    "kind": "web-url",
+    "displayFields": { "original": "https://" },
+    "signals": ["malformed-web-url"],
+    "actionPolicy": "inspect-only"
+  },
+  {
+    "id": "schemeless-text",
+    "original": "example.com/path",
+    "parseOutcome": false,
+    "kind": "text",
+    "displayFields": { "text": "example.com/path" },
+    "signals": [],
+    "actionPolicy": "inspect-only"
+  },
+  {
+    "id": "blocked-scheme",
+    "original": "ftp://example.com/file",
+    "parseOutcome": false,
+    "kind": "custom-uri",
+    "displayFields": { "scheme": "ftp", "summary": "Custom application link (inspect only)" },
+    "signals": [],
+    "actionPolicy": "inspect-only"
+  }
+]

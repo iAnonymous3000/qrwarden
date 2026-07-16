@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "dataset": "Unicode 17 IDNA and security data used by QRWarden",
+  "captured": "2026-07-15",
+  "unicodeVersion": "17.0.0",
+  "uts39Revision": 32,
+  "uts46Revision": 35,
+  "sourceSetSha256": "0b98ba743b2ad8b628ca0366802653154ecd7f528125641dadec73f6b0b4aa35",
+  "license": {
+    "expression": "Unicode-3.0",
+    "termsUrl": "https://www.unicode.org/license.txt",
+    "textUrl": "https://www.unicode.org/license.txt",
+    "file": "license.txt",
+    "byteLength": 1995,
+    "sha256": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96"
+  },
+  "files": [
+    {
+      "role": "bidi-brackets",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/BidiBrackets.txt",
+      "file": "BidiBrackets.txt",
+      "byteLength": 8891,
+      "sha256": "dadbaf38a0d0246e5b805bf8725cb81b7c621f93d030595635f5ba2c2f179428"
+    },
+    {
+      "role": "bidi-character-test",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/BidiCharacterTest.txt",
+      "file": "BidiCharacterTest.txt",
+      "byteLength": 6880771,
+      "sha256": "a3e6e905ab5afbe318a96df5401d0372a04cd73ef139ab5e3cf0ae241c255488"
+    },
+    {
+      "role": "bidi-class",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/extracted/DerivedBidiClass.txt",
+      "file": "DerivedBidiClass.txt",
+      "byteLength": 173433,
+      "sha256": "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4"
+    },
+    {
+      "role": "bidi-mirroring",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/BidiMirroring.txt",
+      "file": "BidiMirroring.txt",
+      "byteLength": 26827,
+      "sha256": "a2f16fb873ab4fcdf3221cb1a8a85a134ddd6ed03603181823ff5206af3741ce"
+    },
+    {
+      "role": "bidi-test",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/BidiTest.txt",
+      "file": "BidiTest.txt",
+      "byteLength": 7959988,
+      "sha256": "888bdfc8090652272d1f859cdb00ae659e2dc6c26740be61ef1d03998a687620"
+    },
+    {
+      "role": "confusables",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/security/confusables.txt",
+      "file": "confusables.txt",
+      "byteLength": 745683,
+      "sha256": "091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a"
+    },
+    {
+      "role": "core-properties",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/DerivedCoreProperties.txt",
+      "file": "DerivedCoreProperties.txt",
+      "byteLength": 1134783,
+      "sha256": "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08"
+    },
+    {
+      "role": "identifier-status",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/security/IdentifierStatus.txt",
+      "file": "IdentifierStatus.txt",
+      "byteLength": 147969,
+      "sha256": "617228a16da13850bf8af28b6cd08f5e9b6595d2eb60404fe6eee2c85b4e4a35"
+    },
+    {
+      "role": "idna-mapping",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/idna/IdnaMappingTable.txt",
+      "file": "IdnaMappingTable.txt",
+      "byteLength": 787378,
+      "sha256": "87f05505dc026fdb2bff16132bdc68a8014675836882a9a2b1844540ad3be382"
+    },
+    {
+      "role": "idna-test",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/idna/IdnaTestV2.txt",
+      "file": "IdnaTestV2.txt",
+      "byteLength": 775973,
+      "sha256": "beb5d0be20e896189b03209a82fdc34f06351502bbd4b8e2523583fc2954d9cf"
+    },
+    {
+      "role": "joining-type",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/extracted/DerivedJoiningType.txt",
+      "file": "DerivedJoiningType.txt",
+      "byteLength": 40635,
+      "sha256": "f39ebe974825d6736aee15582250307aa532b2cfab3caf3f86bd23fddc9c5c4d"
+    },
+    {
+      "role": "license",
+      "sourceUrl": "https://www.unicode.org/license.txt",
+      "file": "license.txt",
+      "byteLength": 1995,
+      "sha256": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96"
+    },
+    {
+      "role": "normalization-properties",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/DerivedNormalizationProps.txt",
+      "file": "DerivedNormalizationProps.txt",
+      "byteLength": 1377582,
+      "sha256": "71fd6a206a2c0cdd41feb6b7f656aa31091db45e9cedc926985d718397f9e488"
+    },
+    {
+      "role": "normalization-test",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/NormalizationTest.txt",
+      "file": "NormalizationTest.txt",
+      "byteLength": 2827429,
+      "sha256": "5019ffd530751a741900c849c0e010332f142a3612234639bd200b82138a87db"
+    },
+    {
+      "role": "property-value-aliases",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/PropertyValueAliases.txt",
+      "file": "PropertyValueAliases.txt",
+      "byteLength": 81858,
+      "sha256": "64e9a5f76f7a1e8b5a47d6a1f9a26522a251208f5276bdfa1559dac7cf2e827a"
+    },
+    {
+      "role": "script-extensions",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/ScriptExtensions.txt",
+      "file": "ScriptExtensions.txt",
+      "byteLength": 20707,
+      "sha256": "ec2107e58825a1586acee8e0911ce18260394ac8b87e535ca325f1ccbeb06bc6"
+    },
+    {
+      "role": "scripts",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/Scripts.txt",
+      "file": "Scripts.txt",
+      "byteLength": 192460,
+      "sha256": "9f5e50d3abaee7d6ce09480f325c706f485ae3240912527e651954d2d6b035bf"
+    },
+    {
+      "role": "unicode-data",
+      "sourceUrl": "https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt",
+      "file": "UnicodeData.txt",
+      "byteLength": 2198209,
+      "sha256": "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c"
+    }
+  ]
+}

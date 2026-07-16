@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "dataset": "Public Suffix List",
+  "captured": "2026-07-15",
+  "license": {
+    "expression": "MPL-2.0",
+    "termsUrl": "https://mozilla.org/MPL/2.0/",
+    "textUrl": "https://raw.githubusercontent.com/publicsuffix/list/f8d153aafe2dd6aa1c27cfdabaeb41b90ece3d48/LICENSE",
+    "file": "LICENSE",
+    "byteLength": 16727,
+    "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172"
+  },
+  "sourceUrl": "https://publicsuffix.org/list/public_suffix_list.dat",
+  "sourceRepository": "https://github.com/publicsuffix/list",
+  "sourceVersion": "2026-07-14_09-26-39_UTC",
+  "sourceCommit": "f8d153aafe2dd6aa1c27cfdabaeb41b90ece3d48",
+  "sourceCommitDate": "2026-07-14T09:26:27Z",
+  "file": "public_suffix_list.dat",
+  "byteLength": 333649,
+  "sha256": "bd9a62671db32654cfdc5a1eaf57f4c410943d81a7edb1e876f91c0b642e23d8"
+}

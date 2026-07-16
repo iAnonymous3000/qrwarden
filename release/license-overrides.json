@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "overrides": [
+    {
+      "purl": "pkg:npm/%40cloudflare/kv-asset-handler@0.5.0",
+      "licenseExpression": "MIT OR Apache-2.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40cloudflare/unenv-preset@2.16.1",
+      "licenseExpression": "MIT OR Apache-2.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40cloudflare/workerd-darwin-arm64@1.20260710.1",
+      "licenseExpression": "Apache-2.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40cloudflare/workerd-linux-64@1.20260710.1",
+      "licenseExpression": "Apache-2.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40esbuild/darwin-arm64@0.28.1",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40esbuild/linux-x64@0.28.1",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40humanfs/types@0.15.0",
+      "licenseExpression": "Apache-2.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40img/sharp-libvips-darwin-arm64@1.2.4",
+      "licenseExpression": "LGPL-3.0-or-later",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40img/sharp-libvips-linux-x64@1.2.4",
+      "licenseExpression": "LGPL-3.0-or-later",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40npmcli/agent@3.0.0",
+      "licenseExpression": "ISC",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40npmcli/agent@4.0.2",
+      "licenseExpression": "ISC",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40rolldown/binding-darwin-arm64@1.1.5",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40rolldown/binding-linux-x64-gnu@1.1.5",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40rollup/pluginutils@4.2.1",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40rollup/rollup-darwin-arm64@4.62.2",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40rollup/rollup-linux-x64-gnu@4.62.2",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/%40sigstore/verify@3.1.1",
+      "licenseExpression": "Apache-2.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/boolbase@1.0.0",
+      "licenseExpression": "ISC",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/eastasianwidth@0.2.0",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/err-code@2.0.3",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/esrecurse@4.3.0",
+      "licenseExpression": "BSD-2-Clause",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/filelist@1.0.6",
+      "licenseExpression": "Apache-2.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/imurmurhash@0.1.4",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/is-module@1.0.0",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/is-regexp@1.0.0",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/jake@10.9.4",
+      "licenseExpression": "Apache-2.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/keyv@4.5.4",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/miniflare@4.20260710.0",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/natural-compare@1.4.0",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/railroad-diagrams@1.0.0",
+      "licenseExpression": "CC0-1.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/schemes@1.4.0",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/spdx-exceptions@2.5.0",
+      "licenseExpression": "CC-BY-3.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/spdx-license-ids@3.0.23",
+      "licenseExpression": "CC0-1.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/stackback@0.0.2",
+      "licenseExpression": "MIT",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/workerd@1.20260710.1",
+      "licenseExpression": "Apache-2.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    },
+    {
+      "purl": "pkg:npm/wrangler@4.111.0",
+      "licenseExpression": "MIT OR Apache-2.0",
+      "licenseTextSha256": [],
+      "noticeSha256": []
+    }
+  ]
+}

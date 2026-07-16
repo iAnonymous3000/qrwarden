@@ -1,0 +1,48 @@
+name: Feature request
+description: Propose a focused improvement to QRWarden.
+title: "Feature: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the user problem first. Do not include sensitive QR payloads, personal data, credentials, or vulnerability details.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What problem should QRWarden solve, and for whom?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful behavior change.
+    validations:
+      required: true
+
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Privacy and security boundaries
+      description: Explain any effect on local processing, network access, storage, permissions, or user actions.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Note simpler approaches or workarounds you considered.
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues for a similar request.
+          required: true
+        - label: This request contains no credentials, personal data, production secrets, or vulnerability details.
+          required: true

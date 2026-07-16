@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a reproducible problem using synthetic data.
+title: "Bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include real QR payloads, credentials, personal data, or production screenshots. Suspected vulnerabilities must be reported privately through the process in SECURITY.md.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reproduction using synthetic input.
+      placeholder: |
+        1. Start QRWarden with...
+        2. Scan the synthetic value...
+        3. Observe...
+    validations:
+      required: true
+
+  - type: input
+    id: revision
+    attributes:
+      label: QRWarden revision
+      description: Release version or full commit hash.
+      placeholder: v0.1.0 or 40-character commit hash
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser, browser version, operating system, device, and installation mode.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Additional evidence
+      description: Add sanitized logs or screenshots if they contain no private data.
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I used synthetic data and removed credentials, personal data, and production secrets.
+          required: true
+        - label: This report does not describe a suspected security vulnerability.
+          required: true
+        - label: I searched existing issues for the same problem.
+          required: true

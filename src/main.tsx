@@ -1,0 +1,109 @@
+import { render } from "preact";
+
+import {
+  createQrwardenModuleWorker,
+  initializeTrustedWorkerScripts,
+} from "./app/trustedScripts";
+import { DecoderWorkerClient } from "./decoder";
+import { App, type AppStatusDetail, type RuntimeBridge } from "./render/App";
+import "./render/styles.css";
+import {
+  replayServiceWorkerStatus,
+  ServiceWorkerClient,
+  type OfflineState,
+} from "./sw/client";
+
+declare const __QRWARDEN_RELEASE_ID__: string;
+declare const __QRWARDEN_SIGNING_PUBLIC_KEY__: string;
+declare const __QRWARDEN_SIGNING_FINGERPRINT__: string;
+declare const __QRWARDEN_DNS_KEY_OWNER__: string;
+declare const __QRWARDEN_SOURCE_REPOSITORY__: string | null;
+
+const root = document.getElementById("app");
+if (root === null) {
+  throw new TypeError("Missing application root");
+}
+
+const trustedScripts = initializeTrustedWorkerScripts();
+const workerFactory = (): Worker =>
+  createQrwardenModuleWorker(trustedScripts.decoder);
+
+const statusEvents = new EventTarget();
+const bridge: RuntimeBridge = {
+  // The update coordinator must not enroll this document before App has
+  // mounted and installed its authoritative idle predicate.
+  isIdle: () => false,
+  dropReport: () => undefined,
+};
+const emit = (detail: AppStatusDetail): void => {
+  statusEvents.dispatchEvent(new CustomEvent("status", { detail }));
+};
+
+let offlineState: OfflineState = "preparing";
+let locked = true;
+let serviceWorker: ServiceWorkerClient | null = null;
+
+const smokeDecoder = async (): Promise<boolean> => {
+  const client = new DecoderWorkerClient(workerFactory);
+  try {
+    await client.start();
+    await client.smoke(0);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    client.dispose("cancelled");
+  }
+};
+
+if (import.meta.env.DEV) {
+  offlineState = "incomplete";
+  locked = false;
+} else {
+  serviceWorker = new ServiceWorkerClient({
+    loadedRelease: __QRWARDEN_RELEASE_ID__,
+    scriptURL: trustedScripts.serviceWorker,
+    isIdle: () => bridge.isIdle(),
+    onLockChange: (next) => {
+      locked = next;
+      emit({ locked: next });
+    },
+    onState: (next) => {
+      offlineState = next;
+      emit({ offlineState: next });
+    },
+    dropReport: () => bridge.dropReport(),
+    decoderSmoke: smokeDecoder,
+  });
+  try {
+    await serviceWorker.gate();
+  } catch {
+    offlineState = "update-failed";
+    locked = true;
+  }
+}
+
+render(
+  <App
+    workerFactory={workerFactory}
+    serviceWorker={serviceWorker}
+    initialOfflineState={offlineState}
+    initialLocked={locked}
+    releaseId={__QRWARDEN_RELEASE_ID__}
+    signingPublicKey={__QRWARDEN_SIGNING_PUBLIC_KEY__}
+    signingFingerprint={__QRWARDEN_SIGNING_FINGERPRINT__}
+    dnsKeyOwner={__QRWARDEN_DNS_KEY_OWNER__}
+    sourceRepository={__QRWARDEN_SOURCE_REPOSITORY__}
+    statusEvents={statusEvents}
+    bridge={bridge}
+  />,
+  root,
+);
+
+// First-install verification continues without blanking the initial UI. Replay
+// the authoritative snapshot after App's layout subscription is installed so
+// a completion event cannot be lost between gate() and the first commit.
+replayServiceWorkerStatus(
+  () => ({ offlineState, locked }),
+  (snapshot) => emit(snapshot),
+);

@@ -1,0 +1,9 @@
+# Governance
+
+QRWarden is a pre-release, maintainer-led project. The maintainer roster becomes authoritative when real identities are recorded in `release/constants.json` and repository access is configured. Placeholder entries do not confer authority.
+
+Maintainers merge changes, cut releases, administer community spaces, and enforce the code of conduct. Once issue and pull-request intake opens, ordinary decisions use those public channels with documented rationale. Before then, development decisions may be recorded in reviewed commits without implying that public intake is available. Security embargoes, credentials, signing operations, personal reports, and incident containment remain private until coordinated disclosure.
+
+Security-contract, privacy-promise, dependency and data, release, infrastructure, and branding changes require documented maintainer review. Once at least two maintainers are listed, these changes require approval from two maintainers. Until then, every real listed maintainer must approve them. Before a real roster exists, the repository owner may approve development changes, but no release may be cut. Release still requires the independent review documented in `RELEASE.md`. Release signing uses a separate two-person checklist. No single CI job, cloud credential, or repository administrator may substitute for the offline signing key and independent verification.
+
+Conflicts of interest must be disclosed and the affected maintainer recuses from the decision. Maintainers may be added or removed through a reviewed governance change supported by two current maintainers; if fewer than two exist, all current maintainers must agree and record the continuity plan. Changes to public identities also update release constants, repository access, disclosure routes, DNS, public Cloudflare configuration, and private operational or key-custody records as applicable.

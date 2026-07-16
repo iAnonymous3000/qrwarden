@@ -1,0 +1,75 @@
+{
+  "name": "qrwarden",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first QR code inspector that lets people see what a code contains before acting.",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iAnonymous3000/qrwarden.git"
+  },
+  "bugs": {
+    "url": "https://github.com/iAnonymous3000/qrwarden/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": "24.18.0",
+    "npm": "11.16.0"
+  },
+  "packageManager": "npm@11.16.0",
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.2": false,
+    "fsevents@2.3.3": false,
+    "libxmljs2@0.37.0": true,
+    "sharp@0.34.5": true,
+    "workerd@1.20260710.1": true
+  },
+  "scripts": {
+    "dev": "vite",
+    "data:generate": "node scripts/build-data/build-data.mjs",
+    "build": "npm run typecheck && vite build && node scripts/finalize-dist.mjs && node scripts/verify-dist.mjs && node scripts/verify-no-sourcemaps.mjs",
+    "preview": "vite preview",
+    "serve:dist": "node scripts/serve-dist.mjs",
+    "typecheck": "tsc -b",
+    "lint": "eslint . --max-warnings=0 && node scripts/lint-source.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:release": "vitest run --config tests/release/vitest.config.ts && node --test tests/release/wrangler-config.test.mjs",
+    "test:browser": "playwright test",
+    "verify:reproducible": "node scripts/verify-reproducible-dist.mjs",
+    "validate:runtime": "node scripts/validate-runtime.mjs",
+    "validate:data": "node scripts/build-data/build-data.mjs --check",
+    "validate:constants": "node scripts/validate-release-constants.mjs --development",
+    "validate:metadata": "node scripts/validate-release-metadata.mjs",
+    "validate:workflows": "node scripts/release/validate-workflows.mjs",
+    "validate": "npm run validate:runtime && npm run validate:data && npm run validate:constants && npm run validate:metadata && npm run validate:workflows && npm run lint && npm run typecheck && npm run test && npm run test:release",
+    "release:artifacts": "node scripts/release/assemble-release-candidate.mjs --commit \"$QRWARDEN_COMMIT\" --epoch \"$SOURCE_DATE_EPOCH\"",
+    "release:wrangler:check": "node scripts/release/render-wrangler-configs.mjs --check",
+    "release:validate": "node scripts/validate-release-constants.mjs --release && node scripts/validate-release-readiness.mjs && npm run release:wrangler:check && npm run validate && npm run verify:reproducible && npm run test:browser"
+  },
+  "dependencies": {
+    "preact": "10.29.7",
+    "workbox-precaching": "7.4.1",
+    "workbox-routing": "7.4.1",
+    "zxing-wasm": "3.1.1"
+  },
+  "devDependencies": {
+    "@cyclonedx/cyclonedx-npm": "6.0.0",
+    "@cyclonedx/cyclonedx-library": "10.1.0",
+    "@playwright/test": "1.61.1",
+    "@preact/preset-vite": "2.10.5",
+    "@types/node": "24.13.3",
+    "eslint": "10.7.0",
+    "license-checker-rseidelsohn": "5.0.1",
+    "spdx-exceptions": "2.5.0",
+    "spdx-expression-parse": "4.0.0",
+    "spdx-license-ids": "3.0.23",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.64.0",
+    "vite": "8.1.4",
+    "vitest": "4.1.10",
+    "workbox-build": "7.4.1",
+    "wrangler": "4.111.0"
+  }
+}

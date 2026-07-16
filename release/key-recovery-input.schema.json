@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:qrwarden:schema:key-recovery-input:1",
+  "title": "QRWarden emergency signing-key recovery input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project",
+    "canonical-domain",
+    "recovery-tag",
+    "fingerprint-scheme",
+    "compromised-key-sha256",
+    "successor-key-sha256",
+    "successor-minisign-public-key",
+    "last-trusted-tag",
+    "last-trusted-commit",
+    "incident-url",
+    "dns-owner"
+  ],
+  "properties": {
+    "project": { "const": "qrwarden" },
+    "canonical-domain": {
+      "type": "string",
+      "pattern": "^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])$"
+    },
+    "recovery-tag": {
+      "type": "string",
+      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+    },
+    "fingerprint-scheme": { "const": "sha256-minisign-decoded-key-blob" },
+    "compromised-key-sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "successor-key-sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "successor-minisign-public-key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]{56}$"
+    },
+    "last-trusted-tag": {
+      "type": "string",
+      "pattern": "^(?:none|v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*))$"
+    },
+    "last-trusted-commit": {
+      "type": "string",
+      "pattern": "^(?:none|[a-f0-9]{40})$"
+    },
+    "incident-url": {
+      "type": "string",
+      "pattern": "^https://[^?#\\s]+(?:[/?][^#\\s]*)?$"
+    },
+    "dns-owner": {
+      "type": "string",
+      "pattern": "^_qrwarden-release-key\\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])\\.$"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "last-trusted-tag": { "const": "none" },
+        "last-trusted-commit": { "const": "none" }
+      }
+    },
+    {
+      "properties": {
+        "last-trusted-tag": {
+          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+        },
+        "last-trusted-commit": { "pattern": "^[a-f0-9]{40}$" }
+      }
+    }
+  ]
+}

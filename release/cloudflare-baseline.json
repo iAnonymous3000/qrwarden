@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "compatibilityDate": "2026-07-15",
+  "production": {
+    "workersDev": false,
+    "previewUrls": false,
+    "runWorkerFirst": false,
+    "htmlHandling": "auto-trailing-slash",
+    "notFoundHandling": "none"
+  },
+  "disabledAccountFeatures": [
+    "Workers Builds and Git integration",
+    "Web Analytics",
+    "Zaraz",
+    "Rocket Loader",
+    "email obfuscation",
+    "content or script injection features"
+  ],
+  "forbiddenBindingsAndRuntimeFeatures": [
+    "main entry",
+    "ASSETS binding",
+    "server Worker",
+    "Pages Function",
+    "KV",
+    "R2",
+    "D1",
+    "Durable Object",
+    "service binding",
+    "queue",
+    "route handler",
+    "cron",
+    "placement",
+    "observability binding",
+    "compatibility flag",
+    "runtime secret"
+  ]
+}

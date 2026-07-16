@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "dataset": "IANA IP registries used by QRWarden",
+  "captured": "2026-07-15",
+  "sourceSetSha256": "30a9207bb7946ec8268982290044fd60e86b4ca7691235267b46662728b256ed",
+  "license": {
+    "expression": "CC0-1.0",
+    "termsUrl": "https://www.iana.org/help/licensing-terms",
+    "textUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt",
+    "file": "CC0-1.0.txt",
+    "byteLength": 7048,
+    "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
+  },
+  "files": [
+    {
+      "role": "ipv4-special-csv",
+      "sourceUrl": "https://www.iana.org/assignments/iana-ipv4-special-registry/iana-ipv4-special-registry-1.csv",
+      "sourceVersion": "2025-10-09",
+      "file": "iana-ipv4-special-registry-1.csv",
+      "byteLength": 2423,
+      "sha256": "e3e39e76d00b1677335db8e9a805c7b9480ea2f4dc9e33f0b93cd3a905128d73"
+    },
+    {
+      "role": "ipv4-special-xml",
+      "sourceUrl": "https://www.iana.org/assignments/iana-ipv4-special-registry/iana-ipv4-special-registry.xml",
+      "sourceVersion": "2025-10-09",
+      "file": "iana-ipv4-special-registry.xml",
+      "byteLength": 13459,
+      "sha256": "cf24e11f41b7d42c68debe2d18b97cac815084ec413ebb3b244f704028a16f20"
+    },
+    {
+      "role": "ipv6-special-csv",
+      "sourceUrl": "https://www.iana.org/assignments/iana-ipv6-special-registry/iana-ipv6-special-registry-1.csv",
+      "sourceVersion": "2025-10-09",
+      "file": "iana-ipv6-special-registry-1.csv",
+      "byteLength": 2289,
+      "sha256": "775feea0621dec8735a44fbf30f762e721e8f0a1b3ab7eb341961a88cfce2139"
+    },
+    {
+      "role": "ipv6-special-xml",
+      "sourceUrl": "https://www.iana.org/assignments/iana-ipv6-special-registry/iana-ipv6-special-registry.xml",
+      "sourceVersion": "2025-10-09",
+      "file": "iana-ipv6-special-registry.xml",
+      "byteLength": 13431,
+      "sha256": "c17f4380ba84fb2160dae82ebfd8bd155a5853cfab624ed3a9fd251638a8be02"
+    },
+    {
+      "role": "ipv4-address-space-csv",
+      "sourceUrl": "https://www.iana.org/assignments/ipv4-address-space/ipv4-address-space.csv",
+      "sourceVersion": "2025-10-10",
+      "file": "ipv4-address-space.csv",
+      "byteLength": 22972,
+      "sha256": "b7b28385e8bc8785c117e2ea65974f942cc6f7dd9dce914f2253ff0adfad4b03"
+    },
+    {
+      "role": "ipv4-address-space-xml",
+      "sourceUrl": "https://www.iana.org/assignments/ipv4-address-space/ipv4-address-space.xml",
+      "sourceVersion": "2025-10-10",
+      "file": "ipv4-address-space.xml",
+      "byteLength": 76759,
+      "sha256": "8ca3774374c81e4a673bb12d0eb415e7ac9970c6f5a6ceb14106de64b2cb3dcd"
+    },
+    {
+      "role": "ipv6-address-space-csv",
+      "sourceUrl": "https://www.iana.org/assignments/ipv6-address-space/ipv6-address-space-1.csv",
+      "sourceVersion": "2025-10-23",
+      "file": "ipv6-address-space-1.csv",
+      "byteLength": 2093,
+      "sha256": "41fef65d7a5fb32076175ffac1b663a9153d5593d3e2c840696ed8ffa1c7af29"
+    },
+    {
+      "role": "ipv6-address-space-xml",
+      "sourceUrl": "https://www.iana.org/assignments/ipv6-address-space/ipv6-address-space.xml",
+      "sourceVersion": "2025-10-23",
+      "file": "ipv6-address-space.xml",
+      "byteLength": 6956,
+      "sha256": "15481d1e549b481f3bd0321c5cd2c0327a00cbd3d5a6fc35fc7b53b51e70b1cb"
+    }
+  ]
+}

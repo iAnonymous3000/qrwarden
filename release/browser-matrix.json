@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "recordExactBuildNumbersForEveryRelease": true,
+  "platforms": [
+    {
+      "platform": "Windows 11",
+      "physical": false,
+      "requirements": [
+        "latest two Chrome in tab and installed mode",
+        "latest two Edge in tab and installed mode",
+        "latest two Firefox in tab and installed mode from supported Mozilla and Microsoft Store distributions",
+        "Firefox ESR in tab"
+      ]
+    },
+    {
+      "platform": "macOS current and previous",
+      "physical": false,
+      "requirements": [
+        "latest two Safari in tab and Add to Dock",
+        "current Chrome in tab and installed mode",
+        "current Firefox and Firefox ESR in tab"
+      ]
+    },
+    {
+      "platform": "Android current and previous",
+      "physical": true,
+      "requirements": [
+        "latest two Chrome in tab and installed mode",
+        "latest two Firefox in tab and installed mode"
+      ]
+    },
+    {
+      "platform": "iOS current and previous",
+      "physical": true,
+      "requirements": [
+        "Safari tab",
+        "Home Screen standalone with Open as Web App enabled where shown"
+      ]
+    },
+    {
+      "platform": "iPadOS current and previous",
+      "physical": true,
+      "requirements": [
+        "Safari tab",
+        "Home Screen standalone with Open as Web App enabled where shown"
+      ]
+    },
+    {
+      "platform": "Ubuntu LTS",
+      "physical": false,
+      "requirements": [
+        "current Chrome in tab and installed mode",
+        "current Firefox and Firefox ESR in tab"
+      ]
+    }
+  ],
+  "firefoxWindowsCompatibilityFloors": {
+    "mozillaDistribution": 143,
+    "microsoftStoreDistribution": 150
+  },
+  "policyNotes": [
+    "Firefox Windows install guidance is shown only on release-tested builds.",
+    "macOS and Linux Firefox remain offline-capable tab experiences unless an install surface is release-tested.",
+    "A tab or ordinary Home Screen bookmark cannot satisfy an installed-app gate."
+  ],
+  "installedModeEvidenceFields": [
+    "installDistributionOrPath",
+    "displayModeMediaResult",
+    "navigatorStandaloneWhenPresent",
+    "serviceWorkerScope",
+    "serviceWorkerController",
+    "releaseId",
+    "trustedTypesOutcome",
+    "operatingSystemBuild",
+    "browserBuild"
+  ],
+  "iosAndIpadosOfflineGate": [
+    "install",
+    "launch installed app online",
+    "wait for Ready offline",
+    "force-close",
+    "enable airplane mode",
+    "cold-launch",
+    "scan by image and camera",
+    "test permission allow, deny, revoke, and possible reprompt",
+    "return online",
+    "open an ordinary controlled HTTPS link and close back to the masked report"
+  ]
+}

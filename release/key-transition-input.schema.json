@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:qrwarden:schema:key-transition-input:1",
+  "title": "QRWarden planned signing-key transition input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project",
+    "canonical-domain",
+    "effective-tag",
+    "fingerprint-scheme",
+    "previous-key-sha256",
+    "successor-key-sha256",
+    "successor-minisign-public-key",
+    "dns-owner"
+  ],
+  "properties": {
+    "project": { "const": "qrwarden" },
+    "canonical-domain": {
+      "type": "string",
+      "pattern": "^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])$"
+    },
+    "effective-tag": {
+      "type": "string",
+      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+    },
+    "fingerprint-scheme": { "const": "sha256-minisign-decoded-key-blob" },
+    "previous-key-sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "successor-key-sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "successor-minisign-public-key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]{56}$"
+    },
+    "dns-owner": {
+      "type": "string",
+      "pattern": "^_qrwarden-release-key\\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])\\.$"
+    }
+  }
+}

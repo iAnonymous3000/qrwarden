@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+# Preserve hash-pinned upstream bytes exactly.
+/data-src/** -text linguist-vendored whitespace=-trailing-space,-blank-at-eof
+
+# Keep generated modules out of ordinary GitHub review and language totals.
+/src/data/*Snapshot.ts text eol=lf linguist-generated=true
+
+*.png binary
+*.wasm binary

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "releaseReady": true,
+  "publicSuffix": {
+    "captured": "2026-07-15",
+    "sourceCommit": "f8d153aafe2dd6aa1c27cfdabaeb41b90ece3d48",
+    "completeness": "complete"
+  },
+  "ianaSpecialPurpose": {
+    "captured": "2026-07-15",
+    "sourceVersion": "2025-10-09",
+    "completeness": "complete"
+  },
+  "unicodeSecurity": {
+    "captured": "2026-07-15",
+    "unicodeVersion": "17.0.0",
+    "sourceSha256": "0b98ba743b2ad8b628ca0366802653154ecd7f528125641dadec73f6b0b4aa35",
+    "completeness": "complete"
+  }
+}

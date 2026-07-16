@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "product": {
+    "workingName": "QRWarden",
+    "workerName": "qrwarden"
+  },
+  "production": {
+    "canonicalDomain": "<SET_CANONICAL_PRODUCTION_DOMAIN>",
+    "dnsReleaseKeyOwner": "<SET_DNS_RELEASE_KEY_OWNER>"
+  },
+  "cloudflare": {
+    "accountId": "<SET_CLOUDFLARE_ACCOUNT_ID>"
+  },
+  "github": {
+    "owner": "iAnonymous3000",
+    "repository": "qrwarden"
+  },
+  "maintainers": [
+    {
+      "name": "<SET_MAINTAINER_ONE_NAME>",
+      "email": "<SET_MAINTAINER_ONE_EMAIL>"
+    },
+    {
+      "name": "<SET_MAINTAINER_TWO_NAME>",
+      "email": "<SET_MAINTAINER_TWO_EMAIL>"
+    }
+  ],
+  "signing": {
+    "minisignPublicKey": "<SET_MINISIGN_PUBLIC_KEY>",
+    "sha256Fingerprint": "<SET_MINISIGN_KEY_FINGERPRINT>"
+  }
+}

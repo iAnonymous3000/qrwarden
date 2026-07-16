@@ -1,0 +1,260 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_commit:
+        description: Full protected-main commit to build
+        required: true
+        type: string
+      release_version:
+        description: Exact SemVer core from package.json
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qrwarden-production-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  preflight:
+    name: Verify protected release context
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production-release
+    container:
+      image: node:24.18.0-bookworm-slim@sha256:d45d78e7929b46875bbd4e29bea672d5bc48186c6c3588306521c815e78352d6
+      options: --platform linux/amd64
+    steps:
+      - name: Install the exact source-archive Git tool
+        run: |
+          set -euo pipefail
+          sed -i \
+            -e 's|URIs: http://deb.debian.org/debian$|URIs: https://snapshot.debian.org/archive/debian/20260713T000000Z|' \
+            -e 's|URIs: http://deb.debian.org/debian-security$|URIs: https://snapshot.debian.org/archive/debian-security/20260713T000000Z|' \
+            /etc/apt/sources.list.d/debian.sources
+          echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+          apt-get update
+          apt-get install --yes --no-install-recommends git=1:2.39.5-0+deb12u3
+          test "$(git --version)" = 'git version 2.39.5'
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Check out the exact release commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.release_commit }}
+          fetch-depth: 0
+          clean: true
+          persist-credentials: false
+
+      - name: Verify protected main, signature, version, and absent release identity
+        env:
+          QRWARDEN_RELEASE_COMMIT: ${{ inputs.release_commit }}
+          QRWARDEN_RELEASE_VERSION: ${{ inputs.release_version }}
+          GITHUB_REF_PROTECTED: ${{ github.ref_protected }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release/verify-release-context.mjs
+
+  build:
+    name: Independent build (${{ matrix.replica }})
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        replica: [first, second]
+    container:
+      image: node:24.18.0-bookworm-slim@sha256:d45d78e7929b46875bbd4e29bea672d5bc48186c6c3588306521c815e78352d6
+      options: --platform linux/amd64
+    env:
+      QRWARDEN_COMMIT: ${{ inputs.release_commit }}
+      QRWARDEN_RELEASE_COMMIT: ${{ inputs.release_commit }}
+      QRWARDEN_RELEASE_VERSION: ${{ inputs.release_version }}
+      NPM_CONFIG_CACHE: /tmp/qrwarden-npm-cache
+      TZ: UTC
+      LC_ALL: C
+      LANG: C
+    steps:
+      - name: Install the exact source-archive Git tool
+        run: |
+          set -euo pipefail
+          sed -i \
+            -e 's|URIs: http://deb.debian.org/debian$|URIs: https://snapshot.debian.org/archive/debian/20260713T000000Z|' \
+            -e 's|URIs: http://deb.debian.org/debian-security$|URIs: https://snapshot.debian.org/archive/debian-security/20260713T000000Z|' \
+            /etc/apt/sources.list.d/debian.sources
+          echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+          apt-get update
+          apt-get install --yes --no-install-recommends git=1:2.39.5-0+deb12u3
+          test "$(git --version)" = 'git version 2.39.5'
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Check out the exact release commit in a clean workspace
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.release_commit }}
+          fetch-depth: 0
+          clean: true
+          persist-credentials: false
+
+      - name: Establish deterministic release environment
+        run: |
+          set -euo pipefail
+          umask 022
+          test "$(git rev-parse HEAD)" = "$QRWARDEN_RELEASE_COMMIT"
+          git switch --force-create main "$QRWARDEN_RELEASE_COMMIT"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          epoch="$(git show -s --format=%ct "$QRWARDEN_RELEASE_COMMIT")"
+          [[ "$epoch" =~ ^[0-9]+$ ]]
+          echo "SOURCE_DATE_EPOCH=$epoch" >> "$GITHUB_ENV"
+
+      - name: Install the locked npm runtime
+        env:
+          NPM_CONFIG_CACHE: /tmp/qrwarden-npm-bootstrap
+        run: |
+          set -euo pipefail
+          npm install --global --ignore-scripts npm@11.16.0
+          test "$(npm --version)" = '11.16.0'
+          rm -rf /tmp/qrwarden-npm-bootstrap
+
+      - name: Install dependencies from an empty job-local cache
+        run: |
+          set -euo pipefail
+          test ! -e "$NPM_CONFIG_CACHE"
+          npm ci --ignore-scripts=false --strict-allow-scripts
+
+      - name: Run source and release-readiness gates
+        run: |
+          set -euo pipefail
+          umask 022
+          npm run validate
+          node scripts/validate-release-constants.mjs --release
+          node scripts/validate-release-readiness.mjs
+          npm run release:wrangler:check
+
+      - name: Build the closed production tree
+        run: |
+          set -euo pipefail
+          umask 022
+          npm run build
+
+      - name: Assemble the locked unsigned release set
+        run: |
+          set -euo pipefail
+          umask 022
+          node scripts/release/assemble-release-candidate.mjs \
+            --version "$QRWARDEN_RELEASE_VERSION" \
+            --commit "$QRWARDEN_RELEASE_COMMIT" \
+            --epoch "$SOURCE_DATE_EPOCH" \
+            --output release-output
+
+      - name: Attest independent build provenance
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: |
+            release-output/qrwarden-${{ inputs.release_version }}-source.tar.gz
+            release-output/qrwarden-${{ inputs.release_version }}-dist.tar.gz
+            release-output/qrwarden-${{ inputs.release_version }}-dist-files.sha256
+            release-output/qrwarden-${{ inputs.release_version }}-archive.sha256
+            release-output/qrwarden-${{ inputs.release_version }}-sbom.cdx.json
+            release-output/qrwarden-${{ inputs.release_version }}-licenses.txt
+            release-output/qrwarden-${{ inputs.release_version }}-changelog.md
+
+      - name: Attest the CycloneDX SBOM against the exact artifact set
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: |
+            release-output/qrwarden-${{ inputs.release_version }}-source.tar.gz
+            release-output/qrwarden-${{ inputs.release_version }}-dist.tar.gz
+            release-output/qrwarden-${{ inputs.release_version }}-dist-files.sha256
+            release-output/qrwarden-${{ inputs.release_version }}-archive.sha256
+            release-output/qrwarden-${{ inputs.release_version }}-sbom.cdx.json
+            release-output/qrwarden-${{ inputs.release_version }}-licenses.txt
+            release-output/qrwarden-${{ inputs.release_version }}-changelog.md
+          sbom-path: release-output/qrwarden-${{ inputs.release_version }}-sbom.cdx.json
+
+      - name: Upload this independent unsigned set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsigned-release-${{ matrix.replica }}
+          path: release-output/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+          include-hidden-files: false
+
+  finalize:
+    name: Compare and approve unsigned candidate
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: node:24.18.0-bookworm-slim@sha256:d45d78e7929b46875bbd4e29bea672d5bc48186c6c3588306521c815e78352d6
+      options: --platform linux/amd64
+    steps:
+      - name: Install the exact source-archive Git tool
+        run: |
+          set -euo pipefail
+          sed -i \
+            -e 's|URIs: http://deb.debian.org/debian$|URIs: https://snapshot.debian.org/archive/debian/20260713T000000Z|' \
+            -e 's|URIs: http://deb.debian.org/debian-security$|URIs: https://snapshot.debian.org/archive/debian-security/20260713T000000Z|' \
+            /etc/apt/sources.list.d/debian.sources
+          echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+          apt-get update
+          apt-get install --yes --no-install-recommends git=1:2.39.5-0+deb12u3
+          test "$(git --version)" = 'git version 2.39.5'
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Check out the exact finalizer
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.release_commit }}
+          clean: true
+          persist-credentials: false
+
+      - name: Download the first independent set
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: unsigned-release-first
+          path: candidates/first
+          digest-mismatch: error
+
+      - name: Download the second independent set
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: unsigned-release-second
+          path: candidates/second
+          digest-mismatch: error
+
+      - name: Require byte-identical closed artifact sets and manifests
+        run: |
+          set -euo pipefail
+          umask 022
+          node scripts/release/compare-release-candidates.mjs \
+            --first candidates/first \
+            --second candidates/second \
+            --output approved-unsigned-release \
+            --version '${{ inputs.release_version }}' \
+            --commit '${{ inputs.release_commit }}'
+
+      - name: Upload the approved unsigned release candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: approved-unsigned-release
+          path: approved-unsigned-release/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+          include-hidden-files: false

@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "description": "Closed mapping between allowed dist files and public responses.",
+  "unmatchedDistPolicy": "reject",
+  "unmatchedPublicStatus": 404,
+  "cacheClasses": {
+    "revalidate": "no-cache, must-revalidate",
+    "immutable": "public, max-age=31536000, immutable",
+    "infrastructure": null
+  },
+  "cspClasses": ["document", "decoder-worker", "service-worker", "none"],
+  "entries": [
+    {
+      "id": "document",
+      "kind": "dist",
+      "sourcePattern": "^index\\.html$",
+      "canonicalUrlRule": "exact:/",
+      "expectedStatus": 200,
+      "mediaType": "text/html; charset=utf-8",
+      "cacheClass": "revalidate",
+      "cspClass": "document",
+      "releaseMarker": true,
+      "precache": true
+    },
+    {
+      "id": "manifest",
+      "kind": "dist",
+      "sourcePattern": "^app\\.webmanifest$",
+      "canonicalUrlRule": "preserve-path",
+      "expectedStatus": 200,
+      "mediaType": "application/manifest+json",
+      "cacheClass": "revalidate",
+      "cspClass": "none",
+      "releaseMarker": true,
+      "precache": true
+    },
+    {
+      "id": "decoder-worker",
+      "kind": "dist",
+      "sourcePattern": "^decoder-worker\\.js$",
+      "canonicalUrlRule": "preserve-path",
+      "expectedStatus": 200,
+      "mediaType": "text/javascript; charset=utf-8",
+      "cacheClass": "revalidate",
+      "cspClass": "decoder-worker",
+      "releaseMarker": true,
+      "precache": true
+    },
+    {
+      "id": "service-worker",
+      "kind": "dist",
+      "sourcePattern": "^sw\\.js$",
+      "canonicalUrlRule": "preserve-path",
+      "expectedStatus": 200,
+      "mediaType": "text/javascript; charset=utf-8",
+      "cacheClass": "revalidate",
+      "cspClass": "service-worker",
+      "releaseMarker": true,
+      "precache": false
+    },
+    {
+      "id": "reader-wasm",
+      "kind": "dist",
+      "sourcePattern": "^assets/reader-[A-Za-z0-9_-]{8}\\.wasm$",
+      "canonicalUrlRule": "preserve-path",
+      "expectedStatus": 200,
+      "mediaType": "application/wasm",
+      "cacheClass": "immutable",
+      "cspClass": "none",
+      "releaseMarker": true,
+      "precache": true
+    },
+    {
+      "id": "hashed-javascript",
+      "kind": "dist",
+      "sourcePattern": "^assets/[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{8}\\.js$",
+      "canonicalUrlRule": "preserve-path",
+      "expectedStatus": 200,
+      "mediaType": "text/javascript; charset=utf-8",
+      "cacheClass": "immutable",
+      "cspClass": "none",
+      "releaseMarker": true,
+      "precache": true
+    },
+    {
+      "id": "hashed-css",
+      "kind": "dist",
+      "sourcePattern": "^assets/[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{8}\\.css$",
+      "canonicalUrlRule": "preserve-path",
+      "expectedStatus": 200,
+      "mediaType": "text/css; charset=utf-8",
+      "cacheClass": "immutable",
+      "cspClass": "none",
+      "releaseMarker": true,
+      "precache": true
+    },
+    {
+      "id": "png-icons",
+      "kind": "dist",
+      "sourcePattern": "^icons/(?:icon-192|icon-512|maskable-512|monochrome-512|apple-touch-icon)\\.png$",
+      "canonicalUrlRule": "preserve-path",
+      "expectedStatus": 200,
+      "mediaType": "image/png",
+      "cacheClass": "revalidate",
+      "cspClass": "none",
+      "releaseMarker": true,
+      "precache": true
+    },
+    {
+      "id": "release-public-key",
+      "kind": "dist",
+      "sourcePattern": "^\\.well-known/qrwarden-release-key\\.pub$",
+      "canonicalUrlRule": "preserve-path",
+      "expectedStatus": 200,
+      "mediaType": "text/plain; charset=utf-8",
+      "cacheClass": "revalidate",
+      "cspClass": "none",
+      "releaseMarker": true,
+      "precache": true
+    },
+    {
+      "id": "platform-headers",
+      "kind": "dist-control",
+      "sourcePattern": "^_headers$",
+      "canonicalUrlRule": "no-public-body",
+      "expectedStatus": 404,
+      "mediaType": null,
+      "cacheClass": "infrastructure",
+      "cspClass": "none",
+      "releaseMarker": false,
+      "precache": false
+    },
+    {
+      "id": "source-maps",
+      "kind": "public-probe-only",
+      "sourcePattern": "^assets/.+\\.map$",
+      "canonicalUrlRule": "preserve-path",
+      "expectedStatus": 404,
+      "mediaType": null,
+      "cacheClass": "infrastructure",
+      "cspClass": "none",
+      "releaseMarker": false,
+      "precache": false
+    },
+    {
+      "id": "index-redirect",
+      "kind": "public-probe-only",
+      "sourcePattern": "^index\\.html$",
+      "canonicalUrlRule": "exact:/index.html",
+      "expectedStatus": 307,
+      "location": "/",
+      "mediaType": null,
+      "cacheClass": "infrastructure",
+      "cspClass": "none",
+      "releaseMarker": false,
+      "precache": false
+    }
+  ]
+}

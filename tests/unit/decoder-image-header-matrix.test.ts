@@ -1,0 +1,372 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  ImageHeaderError,
+  inspectImageHeader,
+  orientationCorrectedDimensions,
+  parseImageHeaderBytes,
+  validateStaticImageStructure,
+} from "../../decoder-worker/imageHeaders";
+
+const chars = (value: string) => Array.from(value, (character) => character.charCodeAt(0));
+const be16 = (value: number) => [(value >>> 8) & 0xff, value & 0xff];
+const be32 = (value: number) => [
+  (value >>> 24) & 0xff,
+  (value >>> 16) & 0xff,
+  (value >>> 8) & 0xff,
+  value & 0xff,
+];
+const le32 = (value: number) => [
+  value & 0xff,
+  (value >>> 8) & 0xff,
+  (value >>> 16) & 0xff,
+  (value >>> 24) & 0xff,
+];
+
+function pngChunk(type: string, data: readonly number[]): number[] {
+  return [...be32(data.length), ...chars(type), ...data, 0, 0, 0, 0];
+}
+
+function pngIhdr(
+  width: number,
+  height: number,
+  bitDepth = 8,
+  colorType = 6,
+  compression = 0,
+  filter = 0,
+  interlace = 0,
+): number[] {
+  return pngChunk("IHDR", [
+    ...be32(width),
+    ...be32(height),
+    bitDepth,
+    colorType,
+    compression,
+    filter,
+    interlace,
+  ]);
+}
+
+function pngFromChunks(chunks: readonly number[][]): Uint8Array {
+  return Uint8Array.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ...chunks.flat(),
+  ]);
+}
+
+function png(width = 1, height = 1): Uint8Array {
+  return pngFromChunks([pngIhdr(width, height), pngChunk("IDAT", [0]), pngChunk("IEND", [])]);
+}
+
+function webpChunk(type: string, data: readonly number[], padding = 0): number[] {
+  return [
+    ...chars(type),
+    ...le32(data.length),
+    ...data,
+    ...(data.length % 2 === 1 ? [padding] : []),
+  ];
+}
+
+function vp8lData(width: number, height: number): number[] {
+  const w = width - 1;
+  const h = height - 1;
+  return [
+    0x2f,
+    w & 0xff,
+    ((w >>> 8) & 0x3f) | ((h & 0x03) << 6),
+    (h >>> 2) & 0xff,
+    (h >>> 10) & 0x0f,
+  ];
+}
+
+function vp8xData(width: number, height: number, flags = 0): number[] {
+  const w = width - 1;
+  const h = height - 1;
+  return [
+    flags,
+    0,
+    0,
+    0,
+    w & 0xff,
+    (w >>> 8) & 0xff,
+    (w >>> 16) & 0xff,
+    h & 0xff,
+    (h >>> 8) & 0xff,
+    (h >>> 16) & 0xff,
+  ];
+}
+
+function webpFromChunks(chunks: readonly number[][]): Uint8Array {
+  const body = [...chars("WEBP"), ...chunks.flat()];
+  return Uint8Array.from([...chars("RIFF"), ...le32(body.length), ...body]);
+}
+
+function webp(width = 1, height = 1, padding = 0): Uint8Array {
+  return webpFromChunks([webpChunk("VP8L", vp8lData(width, height), padding)]);
+}
+
+function jpegSegment(marker: number, data: readonly number[]): number[] {
+  return [0xff, marker, ...be16(data.length + 2), ...data];
+}
+
+function exifOrientation(orientation: number, littleEndian: boolean): number[] {
+  return littleEndian
+    ? [
+        ...chars("Exif"), 0, 0, ...chars("II"), 42, 0, 8, 0, 0, 0,
+        1, 0, 0x12, 0x01, 3, 0, 1, 0, 0, 0, orientation, 0, 0, 0, 0, 0, 0, 0,
+      ]
+    : [
+        ...chars("Exif"), 0, 0, ...chars("MM"), 0, 42, 0, 0, 0, 8,
+        0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, orientation, 0, 0, 0, 0, 0, 0,
+      ];
+}
+
+function jpeg(
+  orientation = 1,
+  littleEndian = true,
+  width = 3,
+  height = 2,
+): Uint8Array {
+  const sof = [8, ...be16(height), ...be16(width), 1, 1, 0x11, 0];
+  return Uint8Array.from([
+    0xff,
+    0xd8,
+    ...jpegSegment(0xe1, exifOrientation(orientation, littleEndian)),
+    ...jpegSegment(0xc0, sof),
+    0xff,
+    0xda,
+  ]);
+}
+
+function blobFrom(bytes: Uint8Array): Blob {
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  return new Blob([copy]);
+}
+
+function expectHeaderError(run: () => unknown, code: string): void {
+  try {
+    run();
+  } catch (error) {
+    expect(error).toBeInstanceOf(ImageHeaderError);
+    expect((error as ImageHeaderError).code).toBe(code);
+    return;
+  }
+  throw new Error(`Expected ImageHeaderError(${code})`);
+}
+
+describe("encoded image header boundary matrix", () => {
+  it.each([
+    [8_192, 1, true],
+    [8_193, 1, false],
+    [5_000, 5_000, true],
+    [5_000, 5_001, false],
+    [0, 1, false],
+  ])("enforces PNG dimensions %d x %d", (width, height, accepted) => {
+    const bytes = png(width, height);
+    if (accepted) {
+      expect(parseImageHeaderBytes(bytes, bytes.length)).toMatchObject({ width, height });
+    } else {
+      expect(() => parseImageHeaderBytes(bytes, bytes.length)).toThrow(ImageHeaderError);
+    }
+  });
+
+  it.each([
+    [4, 2, 0, 0, 0],
+    [8, 5, 0, 0, 0],
+    [8, 6, 1, 0, 0],
+    [8, 6, 0, 1, 0],
+    [8, 6, 0, 0, 2],
+  ])(
+    "rejects invalid PNG IHDR bitDepth=%d colorType=%d compression=%d filter=%d interlace=%d",
+    (bitDepth, colorType, compression, filter, interlace) => {
+      const bytes = pngFromChunks([
+        pngIhdr(1, 1, bitDepth, colorType, compression, filter, interlace),
+        pngChunk("IDAT", [0]),
+        pngChunk("IEND", []),
+      ]);
+      expectHeaderError(() => parseImageHeaderBytes(bytes, bytes.length), "malformed-header");
+    },
+  );
+
+  it("requires exact MIME when one is declared", () => {
+    const fixtures = [
+      [png(), "image/png"],
+      [webp(), "image/webp"],
+      [jpeg(), "image/jpeg"],
+    ] as const;
+    for (const [bytes, mime] of fixtures) {
+      expect(parseImageHeaderBytes(bytes, bytes.length, "").mime).toBe(mime);
+      expect(parseImageHeaderBytes(bytes, bytes.length, mime).mime).toBe(mime);
+      expectHeaderError(
+        () => parseImageHeaderBytes(bytes, bytes.length, "application/octet-stream"),
+        "mime-mismatch",
+      );
+    }
+  });
+
+  it("distinguishes an incomplete bounded prefix from a malformed complete JPEG", () => {
+    const truncated = Uint8Array.from([0xff, 0xd8, 0xff, 0xe1, 0, 100, 1, 2, 3]);
+    expectHeaderError(
+      () => parseImageHeaderBytes(truncated, truncated.length + 100),
+      "metadata-too-large",
+    );
+    expectHeaderError(
+      () => parseImageHeaderBytes(truncated, truncated.length),
+      "malformed-header",
+    );
+  });
+
+  it.each([true, false])("parses all EXIF orientations in %s-endian TIFF", (littleEndian) => {
+    for (let orientation = 1; orientation <= 8; orientation += 1) {
+      const bytes = jpeg(orientation, littleEndian);
+      const header = parseImageHeaderBytes(bytes, bytes.length);
+      expect(header.orientation).toBe(orientation);
+      expect(orientationCorrectedDimensions(header)).toEqual(
+        orientation >= 5 ? { width: 2, height: 3 } : { width: 3, height: 2 },
+      );
+    }
+  });
+
+  it.each([0, 9])("rejects EXIF orientation %d", (orientation) => {
+    const bytes = jpeg(orientation);
+    expectHeaderError(() => parseImageHeaderBytes(bytes, bytes.length), "malformed-header");
+  });
+
+  it("rejects duplicate JPEG orientation and dimension declarations", () => {
+    const exif = jpegSegment(0xe1, exifOrientation(1, true));
+    const sof = jpegSegment(0xc0, [8, ...be16(2), ...be16(3), 1, 1, 0x11, 0]);
+    const duplicateExif = Uint8Array.from([
+      0xff, 0xd8, ...exif, ...exif, ...sof, 0xff, 0xda,
+    ]);
+    const duplicateSof = Uint8Array.from([
+      0xff, 0xd8, ...sof, ...sof, 0xff, 0xda,
+    ]);
+    expectHeaderError(
+      () => parseImageHeaderBytes(duplicateExif, duplicateExif.length),
+      "malformed-header",
+    );
+    expectHeaderError(
+      () => parseImageHeaderBytes(duplicateSof, duplicateSof.length),
+      "malformed-header",
+    );
+  });
+
+  it("rejects animated and dimension-inconsistent extended WebP", () => {
+    const animated = webpFromChunks([
+      webpChunk("VP8X", vp8xData(1, 1, 0x02)),
+      webpChunk("VP8L", vp8lData(1, 1)),
+    ]);
+    const mismatch = webpFromChunks([
+      webpChunk("VP8X", vp8xData(2, 1)),
+      webpChunk("VP8L", vp8lData(1, 1)),
+    ]);
+    expectHeaderError(() => parseImageHeaderBytes(animated, animated.length), "animated-image");
+    expectHeaderError(() => parseImageHeaderBytes(mismatch, mismatch.length), "malformed-header");
+  });
+
+  it("rejects oversized-axis and over-pixel WebP dimensions", () => {
+    for (const [width, height] of [[8_193, 1], [5_000, 5_001]]) {
+      const bytes = webp(width, height);
+      expectHeaderError(() => parseImageHeaderBytes(bytes, bytes.length), "invalid-dimensions");
+    }
+    const maximumEncodedDimensions = webpFromChunks([
+      webpChunk("VP8L", [0x2f, 0xff, 0xff, 0xff, 0x0f]),
+    ]);
+    expectHeaderError(
+      () => parseImageHeaderBytes(maximumEncodedDimensions, maximumEncodedDimensions.length),
+      "invalid-dimensions",
+    );
+  });
+
+  it("checks empty and oversized blobs before slicing", async () => {
+    const empty = { size: 0, type: "", slice: () => new Blob() } as Blob;
+    const oversized = {
+      size: 25_000_001,
+      type: "image/png",
+      slice: () => new Blob(),
+    } as Blob;
+    await expect(inspectImageHeader(empty)).rejects.toMatchObject({ code: "malformed-header" });
+    await expect(inspectImageHeader(oversized)).rejects.toMatchObject({ code: "file-too-large" });
+  });
+});
+
+describe("complete static image structure matrix", () => {
+  it.each([
+    [
+      "unknown critical PNG chunk",
+      pngFromChunks([
+        pngIhdr(1, 1),
+        pngChunk("ABCD", []),
+        pngChunk("IDAT", [0]),
+        pngChunk("IEND", []),
+      ]),
+    ],
+    [
+      "non-contiguous PNG IDAT",
+      pngFromChunks([
+        pngIhdr(1, 1),
+        pngChunk("IDAT", [0]),
+        pngChunk("tEXt", []),
+        pngChunk("IDAT", [0]),
+        pngChunk("IEND", []),
+      ]),
+    ],
+    [
+      "indexed PNG without PLTE",
+      pngFromChunks([
+        pngIhdr(1, 1, 8, 3),
+        pngChunk("IDAT", [0]),
+        pngChunk("IEND", []),
+      ]),
+    ],
+    [
+      "grayscale PNG with PLTE",
+      pngFromChunks([
+        pngIhdr(1, 1, 8, 0),
+        pngChunk("PLTE", [0, 0, 0]),
+        pngChunk("IDAT", [0]),
+        pngChunk("IEND", []),
+      ]),
+    ],
+    [
+      "PNG data after IEND",
+      pngFromChunks([
+        pngIhdr(1, 1),
+        pngChunk("IDAT", [0]),
+        pngChunk("IEND", []),
+        pngChunk("tEXt", []),
+      ]),
+    ],
+  ])("rejects %s", async (_label, bytes) => {
+    const header = parseImageHeaderBytes(bytes, bytes.length);
+    await expect(validateStaticImageStructure(blobFrom(bytes), header)).rejects.toMatchObject({
+      code: "malformed-structure",
+    });
+  });
+
+  it("rejects nonzero WebP padding after the primary image", async () => {
+    const bytes = webp(1, 1, 0xff);
+    const header = parseImageHeaderBytes(bytes, bytes.length);
+    await expect(validateStaticImageStructure(blobFrom(bytes), header)).rejects.toMatchObject({
+      code: "malformed-structure",
+    });
+  });
+
+  it("rejects duplicate WebP primary chunks and ALPH with VP8L", async () => {
+    const duplicate = webpFromChunks([
+      webpChunk("VP8L", vp8lData(1, 1)),
+      webpChunk("VP8L", vp8lData(1, 1)),
+    ]);
+    const alphaLossless = webpFromChunks([
+      webpChunk("ALPH", []),
+      webpChunk("VP8L", vp8lData(1, 1)),
+    ]);
+    for (const bytes of [duplicate, alphaLossless]) {
+      const header = parseImageHeaderBytes(bytes, bytes.length);
+      await expect(validateStaticImageStructure(blobFrom(bytes), header)).rejects.toMatchObject({
+        code: "malformed-structure",
+      });
+    }
+  });
+});
