@@ -11,6 +11,7 @@ const METADATA_TIMEOUT_MS = 10_000;
 const MAX_INPUT_AXIS = 8_192;
 const MAX_INPUT_PIXELS = 25_000_000;
 const MAX_CAPTURE_AXIS = 2_048;
+const EMPTY_DEVICES: readonly MediaDeviceInfo[] = Object.freeze([]);
 
 export type CameraProblem =
   | "camera-unavailable"
@@ -72,7 +73,10 @@ export interface CameraControllerOptions<Result> {
   readonly onAccepted: (accepted: CameraAccepted<Result>) => void;
   readonly onOverflow: () => void;
   readonly onProblem: (problem: CameraProblem) => void;
-  readonly onDevices: (devices: readonly MediaDeviceInfo[]) => void;
+  readonly onDevices: (
+    devices: readonly MediaDeviceInfo[],
+    activeDeviceId: string | null,
+  ) => void;
   readonly onCapabilities: (capabilities: {
     readonly zoom: { readonly min: number; readonly max: number; readonly step: number } | null;
     readonly zoomValue: number | null;
@@ -283,7 +287,7 @@ export class CameraController<Result> {
   #epoch = 0;
   #timer: number | null = null;
   #inFlight = false;
-  #metadataAbort: AbortController | null = null;
+  #startupAbort: AbortController | null = null;
   #frameAbort: AbortController | null = null;
   #pendingFrame: DetectionFrame | null = null;
   #suspended = false;
@@ -342,6 +346,9 @@ export class CameraController<Result> {
       await this.#startStream(exactDeviceConstraints(deviceId), switchEpoch);
       return;
     } catch {
+      if (switchEpoch !== this.#epoch) {
+        return;
+      }
       this.#teardownStream();
     }
 
@@ -352,6 +359,9 @@ export class CameraController<Result> {
         this.#onProblem("camera-switch-unavailable");
         return;
       } catch {
+        if (recoveryEpoch !== this.#epoch) {
+          return;
+        }
         this.#teardownStream();
       }
     }
@@ -413,6 +423,12 @@ export class CameraController<Result> {
     if (this.#stream === null) {
       return;
     }
+    // A resize is one of the events that can make video metadata usable. Do not
+    // abort that startup wait; doing so would make the original start stale and
+    // leave the camera view mounted without a live stream or an error.
+    if (this.#startupAbort !== null) {
+      return;
+    }
     this.#advanceEpoch();
     this.#schedule(0);
   }
@@ -459,21 +475,34 @@ export class CameraController<Result> {
     this.#video.playsInline = true;
     this.#video.srcObject = stream;
 
+    const startupAbort = new AbortController();
+    this.#startupAbort = startupAbort;
     try {
-      const metadataAbort = new AbortController();
-      this.#metadataAbort = metadataAbort;
       try {
         await this.#video.play();
-        await waitForMetadata(this.#video, metadataAbort.signal);
+        await waitForMetadata(this.#video, startupAbort.signal);
+        if (
+          startupAbort.signal.aborted ||
+          epoch !== this.#epoch ||
+          this.#stream !== stream ||
+          this.#suspended
+        ) {
+          throw new DOMException("Stale camera playback", "AbortError");
+        }
+        await this.#captureConformanceProbe();
+        if (
+          startupAbort.signal.aborted ||
+          epoch !== this.#epoch ||
+          this.#stream !== stream ||
+          this.#suspended
+        ) {
+          throw new DOMException("Stale camera probe", "AbortError");
+        }
       } finally {
-        if (this.#metadataAbort === metadataAbort) {
-          this.#metadataAbort = null;
+        if (this.#startupAbort === startupAbort) {
+          this.#startupAbort = null;
         }
       }
-      if (epoch !== this.#epoch || this.#stream !== stream) {
-        throw new DOMException("Stale camera playback", "AbortError");
-      }
-      await this.#captureConformanceProbe();
     } catch (error) {
       stopStream(stream);
       if (this.#stream === stream) {
@@ -483,6 +512,9 @@ export class CameraController<Result> {
       throw error;
     }
 
+    if (epoch !== this.#epoch || this.#stream !== stream || this.#suspended) {
+      throw new DOMException("Stale camera publication", "AbortError");
+    }
     track.addEventListener(
       "ended",
       () => {
@@ -495,11 +527,18 @@ export class CameraController<Result> {
       { once: true },
     );
     this.#publishCapabilities(track);
-    await this.#enumerateDevices();
-    this.#installDeviceChange();
-    if (epoch === this.#epoch) {
-      this.#schedule(0);
+    if (epoch !== this.#epoch || this.#stream !== stream || this.#suspended) {
+      throw new DOMException("Stale camera listener", "AbortError");
     }
+    // Hide choices from the previous stream until fresh enumeration completes,
+    // while synchronously publishing which camera is actually active.
+    this.#onDevices(EMPTY_DEVICES, this.#activeDeviceId);
+    if (epoch !== this.#epoch || this.#stream !== stream || this.#suspended) {
+      throw new DOMException("Stale camera device publication", "AbortError");
+    }
+    this.#installDeviceChange();
+    this.#schedule(0);
+    void this.#enumerateDevices();
   }
 
   async #captureConformanceProbe(): Promise<void> {
@@ -567,10 +606,10 @@ export class CameraController<Result> {
         seen.add(device.deviceId);
         return true;
       });
-      this.#onDevices(Object.freeze(cameras));
+      this.#onDevices(Object.freeze(cameras), this.#activeDeviceId);
     } catch {
       if (epoch === this.#epoch && stream !== null && this.#stream === stream && !this.#suspended) {
-        this.#onDevices(Object.freeze([]));
+        this.#onDevices(EMPTY_DEVICES, this.#activeDeviceId);
       }
     }
   }
@@ -747,8 +786,8 @@ export class CameraController<Result> {
     this.#epoch += 1;
     this.#pendingFrame = null;
     const abort = new DOMException("Camera operation superseded", "AbortError");
-    this.#metadataAbort?.abort(abort);
-    this.#metadataAbort = null;
+    this.#startupAbort?.abort(abort);
+    this.#startupAbort = null;
     this.#frameAbort?.abort(abort);
     this.#frameAbort = null;
     if (this.#timer !== null) {

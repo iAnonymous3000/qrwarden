@@ -1,6 +1,6 @@
 # QRWarden
 
-QRWarden is a local-first progressive web app for inspecting QR codes before acting on them. Scans stay in the browser, decoded content is not uploaded, and the app does not visit a destination while analyzing it.
+QRWarden is a production-grade, local-first progressive web app for inspecting QR codes before acting on them. Scans stay in the browser, decoded content is not uploaded, and the app does not visit a destination while analyzing it. It is intentionally a pre-action QR inspector, not a barcode generator, scan history, or automation suite.
 
 ## What it does
 
@@ -30,7 +30,7 @@ npm run dev
 
 The committed `.npmrc` makes plain npm installs skip lifecycle scripts. The explicit flags above enable scripts only for the exact reviewed `allowScripts` entries and fail closed on an unclassified hook.
 
-Run the full local verification suite before submitting a change:
+Run the full local verification suite for every source or release change:
 
 ```sh
 npm run validate
@@ -44,7 +44,7 @@ npm run test:browser
 
 ## Release engineering
 
-Releases are produced by a fail-closed pipeline. `npm run release:validate` rejects placeholder release constants and runs the complete verification suite:
+Releases are produced by a fail-closed pipeline. Production-grade source is not presented as a signed public release until operator identity, canonical-domain, signing, deployment, and live-verification gates all pass. `npm run release:validate` rejects placeholder release constants and runs the complete verification suite:
 
 ```sh
 npm run validate:constants

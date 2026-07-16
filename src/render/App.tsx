@@ -42,6 +42,7 @@ import {
 import type { OfflineState, ServiceWorkerClient } from "../sw/client";
 import { presentFieldValue } from "./fieldPresentation";
 import { detectInstallGuidance } from "./installGuidance";
+import type { ThemeController } from "./theme";
 import {
   presentUpdateInstall,
   type UpdateActivationFeedback,
@@ -69,6 +70,7 @@ export interface AppProps {
   readonly sourceRepository: string | null;
   readonly statusEvents: EventTarget;
   readonly bridge: RuntimeBridge;
+  readonly themeController: ThemeController;
 }
 
 interface SelectionEntry {
@@ -92,6 +94,7 @@ type View =
 
 interface CameraUi {
   readonly devices: readonly MediaDeviceInfo[];
+  readonly activeDeviceId: string | null;
   readonly zoom: { readonly min: number; readonly max: number; readonly step: number } | null;
   readonly zoomValue: number;
   readonly torchAvailable: boolean;
@@ -101,6 +104,7 @@ interface CameraUi {
 
 const EMPTY_CAMERA_UI: CameraUi = Object.freeze({
   devices: Object.freeze([]),
+  activeDeviceId: null,
   zoom: null,
   zoomValue: 1,
   torchAvailable: false,
@@ -418,6 +422,12 @@ export function App(props: AppProps) {
   const cameraRef = useRef<CameraController<DetectionResult> | null>(null);
   const cameraTaskCount = useRef(0);
   const [cameraTaskRevision, setCameraTaskRevision] = useState(0);
+  const [theme, setTheme] = useState(props.themeController.theme);
+
+  useEffect(
+    () => props.themeController.subscribe(setTheme),
+    [props.themeController],
+  );
 
   const trackCameraTask = (task: Promise<unknown>): void => {
     cameraTaskCount.current += 1;
@@ -433,6 +443,9 @@ export function App(props: AppProps) {
     const previous = viewRef.current;
     if (previous.kind === "selection" && previous !== next) {
       previous.preview.dispose();
+    }
+    if (previous.kind !== next.kind) {
+      window.scrollTo(0, 0);
     }
     viewRef.current = next;
     setView(next);
@@ -651,8 +664,8 @@ export function App(props: AppProps) {
           setCameraUi((current) => ({ ...current, notice: problem }));
         }
       },
-      onDevices: (devices) =>
-        setCameraUi((current) => ({ ...current, devices })),
+      onDevices: (devices, activeDeviceId) =>
+        setCameraUi((current) => ({ ...current, devices, activeDeviceId })),
       onCapabilities: (capabilities) =>
         setCameraUi((current) => ({
           ...current,
@@ -741,6 +754,7 @@ export function App(props: AppProps) {
 
   const offline = offlineCopy(offlineState);
   const controlsDisabled = locked;
+  const cameraTaskBusy = cameraTaskCount.current > 0;
   // The visible workflow controls the affordance; the client rechecks the
   // full synchronous idle predicate before sending activation coordination.
   const updateInstall = presentUpdateInstall({
@@ -752,7 +766,7 @@ export function App(props: AppProps) {
   });
 
   return (
-    <div class="app-shell">
+    <div class={`app-shell view-${view.kind}`}>
       <a class="skip-link" href="#main-content">
         Skip to content
       </a>
@@ -769,22 +783,37 @@ export function App(props: AppProps) {
             <small>{COPY.tagline}</small>
           </span>
         </button>
-        <nav aria-label="Information">
+        <div class="header-actions">
+          <nav aria-label="Information">
+            <button
+              type="button"
+              aria-current={view.kind === "privacy" ? "page" : undefined}
+              onClick={() => navigateInfo("privacy")}
+            >
+              Privacy
+            </button>
+            <button
+              type="button"
+              aria-current={view.kind === "about" ? "page" : undefined}
+              onClick={() => navigateInfo("about")}
+            >
+              About
+            </button>
+          </nav>
           <button
             type="button"
-            aria-current={view.kind === "privacy" ? "page" : undefined}
-            onClick={() => navigateInfo("privacy")}
+            class="theme-toggle"
+            aria-label="Dark mode"
+            aria-pressed={theme === "dark"}
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            onClick={() => props.themeController.toggle()}
           >
-            Privacy
+            <span class="theme-toggle-label" aria-hidden="true">Dark</span>
+            <span class="theme-toggle-track" aria-hidden="true">
+              <span />
+            </span>
           </button>
-          <button
-            type="button"
-            aria-current={view.kind === "about" ? "page" : undefined}
-            onClick={() => navigateInfo("about")}
-          >
-            About
-          </button>
-        </nav>
+        </div>
       </header>
 
       <main id="main-content" class="main-content">
@@ -926,12 +955,20 @@ export function App(props: AppProps) {
                 <label>
                   Camera
                   <select
-                    disabled={locked}
+                    value={cameraUi.activeDeviceId ?? ""}
+                    disabled={locked || cameraTaskBusy}
                     onChange={(event) => {
                       const task = cameraRef.current?.switchDevice(event.currentTarget.value);
                       if (task !== undefined) trackCameraTask(task);
                     }}
                   >
+                    {!cameraUi.devices.some(
+                      (device) => device.deviceId === cameraUi.activeDeviceId,
+                    ) ? (
+                      <option value={cameraUi.activeDeviceId ?? ""} disabled>
+                        Camera selected automatically
+                      </option>
+                    ) : null}
                     {cameraUi.devices.map((device, index) => (
                       <option value={device.deviceId} key={device.deviceId}>
                         {device.label || `Camera ${index + 1}`}
@@ -945,7 +982,7 @@ export function App(props: AppProps) {
                   Zoom
                   <input
                     type="range"
-                    disabled={locked}
+                    disabled={locked || cameraTaskBusy}
                     min={cameraUi.zoom.min}
                     max={cameraUi.zoom.max}
                     step={cameraUi.zoom.step}
@@ -968,7 +1005,7 @@ export function App(props: AppProps) {
                 <button
                   type="button"
                   class="secondary-button"
-                  disabled={locked}
+                  disabled={locked || cameraTaskBusy}
                   aria-pressed={cameraUi.torchEnabled}
                   onClick={() => {
                     const enabled = !cameraUi.torchEnabled;
@@ -1251,7 +1288,7 @@ export function App(props: AppProps) {
             <h2>No destination lookup</h2>
             <p>QRWarden does not visit decoded links, request favicons, check reputation, or send scan contents to a server. Analysis uses only the bytes inside the QR code and pinned data shipped with the app.</p>
             <h2>No scan history</h2>
-            <p>Images, decoded content, and reports are kept only in memory while you review them. They are not stored in browser databases or URLs.</p>
+            <p>Images, decoded content, and reports are kept only in memory while you review them. They are not stored in browser databases, caches, or URLs. Offline caches contain application files only, and a short-lived session marker may hold a release identifier while a verified update activates; neither contains scan contents. QRWarden may also store your light or dark appearance choice.</p>
             <h2>App hosting traffic</h2>
             <p>Opening or updating QRWarden sends ordinary HTTPS requests for application files to the host. The host, hosting provider, and network can observe connection metadata such as your IP address, request time, user agent, and requested application files. QRWarden does not add scan contents to those requests.</p>
             <h2>Actions you control</h2>

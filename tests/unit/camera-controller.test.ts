@@ -151,6 +151,7 @@ interface Harness {
   readonly mediaDevices: MediaDevicesDouble;
   readonly canvases: CanvasDouble[];
   readonly bitmaps: BitmapDouble[];
+  readonly createBitmap: ReturnType<typeof vi.fn>;
   readonly decoder: {
     readonly decodeCameraFrame: ReturnType<typeof vi.fn>;
     readonly restart: ReturnType<typeof vi.fn>;
@@ -245,6 +246,7 @@ function createHarness(): Harness {
     mediaDevices,
     canvases,
     bitmaps,
+    createBitmap,
     decoder,
     onAccepted,
     onOverflow,
@@ -312,10 +314,15 @@ describe("CameraController lifecycle", () => {
       torch: true,
       torchEnabled: false,
     });
-    expect(harness.onDevices).toHaveBeenCalledExactlyOnceWith([
-      expect.objectContaining({ deviceId: "front" }),
-      expect.objectContaining({ deviceId: "rear" }),
-    ]);
+    expect(harness.onDevices).toHaveBeenNthCalledWith(1, [], "front");
+    expect(harness.onDevices).toHaveBeenNthCalledWith(
+      2,
+      [
+        expect.objectContaining({ deviceId: "front" }),
+        expect.objectContaining({ deviceId: "rear" }),
+      ],
+      "front",
+    );
     expect(harness.addDeviceListener).toHaveBeenCalledWith(
       "devicechange",
       expect.any(Function),
@@ -424,6 +431,112 @@ describe("CameraController lifecycle", () => {
     expect(harness.controller.active).toBe(false);
     expect(harness.onProblem).not.toHaveBeenCalled();
     expect(harness.decoder.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("keeps camera startup alive when the viewport changes before metadata is ready", async () => {
+    const harness = createHarness();
+    const { starting } = await beginMetadataWait(harness);
+    const startupEpoch = harness.controller.epoch;
+
+    harness.controller.orientationChanged();
+
+    expect(harness.controller.epoch).toBe(startupEpoch);
+    harness.video.videoWidth = 480;
+    harness.video.videoHeight = 640;
+    harness.video.dispatchEvent(new Event("resize"));
+    await starting;
+
+    expect(harness.controller.active).toBe(true);
+    expect(harness.video.srcObject).toBe(harness.stream);
+    expect(harness.onProblem).not.toHaveBeenCalled();
+    harness.controller.cancel();
+  });
+
+  it("does not publish stale startup state when cancelled during the capture probe", async () => {
+    const harness = createHarness();
+    const probe = deferred<BitmapDouble>();
+    harness.createBitmap.mockReset().mockReturnValueOnce(probe.promise);
+
+    const starting = harness.controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(harness.createBitmap).toHaveBeenCalledOnce();
+    const startupEpoch = harness.controller.epoch;
+
+    harness.controller.orientationChanged();
+    expect(harness.controller.epoch).toBe(startupEpoch);
+    harness.controller.cancel();
+    harness.onCapabilities.mockClear();
+    harness.addDeviceListener.mockClear();
+
+    const bitmap = bitmapDouble();
+    probe.resolve(bitmap);
+    await starting;
+
+    expect(bitmap.close).toHaveBeenCalledOnce();
+    expect(harness.controller.active).toBe(false);
+    expect(harness.onCapabilities).not.toHaveBeenCalled();
+    expect(harness.onDevices).not.toHaveBeenCalled();
+    expect(harness.addDeviceListener).not.toHaveBeenCalled();
+    expect(harness.onProblem).not.toHaveBeenCalled();
+  });
+
+  it("starts decoding without waiting for slow device enumeration", async () => {
+    const harness = createHarness();
+    const enumeration = deferred<MediaDeviceInfo[]>();
+    harness.mediaDevices.enumerateDevices.mockReset().mockReturnValueOnce(enumeration.promise);
+
+    await harness.controller.start();
+
+    expect(harness.controller.active).toBe(true);
+    expect(harness.mediaDevices.enumerateDevices).toHaveBeenCalledOnce();
+    expect(harness.addDeviceListener).toHaveBeenCalledWith(
+      "devicechange",
+      expect.any(Function),
+    );
+    expect(vi.getTimerCount()).toBe(1);
+    expect(harness.onDevices).toHaveBeenCalledExactlyOnceWith([], "front");
+
+    harness.controller.cancel();
+    expect(harness.removeDeviceListener).toHaveBeenCalledWith(
+      "devicechange",
+      expect.any(Function),
+    );
+    enumeration.resolve([]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(harness.onDevices).toHaveBeenCalledExactlyOnceWith([], "front");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("hides stale choices and publishes the active camera before switched enumeration", async () => {
+    const harness = createHarness();
+    await harness.controller.start();
+    harness.onDevices.mockClear();
+
+    const rearTrack = new TrackDouble("rear");
+    const rearStream = streamFor(rearTrack);
+    const enumeration = deferred<MediaDeviceInfo[]>();
+    harness.mediaDevices.getUserMedia.mockResolvedValueOnce(rearStream);
+    harness.mediaDevices.enumerateDevices.mockReset().mockReturnValueOnce(enumeration.promise);
+
+    await harness.controller.switchDevice("rear");
+
+    expect(harness.video.srcObject).toBe(rearStream);
+    expect(harness.onDevices).toHaveBeenCalledExactlyOnceWith([], "rear");
+
+    enumeration.resolve([mediaDevice("front"), mediaDevice("rear")]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(harness.onDevices).toHaveBeenLastCalledWith(
+      [
+        expect.objectContaining({ deviceId: "front" }),
+        expect.objectContaining({ deviceId: "rear" }),
+      ],
+      "rear",
+    );
+    harness.controller.cancel();
   });
 
   it("removes work once on suspension and reports only a hidden suspension", async () => {
@@ -683,5 +796,37 @@ describe("CameraController timeout and constraints", () => {
 
     harness.controller.cancel();
     expect(recoveryTrack.stop).toHaveBeenCalledOnce();
+  });
+
+  it("does not let an older device switch tear down the newest stream", async () => {
+    const harness = createHarness();
+    await harness.controller.start();
+
+    const rearTrack = new TrackDouble("rear");
+    const rearStream = streamFor(rearTrack);
+    const wideTrack = new TrackDouble("wide");
+    const wideStream = streamFor(wideTrack);
+    const rearPermission = deferred<MediaStream>();
+    const widePermission = deferred<MediaStream>();
+    harness.mediaDevices.getUserMedia
+      .mockReset()
+      .mockReturnValueOnce(rearPermission.promise)
+      .mockReturnValueOnce(widePermission.promise);
+
+    const switchingRear = harness.controller.switchDevice("rear");
+    const switchingWide = harness.controller.switchDevice("wide");
+    widePermission.resolve(wideStream);
+    await switchingWide;
+    rearPermission.resolve(rearStream);
+    await switchingRear;
+
+    expect(harness.controller.active).toBe(true);
+    expect(harness.video.srcObject).toBe(wideStream);
+    expect(rearTrack.stop).toHaveBeenCalledOnce();
+    expect(wideTrack.stop).not.toHaveBeenCalled();
+    expect(harness.onProblem).not.toHaveBeenCalled();
+
+    harness.controller.cancel();
+    expect(wideTrack.stop).toHaveBeenCalledOnce();
   });
 });

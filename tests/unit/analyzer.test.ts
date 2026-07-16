@@ -79,7 +79,8 @@ describe("normative URL corpus", () => {
 
 describe("ordered payload classification", () => {
   it("keeps Wi-Fi credentials inert and masked", () => {
-    const report = analyzeText("WIFI:T:WPA;S:Cafe\\;Guest;P:swordfish;H:true;;");
+    const source = "WIFI:T:WPA;S:Cafe\\;Guest;P:swordfish;H:true;;";
+    const report = analyzeText(source);
     expect(report.kind).toBe("wifi");
     expect(report.actionPolicy).toBe("inspect-only");
     expect(field(report, "ssid").value).toBe("Cafe;Guest");
@@ -88,6 +89,13 @@ describe("ordered payload classification", () => {
       sensitive: true,
       masked: true,
     });
+    expect(field(report, "original")).toMatchObject({
+      actionValue: source,
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
+    expect(report.displayFields.at(-1)?.id).toBe("original");
   });
 
   it.each([
@@ -99,56 +107,120 @@ describe("ordered payload classification", () => {
     expect(report.kind).toBe(kind);
     expect(report.actionPolicy).toBe("inspect-only");
     expect(field(report, fieldId)).toMatchObject({ sensitive: true, masked: true });
+    expect(report.displayFields.filter((item) => item.actionValue === text)).toHaveLength(1);
+    expect(report.displayFields.some((item) => item.id === "original")).toBe(false);
   });
 
-  it("renders bounded vCard fields but omits active resource properties", () => {
-    const report = analyzeText(
-      [
-        "BEGIN:VCARD",
-        "VERSION:4.0",
-        "FN:Alice\\, Example",
-        "EMAIL:alice@example.test",
-        "URL:https://example.test/profile",
-        "PHOTO:https://example.test/photo.jpg",
-        "END:VCARD",
-      ].join("\r\n"),
-    );
+  it("renders bounded vCard highlights and retains omitted resource properties inertly", () => {
+    const source = [
+      "BEGIN:VCARD",
+      "VERSION:4.0",
+      "FN:Alice\\, Example",
+      "EMAIL:alice@example.test",
+      "URL:https://example.test/profile",
+      "PHOTO:https://example.test/photo.jpg",
+      "END:VCARD",
+    ].join("\r\n");
+    const report = analyzeText(source);
     expect(report.kind).toBe("contact");
-    expect(report.displayFields.map((item) => item.value)).toEqual([
+    expect(report.displayFields.slice(0, -1).map((item) => item.value)).toEqual([
       "Alice, Example",
       "alice@example.test",
     ]);
+    expect(field(report, "original")).toMatchObject({
+      actionValue: source,
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
   });
 
-  it("recognizes MECARD and calendar without exposing attachments", () => {
+  it("recognizes MECARD and retains calendar attachments only in the masked source", () => {
     expect(analyzeText("MECARD:N:Alice;TEL:+15551234;;").kind).toBe("contact");
-    const calendar = analyzeText(
-      [
-        "BEGIN:VCALENDAR",
-        "BEGIN:VEVENT",
-        "SUMMARY:Meeting",
-        "LOCATION:Room 1",
-        "ATTACH:https://example.test/file",
-        "END:VEVENT",
-        "END:VCALENDAR",
-      ].join("\n"),
-    );
+    const source = [
+      "BEGIN:VCALENDAR",
+      "BEGIN:VEVENT",
+      "SUMMARY:Meeting",
+      "LOCATION:Room 1",
+      "ATTACH:https://example.test/file",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\n");
+    const calendar = analyzeText(source);
     expect(calendar.kind).toBe("calendar");
-    expect(calendar.displayFields.map((item) => item.value)).toEqual(["Meeting", "Room 1"]);
+    expect(calendar.displayFields.slice(0, -1).map((item) => item.value)).toEqual([
+      "Meeting",
+      "Room 1",
+    ]);
+    expect(field(calendar, "original").actionValue).toBe(source);
   });
 
   it.each([
-    ["mailto:alice@example.test?body=hidden", "email"],
-    ["sms:+15551234?body=hidden", "sms"],
+    [
+      "mailto:alice@example.test?subject=Hello%20there&body=hidden",
+      "email",
+      "alice@example.test",
+    ],
+    ["sms:+15551234?body=hidden", "sms", "+15551234"],
     ["tel:+15551234", "telephone"],
-    ["geo:37.7,-122.4?q=hidden", "geo"],
-    ["bitcoin:bc1qexample?amount=1", "payment"],
-    ["ftp://example.test/file", "custom-uri"],
-  ])("keeps %s inert as %s", (text, kind) => {
+    ["geo:37.7,-122.4?q=Coffee%20Shop", "geo", "37.7,-122.4"],
+    [
+      "bitcoin:bc1qexample?amount=1.25&label=Alice&message=Lunch",
+      "payment",
+      "bitcoin",
+    ],
+    ["ftp://example.test/file?token=hidden", "custom-uri", "ftp"],
+  ])("keeps %s exactly inspectable and inert as %s", (text, kind, highlight) => {
     const report = analyzeText(text);
     expect(report.kind).toBe(kind);
     expect(report.actionPolicy).toBe("inspect-only");
     expect(report.canonicalHref).toBeUndefined();
+    if (highlight !== undefined) {
+      expect(report.displayFields.some((item) => item.value === highlight)).toBe(true);
+    }
+    expect(field(report, "original")).toMatchObject({
+      actionValue: text,
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
+    expect(report.displayFields.at(-1)?.id).toBe("original");
+  });
+
+  it("escapes and bounds a custom URI display without changing its exact source", () => {
+    const source = `example:before\u202Eafter${"😀".repeat(
+      ANALYZER_LIMITS.fieldScalars + 5,
+    )}`;
+    const report = analyzeText(source);
+    const original = field(report, "original");
+
+    expect(report.kind).toBe("custom-uri");
+    expect(original.actionValue).toBe(source);
+    expect(original.value).toContain("[U+202E]");
+    expect(Array.from(original.value)).toHaveLength(ANALYZER_LIMITS.fieldScalars);
+    expect(original.truncated).toBe(true);
+  });
+
+  it("reserves exact structured source before report-scalar highlight budgeting", () => {
+    const source = [
+      "BEGIN:VCARD",
+      `FN:${"a".repeat(ANALYZER_LIMITS.fieldScalars)}`,
+      `ORG:${"b".repeat(ANALYZER_LIMITS.fieldScalars)}`,
+      `TITLE:${"c".repeat(ANALYZER_LIMITS.fieldScalars)}`,
+      `NOTE:${"d".repeat(ANALYZER_LIMITS.fieldScalars)}`,
+      "END:VCARD",
+    ].join("\n");
+    const report = analyzeText(source);
+
+    expect(report.kind).toBe("contact");
+    expect(field(report, "original").actionValue).toBe(source);
+    expect(report.displayFields.at(-1)?.id).toBe("original");
+    expect(report.displayFields.map((item) => item.id)).toEqual([
+      "fn-0",
+      "org-1",
+      "title-2",
+      "original",
+    ]);
   });
 
   it("classifies empty payload separately from whitespace text", () => {

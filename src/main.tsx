@@ -7,6 +7,7 @@ import {
 import { DecoderWorkerClient } from "./decoder";
 import { App, type AppStatusDetail, type RuntimeBridge } from "./render/App";
 import "./render/styles.css";
+import { createBrowserThemeController } from "./render/theme";
 import {
   replayServiceWorkerStatus,
   ServiceWorkerClient,
@@ -23,6 +24,7 @@ const root = document.getElementById("app");
 if (root === null) {
   throw new TypeError("Missing application root");
 }
+const themeController = createBrowserThemeController();
 
 const trustedScripts = initializeTrustedWorkerScripts();
 const workerFactory = (): Worker =>
@@ -75,12 +77,6 @@ if (import.meta.env.DEV) {
     dropReport: () => bridge.dropReport(),
     decoderSmoke: smokeDecoder,
   });
-  try {
-    await serviceWorker.gate();
-  } catch {
-    offlineState = "update-failed";
-    locked = true;
-  }
 }
 
 render(
@@ -96,13 +92,24 @@ render(
     sourceRepository={__QRWARDEN_SOURCE_REPOSITORY__}
     statusEvents={statusEvents}
     bridge={bridge}
+    themeController={themeController}
   />,
   root,
 );
 
-// First-install verification continues without blanking the initial UI. Replay
-// the authoritative snapshot after App's layout subscription is installed so
-// a completion event cannot be lost between gate() and the first commit.
+// Render the locked shell before service-worker registration or state queries.
+// Slow mobile storage and lifecycle APIs must not leave a blank page, while no
+// scan or report action becomes available until the gate explicitly unlocks.
+if (serviceWorker !== null) {
+  void serviceWorker.gate().catch(() => {
+    offlineState = "update-failed";
+    locked = true;
+    emit({ offlineState, locked });
+  });
+}
+
+// Replay the authoritative snapshot after App's subscription is installed so
+// a synchronous startup state cannot be lost around the first commit.
 replayServiceWorkerStatus(
   () => ({ offlineState, locked }),
   (snapshot) => emit(snapshot),

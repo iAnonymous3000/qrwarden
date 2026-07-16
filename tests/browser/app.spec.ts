@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
 import { COPY } from "../../src/copy";
+import { THEME_STORAGE_KEY } from "../../src/render/theme";
 
 const fixture = new URL("../corpus/url-review.png", import.meta.url).pathname;
 const canaryFixture = new URL("../corpus/canary-url.png", import.meta.url).pathname;
@@ -30,6 +31,74 @@ const expectedSourceRepository =
 const expectedPermissionsPolicy = permissionsRegistry.directives
   .map(({ name, allow }) => `${name}=(${allow === "self" ? "self" : ""})`)
   .join(", ");
+
+test("follows the system theme and persists an explicit choice", async ({
+  context,
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/");
+
+  const root = page.locator("html");
+  const toggle = page.getByRole("button", { name: "Dark mode" });
+  await expect(root).toHaveAttribute("data-theme", "light");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
+    "content",
+    "#fffdf8",
+  );
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(root).toHaveAttribute("data-theme", "dark");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+  await toggle.focus();
+  await page.keyboard.press("Space");
+  await expect(root).toHaveAttribute("data-theme", "light");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect
+    .poll(() => page.evaluate((key) => localStorage.getItem(key), THEME_STORAGE_KEY))
+    .toBe("light");
+
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(root).toHaveAttribute("data-theme", "light");
+
+  await page.close();
+  const reopened = await context.newPage();
+  await reopened.goto("/");
+  await expect(reopened.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(reopened.getByRole("button", { name: "Dark mode" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+});
+
+test("keeps theme controls usable when preference storage is blocked", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get: () => {
+        throw new DOMException("Storage blocked", "SecurityError");
+      },
+    });
+  });
+  await page.goto("/");
+
+  const root = page.locator("html");
+  const toggle = page.getByRole("button", { name: "Dark mode" });
+  await expect(root).toHaveAttribute("data-theme", /^(?:dark|light)$/u);
+  const initialTheme = await root.getAttribute("data-theme");
+  expect(initialTheme === "dark" || initialTheme === "light").toBe(true);
+  await toggle.click();
+  await expect(root).toHaveAttribute(
+    "data-theme",
+    initialTheme === "dark" ? "light" : "dark",
+  );
+  await expect(
+    page.getByRole("heading", { name: COPY.primaryMessage }),
+  ).toBeVisible();
+});
 
 test("scans an image locally and requires two-step review", async ({ page }) => {
   const destinationRequests: string[] = [];
@@ -258,6 +327,140 @@ test("offers a real camera restart after background suspension", async ({
   )).toBe(2);
 });
 
+test("shows and switches from the camera that is actually active", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== "chromium",
+    "The deterministic canvas-backed camera fixture is a Chromium contract.",
+  );
+  await page.addInitScript(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 640;
+    canvas.height = 480;
+    const context = canvas.getContext("2d");
+    context?.fillRect(0, 0, canvas.width, canvas.height);
+    const calls: string[] = [];
+    let releaseConstraint: (() => void) | null = null;
+    const devices: MediaDeviceInfo[] = [
+      {
+        deviceId: "front",
+        groupId: "phone",
+        kind: "videoinput",
+        label: "Front camera",
+        toJSON: () => ({}),
+      },
+      {
+        deviceId: "rear",
+        groupId: "phone",
+        kind: "videoinput",
+        label: "Rear camera",
+        toJSON: () => ({}),
+      },
+    ];
+    const streamFor = (deviceId: string): MediaStream => {
+      const stream = canvas.captureStream(1);
+      const track = stream.getVideoTracks()[0];
+      if (track === undefined) throw new Error("Missing fixture video track");
+      const getSettings = track.getSettings.bind(track);
+      let zoom = 1;
+      let torch = false;
+      Object.defineProperty(track, "getSettings", {
+        configurable: true,
+        value: () => ({ ...getSettings(), deviceId, torch, zoom }),
+      });
+      Object.defineProperty(track, "getCapabilities", {
+        configurable: true,
+        value: () => ({ torch: true, zoom: { min: 1, max: 3, step: 1 } }),
+      });
+      Object.defineProperty(track, "applyConstraints", {
+        configurable: true,
+        value: (constraints: MediaTrackConstraints) => new Promise<void>((resolve) => {
+          const advanced = constraints.advanced?.[0] as
+            | (MediaTrackConstraintSet & { torch?: boolean; zoom?: number })
+            | undefined;
+          releaseConstraint = () => {
+            if (typeof advanced?.zoom === "number") zoom = advanced.zoom;
+            if (typeof advanced?.torch === "boolean") torch = advanced.torch;
+            releaseConstraint = null;
+            resolve();
+          };
+        }),
+      });
+      window.setTimeout(() => {
+        context?.fillRect(0, 0, 1, 1);
+        const requestFrame = (track as MediaStreamTrack & { requestFrame?: () => void })
+          .requestFrame;
+        requestFrame?.call(track);
+      }, 0);
+      return stream;
+    };
+    Object.assign(window, {
+      __qrwardenCameraChoices: {
+        calls,
+        releaseConstraint: () => releaseConstraint?.(),
+      },
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        enumerateDevices: () => Promise.resolve(devices),
+        getUserMedia: (constraints: MediaStreamConstraints) => {
+          let deviceId = "rear";
+          const video = constraints.video;
+          if (typeof video === "object" && video !== null) {
+            const requested = video.deviceId;
+            if (typeof requested === "object" && requested !== null) {
+              const exact = requested.exact;
+              if (typeof exact === "string") deviceId = exact;
+            }
+          }
+          calls.push(deviceId);
+          return Promise.resolve(streamFor(deviceId));
+        },
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Scan with camera" }).click();
+  const camera = page.getByRole("combobox", { name: "Camera", exact: true });
+  await expect(camera).toBeEnabled();
+  await expect(camera).toHaveCSS("font-size", "16px");
+  await expect(camera).toHaveValue("rear");
+  await expect(camera.locator("option:checked")).toHaveText("Rear camera");
+
+  const zoom = page.getByRole("slider", { name: "Zoom" });
+  const torch = page.getByRole("button", { name: "Turn torch on" });
+  await zoom.evaluate((input: HTMLInputElement) => {
+    input.value = "2";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(camera).toBeDisabled();
+  await expect(zoom).toBeDisabled();
+  await expect(torch).toBeDisabled();
+  await page.evaluate(() =>
+    (window as unknown as {
+      __qrwardenCameraChoices: { releaseConstraint: () => void };
+    }).__qrwardenCameraChoices.releaseConstraint(),
+  );
+  await expect(camera).toBeEnabled();
+  await expect(zoom).toBeEnabled();
+  await expect(torch).toBeEnabled();
+
+  await camera.selectOption("front");
+
+  await expect(camera).toBeEnabled();
+  await expect(camera).toHaveValue("front");
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { __qrwardenCameraChoices: { calls: string[] } })
+      .__qrwardenCameraChoices.calls,
+  )).toEqual(["rear", "front"]);
+});
+
 test("does not contact a decoded DNS or HTTP canary during inspection", async ({
   page,
 }) => {
@@ -439,6 +642,26 @@ test("fails closed when a selection canvas cannot acquire a 2D context", async (
   ).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Choose a QR code" })).toHaveCount(0);
   await expect(page.locator(".selection-canvas")).toHaveCount(0);
+});
+
+test("renders a locked shell while service-worker startup is still pending", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(Object.getPrototypeOf(navigator.serviceWorker), "getRegistration", {
+      configurable: true,
+      value: () => new Promise<ServiceWorkerRegistration | undefined>(() => undefined),
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(
+    page.getByRole("heading", { name: COPY.primaryMessage }),
+  ).toBeVisible();
+  await expect(page.getByText(COPY.preparingOfflineHeading, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Scan with camera" })).toBeDisabled();
+  await expect(page.locator('input[type="file"]')).toBeDisabled();
 });
 
 test("keeps scanner controls usable when service-worker storage is blocked", async ({ page }) => {

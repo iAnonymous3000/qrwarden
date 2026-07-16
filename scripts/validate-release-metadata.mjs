@@ -165,7 +165,7 @@ const expectedManifest = {
   start_url: "/",
   scope: "/",
   display: "standalone",
-  background_color: "#f5f5f4",
+  background_color: "#0c0a09",
   theme_color: "#1c1c1c",
   icons: [
     { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
@@ -175,6 +175,24 @@ const expectedManifest = {
   ]
 };
 equal(await json("public/app.webmanifest"), expectedManifest, "public/app.webmanifest");
+
+try {
+  const indexHtml = await readFile(new URL("index.html", root), "utf8");
+  const colorSchemeTags = indexHtml.match(/<meta\s+name="color-scheme"\s+content="[^"]+">/gu) ?? [];
+  const themeColorTags = indexHtml.match(/<meta\s+name="theme-color"\s+content="[^"]+">/gu) ?? [];
+  equal(
+    colorSchemeTags,
+    ['<meta name="color-scheme" content="dark light">'],
+    "index color-scheme metadata",
+  );
+  equal(
+    themeColorTags,
+    ['<meta name="theme-color" content="#1c1c1c">'],
+    "index theme-color metadata",
+  );
+} catch (error) {
+  errors.push(`index.html: ${error instanceof Error ? error.message : String(error)}`);
+}
 
 const permissions = await json("release/permissions-policy.json");
 const deniedPermissions = [
