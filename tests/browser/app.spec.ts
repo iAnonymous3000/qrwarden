@@ -472,6 +472,9 @@ test("does not contact a decoded DNS or HTTP canary during inspection", async ({
   });
 
   await page.goto("/");
+  await expect(page.getByText(COPY.readyOfflineHeading, { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
   await page.evaluate(() => {
     const violations: string[] = [];
     const liveAttributes = [

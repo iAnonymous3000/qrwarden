@@ -103,6 +103,9 @@ test("reflows review, confirmation, and multi-code selection at mobile widths", 
   page,
 }) => {
   await page.goto("/");
+  await expect(page.getByText(COPY.readyOfflineHeading, { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
   const imageInput = page.locator('input[type="file"]');
   await expect(imageInput).toBeEnabled({ timeout: 20_000 });
   await imageInput.setInputFiles(reviewFixture);
