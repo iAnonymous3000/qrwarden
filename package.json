@@ -59,7 +59,7 @@
     "@cyclonedx/cyclonedx-library": "10.1.0",
     "@playwright/test": "1.61.1",
     "@preact/preset-vite": "2.10.5",
-    "@types/node": "24.13.3",
+    "@types/node": "26.1.1",
     "eslint": "10.7.0",
     "license-checker-rseidelsohn": "5.0.1",
     "spdx-exceptions": "2.5.0",
