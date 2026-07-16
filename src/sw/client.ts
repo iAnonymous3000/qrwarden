@@ -219,7 +219,12 @@ export class ServiceWorkerClient {
     const expectedAfterReload = sessionStorage.getItem(UPDATE_MARKER);
 
     let registration = await navigator.serviceWorker.getRegistration("/");
-    if (registration === undefined) {
+    if (
+      registration === undefined ||
+      (registration.active === null &&
+        registration.installing === null &&
+        registration.waiting === null)
+    ) {
       this.#firstInstall = true;
       registration = await navigator.serviceWorker.register(this.#options.scriptURL, {
         scope: "/",

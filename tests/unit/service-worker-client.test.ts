@@ -362,6 +362,42 @@ describe("service-worker release gate races", () => {
     installing.transition("activated");
     await vi.waitFor(() => expect(states).toContain("ready"));
   });
+
+  it("retries an empty registration left by a failed first install", async () => {
+    const installing = new FakeWorker(null);
+    installing.state = "installing";
+    const active = new FakeWorker(readyState());
+    const harness = installHarness(null);
+    harness.serviceWorkers.register.mockImplementationOnce(() => {
+      harness.registration.installing = installing;
+      return Promise.resolve(harness.registration);
+    });
+    const states: OfflineState[] = [];
+    const dropReport = vi.fn();
+    const reload = vi.fn();
+    const client = createClient({
+      onState: (state) => states.push(state),
+      dropReport,
+      reload,
+    });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "preparing",
+    });
+    expect(harness.serviceWorkers.register).toHaveBeenCalledWith("/sw.js", {
+      scope: "/",
+      type: "module",
+      updateViaCache: "none",
+    });
+    expect(dropReport).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+
+    harness.registration.active = active;
+    harness.serviceWorkers.controller = active;
+    installing.transition("activated");
+    await vi.waitFor(() => expect(states).toContain("ready"));
+  });
 });
 
 describe("waiting update activation", () => {
