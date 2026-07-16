@@ -20,8 +20,25 @@ describe("problem recovery actions", () => {
 
     expect(unrelated).not.toHaveLength(0);
     for (const problem of unrelated) {
-      expect(PROBLEM_COPY[problem].primaryAction).toBeUndefined();
+      expect(PROBLEM_COPY[problem].primaryAction).not.toBe("resume-camera");
     }
+  });
+
+  it.each([
+    "camera-unavailable",
+    "camera-access-needed",
+    "no-camera",
+    "camera-could-not-start",
+  ] as const)("offers a direct image fallback for %s", (problem) => {
+    expect(PROBLEM_COPY[problem].primaryAction).toBe("retry-camera");
+    expect(PROBLEM_COPY[problem].imageFallback).toBe(true);
+  });
+
+  it("gives denied iPhone and iPad camera users an actionable settings path", () => {
+    expect(COPY.cameraAccessBody).toContain(
+      "Settings → Privacy & Security → Camera",
+    );
+    expect(COPY.cameraAccessBody).toContain(COPY.chooseImage.toLowerCase());
   });
 
   it("keeps both recovery labels in reviewed copy", () => {

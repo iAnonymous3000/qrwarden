@@ -29,6 +29,8 @@ export const COPY = Object.freeze({
     `You are about to open ${destination}. Review the details above before continuing.`,
   cancel: "Cancel",
   scanAnother: "Scan another code",
+  chooseImage: "Choose an image",
+  retryCamera: "Try camera again",
   resumeScanning: "Resume scanning",
   tryAnotherCode: "Try another code",
   revealWarning: "Sensitive content may be visible to people nearby.",
@@ -84,9 +86,10 @@ export const COPY = Object.freeze({
   updateReadyHeading: "Update ready.",
   updateReadyBody:
     "A QRWarden update is ready. Choose Install update when scanning and review are idle.",
-  updateFailedHeading: "Update failed.",
+  updateFailedHeading: "Update or verification failed.",
   updateFailedBody:
-    "The update could not be installed. QRWarden will try again on a later online launch.",
+    "QRWarden could not finish an update or verify the app files. Reload while online if scanning remains unavailable.",
+  reloadApp: "Reload app",
   installUpdate: "Install update",
   updateBusyBody: "Finish or leave this screen, then choose Install update.",
   updateStartingBody: "Starting the update…",
@@ -97,13 +100,13 @@ export const COPY = Object.freeze({
     "Camera scanning is not available here. Choose an image instead.",
   cameraAccessHeading: "Camera access needed.",
   cameraAccessBody:
-    "QRWarden does not have camera access. Allow the camera in your browser or device settings, or choose an image instead.",
+    "Allow camera access for this site and browser. On iPhone or iPad, open Settings → Privacy & Security → Camera and turn on your browser. You can also choose an image instead.",
   noCameraHeading: "No camera found.",
   noCameraBody:
     "No camera is available on this device. Choose an image instead.",
   cameraStartHeading: "Camera could not start.",
   cameraStartBody:
-    "QRWarden could not start the camera. Close other camera apps or choose an image instead.",
+    "The camera did not respond or could not start. Check camera permission, close other camera apps, try again, or choose an image instead.",
   cameraStoppedHeading: "Camera stopped.",
   cameraStoppedBody:
     "The camera stopped. Tap Resume scanning to start it again.",
@@ -111,6 +114,7 @@ export const COPY = Object.freeze({
   cameraPausedBody:
     "Scanning stopped while QRWarden was in the background. Tap Resume scanning to continue.",
   lookingForCode: "Looking for a code…",
+  startingCamera: "Starting camera…",
   torchUnavailableHeading: "Torch unavailable.",
   torchUnavailableBody:
     "The torch setting could not be changed. Scanning is still active.",

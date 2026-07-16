@@ -7,6 +7,7 @@ import {
 
 const FRAME_INTERVAL_MS = 1000 / 6;
 const ATTEMPT_TIMEOUT_MS = 5_000;
+const USER_MEDIA_TIMEOUT_MS = 30_000;
 const METADATA_TIMEOUT_MS = 10_000;
 const MAX_INPUT_AXIS = 8_192;
 const MAX_INPUT_PIXELS = 25_000_000;
@@ -121,6 +122,49 @@ function stopStream(stream: MediaStream | null): void {
   for (const track of stream?.getTracks() ?? []) {
     track.stop();
   }
+}
+
+function requestUserMedia(
+  constraints: MediaStreamConstraints,
+  signal: AbortSignal,
+): Promise<MediaStream> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = (): void => signal.removeEventListener("abort", onAbort);
+    const rejectOnce = (error: unknown): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onAbort = (): void => rejectOnce(abortReason(signal));
+
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+
+    let request: Promise<MediaStream>;
+    try {
+      request = navigator.mediaDevices.getUserMedia(constraints);
+    } catch (error) {
+      rejectOnce(error);
+      return;
+    }
+    void request.then(
+      (stream) => {
+        if (settled || signal.aborted) {
+          stopStream(stream);
+          return;
+        }
+        settled = true;
+        cleanup();
+        resolve(stream);
+      },
+      rejectOnce,
+    );
+  });
 }
 
 function mapStartError(error: unknown): CameraProblem {
@@ -457,7 +501,10 @@ export class CameraController<Result> {
     constraints: MediaStreamConstraints,
     epoch: number,
   ): Promise<void> {
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const stream = await withCancellableTimeout(
+      (signal) => requestUserMedia(constraints, signal),
+      USER_MEDIA_TIMEOUT_MS,
+    );
     if (epoch !== this.#epoch || this.#suspended || document.visibilityState !== "visible") {
       stopStream(stream);
       throw new DOMException("Stale camera start", "AbortError");

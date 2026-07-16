@@ -142,6 +142,7 @@ h1[tabindex="-1"]:focus-visible { outline: 3px solid var(--focus); outline-offse
 .compact-button { margin-left: auto; border: 1px solid var(--ink); background: var(--paper); color: var(--ink); border-radius: .45rem; padding: .35rem .7rem; font-weight: 700; }
 .strip-feedback { margin: .45rem .85rem 0; color: var(--muted); font-size: .8rem; }
 .version-lock-banner { display: flex; align-items: center; gap: .9rem; margin: .75rem 0 0; padding: .9rem 1rem; border: 1px solid var(--info-border); border-radius: .65rem; background: var(--info-surface); }
+.version-lock-banner > div { min-width: 0; flex: 1; }
 .version-lock-banner p { margin: .15rem 0 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
 
 .hero { padding: clamp(3.5rem, 9vw, 7rem) 0 3rem; text-align: center; }

@@ -35,6 +35,7 @@ class FakeWorker {
   response: WorkerState | "malformed" | null;
   queryCount = 0;
   stateListenerAdds = 0;
+  responseDelayMs = 0;
   readonly messages: Array<{ readonly type?: string }> = [];
   throwsOnPost = false;
   readonly #listeners = new Set<() => void>();
@@ -52,7 +53,12 @@ class FakeWorker {
     const data = this.response === "malformed"
       ? { type: "WORKER_STATE", releaseId: 7 }
       : { type: "WORKER_STATE", ...this.response };
-    transfer?.[0]?.postMessage(data);
+    const respond = (): void => transfer?.[0]?.postMessage(data);
+    if (this.responseDelayMs > 0) {
+      setTimeout(respond, this.responseDelayMs);
+    } else {
+      respond();
+    }
   }
 
   addEventListener(type: string, listener: () => void): void {
@@ -360,6 +366,144 @@ describe("service-worker release gate races", () => {
     expect(harness.storage.has("qrwarden-update-check")).toBe(false);
   });
 
+  it.each([
+    ["a controlled release", false],
+    ["a post-update release", true],
+  ] as const)(
+    "bounds persistent worker-query failures for %s",
+    async (_label, hasMarker) => {
+      vi.useFakeTimers();
+      const worker = new FakeWorker(null);
+      const harness = installHarness(worker);
+      if (hasMarker) harness.storage.set("qrwarden-update-check", RELEASE);
+      const locks: boolean[] = [];
+      const states: OfflineState[] = [];
+      const dropReport = vi.fn();
+      const client = createClient({
+        onLockChange: (locked) => locks.push(locked),
+        onState: (state) => states.push(state),
+        dropReport,
+      });
+
+      const first = client.gate();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(first).resolves.toEqual({
+        controlsEnabled: false,
+        offlineState: "preparing",
+      });
+      await vi.advanceTimersByTimeAsync(2_500);
+      await vi.advanceTimersByTimeAsync(2_500);
+
+      expect(states.at(-1)).toBe("update-failed");
+      expect(locks.at(-1)).toBe(true);
+      expect(dropReport).toHaveBeenCalledOnce();
+      expect(harness.serviceWorkers.getRegistration).toHaveBeenCalledTimes(3);
+      if (hasMarker) {
+        expect(harness.storage.get("qrwarden-update-check")).toBe(RELEASE);
+      }
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(harness.serviceWorkers.getRegistration).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it("degrades an unresponsive controller-free registration without polling forever", async () => {
+    vi.useFakeTimers();
+    const worker = new FakeWorker(null);
+    const harness = installHarness(worker);
+    harness.serviceWorkers.controller = null;
+    const locks: boolean[] = [];
+    const states: OfflineState[] = [];
+    const dropReport = vi.fn();
+    const client = createClient({
+      onLockChange: (locked) => locks.push(locked),
+      onState: (state) => states.push(state),
+      dropReport,
+    });
+
+    const first = client.gate();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await first;
+    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.advanceTimersByTimeAsync(2_500);
+
+    expect(states.at(-1)).toBe("incomplete");
+    expect(locks.at(-1)).toBe(false);
+    expect(dropReport).not.toHaveBeenCalled();
+    expect(harness.serviceWorkers.getRegistration).toHaveBeenCalledTimes(3);
+
+    harness.windowHandlers.get("pageshow")?.({ persisted: true });
+    await Promise.resolve();
+    expect(harness.serviceWorkers.getRegistration).toHaveBeenCalledTimes(3);
+    expect(locks.at(-1)).toBe(false);
+  });
+
+  it.each([false, true])(
+    "ignores an unresponsive waiting worker after required state is verified (marker: %s)",
+    async (hasMarker) => {
+      vi.useFakeTimers();
+      const active = new FakeWorker(readyState());
+      const waiting = new FakeWorker(null);
+      const harness = installHarness(active);
+      harness.registration.waiting = waiting;
+      if (hasMarker) harness.storage.set("qrwarden-update-check", RELEASE);
+      const client = createClient();
+
+      const gate = client.gate();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(gate).resolves.toEqual({
+        controlsEnabled: true,
+        offlineState: "ready",
+      });
+      expect(harness.serviceWorkers.getRegistration).toHaveBeenCalledOnce();
+      expect(harness.storage.has("qrwarden-update-check")).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(harness.serviceWorkers.getRegistration).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("bounds a registration lookup that never settles", async () => {
+    vi.useFakeTimers();
+    const harness = installHarness(null);
+    harness.serviceWorkers.getRegistration.mockReturnValueOnce(
+      new Promise(() => undefined),
+    );
+    const client = createClient();
+
+    const gate = client.gate();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    await expect(gate).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "incomplete",
+    });
+    harness.windowHandlers.get("pageshow")?.({ persisted: true });
+    await Promise.resolve();
+    expect(harness.serviceWorkers.getRegistration).toHaveBeenCalledOnce();
+  });
+
+  it("bounds a first registration that never settles", async () => {
+    vi.useFakeTimers();
+    const harness = installHarness(null);
+    harness.serviceWorkers.getRegistration.mockResolvedValueOnce(undefined);
+    harness.serviceWorkers.register.mockReturnValueOnce(
+      new Promise(() => undefined),
+    );
+    const client = createClient();
+
+    const gate = client.gate();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    await expect(gate).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "incomplete",
+    });
+    harness.windowHandlers.get("pageshow")?.({ persisted: true });
+    await Promise.resolve();
+    expect(harness.serviceWorkers.register).toHaveBeenCalledOnce();
+  });
+
   it("coalesces concurrent lifecycle gates into one registration pass", async () => {
     const worker = new FakeWorker(readyState());
     const harness = installHarness(worker);
@@ -626,6 +770,167 @@ describe("waiting update activation", () => {
 
     await vi.waitFor(() => expect(states.at(-1)).toBe("update-failed"));
     expect(locks.at(-1)).toBe(false);
+  });
+
+  it("does not retry lease reconciliation forever when workers stop responding", async () => {
+    vi.useFakeTimers();
+    const active = new FakeWorker(readyState());
+    const waiting = new FakeWorker(waitingState());
+    const harness = installHarness(active);
+    harness.registration.waiting = waiting;
+    const reload = vi.fn();
+    const client = createClient({ reload });
+    const nonce = "c".repeat(32);
+    const release = waitingState().releaseId;
+
+    await client.gate();
+    const message = harness.workerHandlers.get("message");
+    message?.({
+      data: { type: "PREPARE_UPDATE", nonce, release },
+      source: waiting,
+    });
+    active.response = null;
+    waiting.response = null;
+    message?.({
+      data: { type: "ACTIVATION_COMMITTED", nonce, release },
+      source: waiting,
+    });
+
+    await vi.advanceTimersByTimeAsync(32_000);
+
+    expect(reload).toHaveBeenCalledOnce();
+    expect(harness.storage.get("qrwarden-update-check")).toBe(release);
+  });
+
+  it("does not mark an unresponsive failed activation as committed", async () => {
+    vi.useFakeTimers();
+    const active = new FakeWorker(readyState());
+    const waiting = new FakeWorker(waitingState());
+    const harness = installHarness(active);
+    harness.registration.waiting = waiting;
+    const locks: boolean[] = [];
+    const states: OfflineState[] = [];
+    const reload = vi.fn();
+    const client = createClient({
+      onLockChange: (locked) => locks.push(locked),
+      onState: (state) => states.push(state),
+      reload,
+    });
+    const nonce = "d".repeat(32);
+    const release = waitingState().releaseId;
+
+    await client.gate();
+    const message = harness.workerHandlers.get("message");
+    message?.({
+      data: { type: "PREPARE_UPDATE", nonce, release },
+      source: waiting,
+    });
+    active.response = null;
+    waiting.response = null;
+    message?.({
+      data: { type: "ACTIVATION_FAILED", nonce, release },
+      source: waiting,
+    });
+
+    await vi.advanceTimersByTimeAsync(62_000);
+
+    expect(reload).not.toHaveBeenCalled();
+    expect(harness.storage.has("qrwarden-update-check")).toBe(false);
+    expect(states.at(-1)).toBe("update-failed");
+    expect(locks.at(-1)).toBe(false);
+  });
+
+  it("keeps an unknown unresponsive lease locked without writing a marker", async () => {
+    vi.useFakeTimers();
+    const active = new FakeWorker(readyState());
+    const waiting = new FakeWorker(waitingState());
+    const harness = installHarness(active);
+    harness.registration.waiting = waiting;
+    const locks: boolean[] = [];
+    const states: OfflineState[] = [];
+    const dropReport = vi.fn();
+    const reload = vi.fn();
+    const client = createClient({
+      onLockChange: (locked) => locks.push(locked),
+      onState: (state) => states.push(state),
+      dropReport,
+      reload,
+    });
+    const nonce = "e".repeat(32);
+    const release = waitingState().releaseId;
+
+    await client.gate();
+    const message = harness.workerHandlers.get("message");
+    message?.({
+      data: { type: "PREPARE_UPDATE", nonce, release },
+      source: waiting,
+    });
+    active.response = null;
+    waiting.response = null;
+
+    await vi.advanceTimersByTimeAsync(62_000);
+
+    expect(reload).not.toHaveBeenCalled();
+    expect(harness.storage.has("qrwarden-update-check")).toBe(false);
+    expect(dropReport).toHaveBeenCalledOnce();
+    expect(states.at(-1)).toBe("update-failed");
+    expect(locks.at(-1)).toBe(true);
+
+    active.response = readyState();
+    waiting.response = waitingState();
+    message?.({
+      data: { type: "ACTIVATION_FAILED", nonce, release },
+      source: waiting,
+    });
+    await vi.waitFor(() => expect(locks.at(-1)).toBe(false));
+    harness.windowHandlers.get("pageshow")?.({ persisted: true });
+    await vi.waitFor(() => expect(states.at(-1)).toBe("update-ready"));
+    expect(locks.at(-1)).toBe(false);
+  });
+
+  it("does not let stale lease reconciliation release a newer lease", async () => {
+    vi.useFakeTimers();
+    const active = new FakeWorker(readyState());
+    const waiting = new FakeWorker(waitingState());
+    const harness = installHarness(active);
+    harness.registration.waiting = waiting;
+    const locks: boolean[] = [];
+    const states: OfflineState[] = [];
+    const client = createClient({
+      onLockChange: (locked) => locks.push(locked),
+      onState: (state) => states.push(state),
+    });
+    const firstNonce = "f".repeat(32);
+    const secondNonce = "0".repeat(32);
+    const release = waitingState().releaseId;
+
+    await client.gate();
+    const message = harness.workerHandlers.get("message");
+    message?.({
+      data: { type: "PREPARE_UPDATE", nonce: firstNonce, release },
+      source: waiting,
+    });
+    active.responseDelayMs = 1_000;
+    waiting.responseDelayMs = 1_000;
+    message?.({
+      data: { type: "ACTIVATION_FAILED", nonce: firstNonce, release },
+      source: waiting,
+    });
+    message?.({
+      data: { type: "RELEASE_UPDATE_PREPARE", nonce: firstNonce, release },
+      source: waiting,
+    });
+    message?.({
+      data: { type: "PREPARE_UPDATE", nonce: secondNonce, release },
+      source: waiting,
+    });
+    locks.length = 0;
+    states.length = 0;
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(locks).not.toContain(false);
+    expect(states).not.toContain("update-failed");
   });
 
   it("reports unavailable and reconciles when no waiting worker remains", async () => {

@@ -2,6 +2,8 @@ import type { QrwardenTrustedScriptURL } from "../app/trustedScripts";
 
 const QUERY_TIMEOUT_MS = 2_000;
 const QUERY_RETRY_MS = 500;
+const REGISTRATION_TIMEOUT_MS = 10_000;
+const MAX_REQUIRED_QUERY_ATTEMPTS = 3;
 const PREPARE_LEASE_MS = 60_000;
 const UPDATE_MARKER = "qrwarden-update-check";
 
@@ -88,6 +90,8 @@ interface UpdateLease {
   timeout: number;
 }
 
+type LeaseReconcileOutcome = "committed" | "failed" | "unknown";
+
 interface WorkerMessage {
   readonly type?: string;
   readonly nonce?: string;
@@ -102,6 +106,31 @@ type WorkerQueryResult =
   | { readonly kind: "absent" }
   | { readonly kind: "unavailable" }
   | { readonly kind: "state"; readonly state: WorkerState };
+
+function settleBeforeTimeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new DOMException("Service worker operation timed out", "TimeoutError"));
+    }, milliseconds);
+    void promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
 
 async function queryWorker(
   worker: ServiceWorker | null,
@@ -209,12 +238,20 @@ export class ServiceWorkerClient {
   #gateInFlight: Promise<ReleaseGateResult> | null = null;
   #gateReplayRequested = false;
   #queryRetryTimer: number | null = null;
+  #requiredQueryAttempts = 0;
+  #terminalGateResult: ReleaseGateResult | null = null;
 
   constructor(options: ServiceWorkerClientOptions) {
     this.#options = options;
   }
 
   async gate(): Promise<ReleaseGateResult> {
+    if (this.#terminalGateResult !== null) {
+      return this.#applyGateResult(
+        this.#terminalGateResult.controlsEnabled,
+        this.#terminalGateResult.offlineState,
+      );
+    }
     // Lifecycle callers must synchronously disable every report/action control
     // before the first asynchronous registration query can yield.
     this.#options.onLockChange(true);
@@ -245,7 +282,10 @@ export class ServiceWorkerClient {
     let registration: ServiceWorkerRegistration;
     try {
       this.#installListeners();
-      const existing = await navigator.serviceWorker.getRegistration("/");
+      const existing = await settleBeforeTimeout(
+        navigator.serviceWorker.getRegistration("/"),
+        REGISTRATION_TIMEOUT_MS,
+      );
       if (
         existing === undefined ||
         (existing.active === null &&
@@ -253,17 +293,22 @@ export class ServiceWorkerClient {
           existing.waiting === null)
       ) {
         this.#firstInstall = true;
-        registration = await navigator.serviceWorker.register(this.#options.scriptURL, {
-          scope: "/",
-          type: "module",
-          updateViaCache: "none",
-        });
+        registration = await settleBeforeTimeout(
+          navigator.serviceWorker.register(this.#options.scriptURL, {
+            scope: "/",
+            type: "module",
+            updateViaCache: "none",
+          }),
+          REGISTRATION_TIMEOUT_MS,
+        );
       } else {
         registration = existing;
       }
-    } catch {
+    } catch (error) {
       this.#registration = null;
       this.#firstInstall = false;
+      const timedOut =
+        error instanceof DOMException && error.name === "TimeoutError";
       if (
         expectedAfterReload !== null ||
         navigator.serviceWorker.controller !== null ||
@@ -271,25 +316,38 @@ export class ServiceWorkerClient {
         this.#reloadStarted
       ) {
         this.#options.dropReport();
-        return this.#applyGateResult(false, "update-failed");
+        return timedOut
+          ? this.#latchGateResult(false, "update-failed")
+          : this.#applyGateResult(false, "update-failed");
       }
-      return this.#applyGateResult(true, "incomplete");
+      return timedOut
+        ? this.#latchGateResult(true, "incomplete")
+        : this.#applyGateResult(true, "incomplete");
     }
     this.#registration = registration;
 
+    const controllerSnapshot = navigator.serviceWorker.controller;
     const [activeQuery, controllerQuery, waitingQuery] = await Promise.all([
       queryWorker(registration.active),
-      queryWorker(navigator.serviceWorker.controller),
+      queryWorker(controllerSnapshot),
       queryWorker(registration.waiting),
     ]);
-    if (queryUnavailable(activeQuery, controllerQuery, waitingQuery)) {
-      this.#scheduleQueryRetry();
-      return this.#applyGateResult(false, "preparing");
+    if (
+      activeQuery.kind === "unavailable" ||
+      controllerQuery.kind === "unavailable"
+    ) {
+      return this.#handleRequiredQueryFailure(
+        expectedAfterReload,
+        controllerSnapshot,
+      );
     }
+    this.#resetRequiredQueryFailures();
     this.#clearQueryRetry();
     const active = queriedState(activeQuery);
     const controller = queriedState(controllerQuery);
-    const waiting = queriedState(waitingQuery);
+    const waiting = waitingQuery.kind === "unavailable"
+      ? null
+      : queriedState(waitingQuery);
 
     if (expectedAfterReload !== null) {
       if (
@@ -395,6 +453,7 @@ export class ServiceWorkerClient {
       this.#handleWorkerMessage(event);
     });
     navigator.serviceWorker.addEventListener("controllerchange", () => {
+      this.#resetRequiredQueryFailures();
       this.#options.onLockChange(true);
       void this.#handleControllerChange();
     });
@@ -457,8 +516,10 @@ export class ServiceWorkerClient {
       }
       const activeQuery = await queryWorker(registration.active);
       if (activeQuery.kind === "unavailable") {
-        this.#scheduleQueryRetry();
-        this.#applyGateResult(false, "preparing");
+        this.#handleRequiredQueryFailure(
+          readUpdateMarker(),
+          navigator.serviceWorker.controller,
+        );
         return;
       }
       const active = queriedState(activeQuery);
@@ -473,10 +534,13 @@ export class ServiceWorkerClient {
         navigator.serviceWorker.controller,
       );
       if (controllerQuery.kind === "unavailable") {
-        this.#scheduleQueryRetry();
-        this.#applyGateResult(false, "preparing");
+        this.#handleRequiredQueryFailure(
+          readUpdateMarker(),
+          navigator.serviceWorker.controller,
+        );
         return;
       }
+      this.#resetRequiredQueryFailures();
       const controller = queriedState(controllerQuery);
       if (controller?.releaseId !== this.#options.loadedRelease) {
         throw new DOMException("First install controller mismatch", "SecurityError");
@@ -538,6 +602,7 @@ export class ServiceWorkerClient {
       message.type === "CACHE_VERIFICATION_COMPLETE" &&
       message.release === this.#options.loadedRelease
     ) {
+      this.#resetRequiredQueryFailures();
       this.#regateFromLifecycle();
       return;
     }
@@ -550,6 +615,7 @@ export class ServiceWorkerClient {
       // benign deferral, not an activation failure. Release this document's
       // prepare lease, then re-read the authoritative worker state so the
       // waiting update remains retryable when it is still present.
+      this.#resetRequiredQueryFailures();
       this.#releaseLease(false);
       this.#regateFromLifecycle();
       return;
@@ -559,7 +625,8 @@ export class ServiceWorkerClient {
       message.type === "ACTIVATION_FAILED" &&
       this.#leaseMatches(message)
     ) {
-      void this.#reconcileLease(false);
+      this.#resetRequiredQueryFailures();
+      void this.#reconcileLease("failed");
       return;
     }
 
@@ -579,7 +646,7 @@ export class ServiceWorkerClient {
         window.clearTimeout(lease.timeout);
         const shortenedDeadline = Math.min(lease.deadline, performance.now() + 30_000);
         lease.timeout = window.setTimeout(() => {
-          void this.#reconcileLease(true);
+          void this.#reconcileLease("committed");
         }, Math.max(0, shortenedDeadline - performance.now()));
       }
     }
@@ -619,7 +686,7 @@ export class ServiceWorkerClient {
       timeout: 0,
     };
     lease.timeout = window.setTimeout(() => {
-      void this.#reconcileLease(true);
+      void this.#reconcileLease("unknown");
     }, PREPARE_LEASE_MS);
     this.#lease = lease;
     this.#options.onLockChange(true);
@@ -636,6 +703,14 @@ export class ServiceWorkerClient {
     }
   }
 
+  #failUnverifiedLease(): void {
+    if (this.#lease !== null) {
+      window.clearTimeout(this.#lease.timeout);
+    }
+    this.#options.dropReport();
+    this.#latchGateResult(false, "update-failed");
+  }
+
   #leaseMatches(message: WorkerMessage): boolean {
     return (
       this.#lease !== null &&
@@ -644,7 +719,7 @@ export class ServiceWorkerClient {
     );
   }
 
-  async #reconcileLease(afterCommit: boolean): Promise<void> {
+  async #reconcileLease(outcome: LeaseReconcileOutcome): Promise<void> {
     const lease = this.#lease;
     const registration = this.#registration;
     if (lease === null || registration === null) {
@@ -655,12 +730,28 @@ export class ServiceWorkerClient {
       queryWorker(navigator.serviceWorker.controller),
       queryWorker(registration.waiting),
     ]);
+    if (this.#lease !== lease) {
+      return;
+    }
     if (queryUnavailable(activeQuery, controllerQuery, waitingQuery)) {
+      const remaining = lease.deadline - performance.now();
+      if (outcome === "committed") {
+        this.#guardedReload(lease.release);
+        return;
+      }
+      if (remaining <= 0) {
+        if (outcome === "failed") {
+          this.#releaseLease(true);
+        } else {
+          this.#failUnverifiedLease();
+        }
+        return;
+      }
       if (this.#lease === lease) {
         window.clearTimeout(lease.timeout);
         lease.timeout = window.setTimeout(() => {
-          void this.#reconcileLease(afterCommit);
-        }, QUERY_RETRY_MS);
+          void this.#reconcileLease(outcome);
+        }, Math.min(QUERY_RETRY_MS, remaining));
       }
       return;
     }
@@ -682,8 +773,19 @@ export class ServiceWorkerClient {
       this.#releaseLease(true);
       return;
     }
-    if (afterCommit || performance.now() >= lease.deadline) {
+    if (outcome === "committed") {
       this.#guardedReload(lease.release);
+      return;
+    }
+    if (performance.now() >= lease.deadline) {
+      const currentReleaseVerified =
+        active?.releaseId === this.#options.loadedRelease &&
+        controller?.releaseId === this.#options.loadedRelease;
+      if (outcome === "failed" || currentReleaseVerified) {
+        this.#releaseLease(true);
+      } else {
+        this.#failUnverifiedLease();
+      }
     }
   }
 
@@ -727,6 +829,46 @@ export class ServiceWorkerClient {
     }, milliseconds);
   }
 
+  #handleRequiredQueryFailure(
+    expectedAfterReload: string | null,
+    controllerSnapshot: ServiceWorker | null,
+  ): ReleaseGateResult {
+    this.#requiredQueryAttempts += 1;
+    if (this.#requiredQueryAttempts < MAX_REQUIRED_QUERY_ATTEMPTS) {
+      this.#scheduleQueryRetry();
+      return this.#applyGateResult(false, "preparing");
+    }
+
+    this.#clearQueryRetry();
+    const canDegrade =
+      expectedAfterReload === null &&
+      controllerSnapshot === null &&
+      this.#lease === null &&
+      !this.#reloadStarted;
+    if (canDegrade) {
+      this.#firstInstall = false;
+      return this.#latchGateResult(true, "incomplete");
+    }
+
+    this.#options.dropReport();
+    return this.#latchGateResult(false, "update-failed");
+  }
+
+  #latchGateResult(
+    controlsEnabled: boolean,
+    offlineState: OfflineState,
+  ): ReleaseGateResult {
+    const result = this.#applyGateResult(controlsEnabled, offlineState);
+    this.#terminalGateResult = result;
+    return result;
+  }
+
+  #resetRequiredQueryFailures(): void {
+    this.#requiredQueryAttempts = 0;
+    this.#terminalGateResult = null;
+    this.#clearQueryRetry();
+  }
+
   #clearQueryRetry(): void {
     if (this.#queryRetryTimer === null) {
       return;
@@ -747,6 +889,13 @@ export class ServiceWorkerClient {
   }
 
   #regateFromLifecycle(): void {
+    if (this.#terminalGateResult !== null) {
+      this.#applyGateResult(
+        this.#terminalGateResult.controlsEnabled,
+        this.#terminalGateResult.offlineState,
+      );
+      return;
+    }
     this.#options.onLockChange(true);
     if (this.#gateInFlight !== null) {
       this.#gateReplayRequested = true;

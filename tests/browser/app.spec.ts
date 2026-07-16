@@ -379,6 +379,39 @@ test("keeps information views in-memory and exposes privacy limits", async ({
   await expect(page.locator("body")).not.toContainText("<SET_");
 });
 
+test("guides denied camera users and offers image recovery directly", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        enumerateDevices: () => Promise.resolve([]),
+        getUserMedia: () => Promise.reject(
+          new DOMException("Camera denied", "NotAllowedError"),
+        ),
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Scan with camera" }).click();
+  await expect(
+    page.getByRole("heading", { name: COPY.cameraAccessHeading }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Settings → Privacy & Security → Camera", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: COPY.retryCamera })).toBeEnabled();
+
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: COPY.chooseImage }).click();
+  await (await chooser).setFiles(fixture);
+  await expect(
+    page.getByRole("heading", { name: "Review before opening." }),
+  ).toBeVisible({ timeout: 15_000 });
+});
+
 test("offers a real camera restart after background suspension", async ({
   page,
   browserName,
@@ -413,7 +446,9 @@ test("offers a real camera restart after background suspension", async ({
   await page.getByRole("button", { name: "Scan with camera" }).click();
   await expect(page.getByRole("heading", { name: "Hold the QR code inside the frame" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Hold the QR code inside the frame" })).toBeFocused();
-  await expect(page.getByText(COPY.lookingForCode, { exact: true })).toBeVisible();
+  await expect(page.locator(".camera-search-status")).toHaveText(
+    new RegExp(`${COPY.startingCamera}|${COPY.lookingForCode}`, "u"),
+  );
   await expect.poll(() => page.evaluate(() =>
     (window as unknown as { __qrwardenFakeCamera: { calls: number } })
       .__qrwardenFakeCamera.calls,
@@ -827,7 +862,7 @@ test("recovers when a selection canvas cannot draw its one-shot bitmap", async (
   await expect(page.locator(".selection-canvas")).toHaveCount(0);
 });
 
-test("renders a locked shell while service-worker startup is still pending", async ({
+test("renders a locked shell and bounds a pending service-worker lookup", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -845,6 +880,11 @@ test("renders a locked shell while service-worker startup is still pending", asy
   await expect(page.getByText(COPY.preparingOfflineHeading, { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Scan with camera" })).toBeDisabled();
   await expect(page.locator('input[type="file"]')).toBeDisabled();
+  await expect(
+    page.getByText(COPY.offlineIncompleteHeading, { exact: true }),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Scan with camera" })).toBeEnabled();
+  await expect(page.locator('input[type="file"]')).toBeEnabled();
 });
 
 test("keeps scanner controls usable when service-worker storage is blocked", async ({ page }) => {
@@ -860,6 +900,25 @@ test("keeps scanner controls usable when service-worker storage is blocked", asy
   await expect(page.getByText("Offline setup incomplete.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Scan with camera" })).toBeEnabled();
   await expect(page.locator('input[type="file"]')).toBeEnabled();
+});
+
+test("offers reload when a controlled release cannot be verified", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.serviceWorker, "controller", {
+      configurable: true,
+      value: {},
+    });
+    Object.defineProperty(Object.getPrototypeOf(navigator.serviceWorker), "getRegistration", {
+      configurable: true,
+      value: () => Promise.reject(new DOMException("Storage blocked", "SecurityError")),
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByText(COPY.updateFailedHeading, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: COPY.reloadApp })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Scan with camera" })).toBeDisabled();
 });
 
 test("reports a blocked decoder worker instead of hanging", async ({ page }) => {

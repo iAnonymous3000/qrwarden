@@ -100,6 +100,7 @@ interface CameraUi {
   readonly torchAvailable: boolean;
   readonly torchEnabled: boolean;
   readonly notice: CameraProblem | null;
+  readonly starting: boolean;
 }
 
 const EMPTY_CAMERA_UI: CameraUi = Object.freeze({
@@ -110,6 +111,7 @@ const EMPTY_CAMERA_UI: CameraUi = Object.freeze({
   torchAvailable: false,
   torchEnabled: false,
   notice: null,
+  starting: false,
 });
 
 const DEVELOPMENT_COMMIT = "0000000000000000000000000000000000000000";
@@ -474,6 +476,7 @@ export function App(props: AppProps) {
   const [cameraUi, setCameraUi] = useState<CameraUi>(EMPTY_CAMERA_UI);
   const videoRef = useRef<HTMLVideoElement>(null);
   const confirmationTriggerRef = useRef<HTMLButtonElement>(null);
+  const recoveryImageInputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<CameraController<DetectionResult> | null>(null);
   const cameraTaskCount = useRef(0);
   const cameraTaskGeneration = useRef(0);
@@ -599,6 +602,12 @@ export function App(props: AppProps) {
       }),
     [props.workerFactory],
   );
+
+  const chooseImages = (files: readonly File[]): void => {
+    work.begin();
+    transitionView({ kind: "reading" });
+    imageController.choose(files);
+  };
 
   props.bridge.isIdle = () =>
     isRuntimeIdle({
@@ -756,7 +765,15 @@ export function App(props: AppProps) {
     window.addEventListener("orientationchange", orientation);
     window.addEventListener("resize", orientation);
     screen.orientation?.addEventListener("change", orientation);
-    trackCameraTask(controller.start());
+    setCameraUi((current) => ({ ...current, starting: true }));
+    const start = controller.start();
+    trackCameraTask(start);
+    const finishStart = (): void => {
+      if (cameraRef.current === controller) {
+        setCameraUi((current) => ({ ...current, starting: false }));
+      }
+    };
+    void start.then(finishStart, finishStart);
     return () => {
       window.removeEventListener("orientationchange", orientation);
       window.removeEventListener("resize", orientation);
@@ -939,6 +956,15 @@ export function App(props: AppProps) {
               <strong>{COPY.checkingVersionHeading}</strong>
               <p>{COPY.checkingVersionBody}</p>
             </div>
+            {offlineState === "update-failed" ? (
+              <button
+                type="button"
+                class="compact-button"
+                onClick={() => location.reload()}
+              >
+                {COPY.reloadApp}
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -988,9 +1014,7 @@ export function App(props: AppProps) {
                   onChange={(event) => {
                     const files = Array.from(event.currentTarget.files ?? []);
                     event.currentTarget.value = "";
-                    work.begin();
-                    transitionView({ kind: "reading" });
-                    imageController.choose(files);
+                    chooseImages(files);
                   }}
                 />
               </label>
@@ -1044,7 +1068,7 @@ export function App(props: AppProps) {
               <span class="corner corner-d" aria-hidden="true" />
             </div>
             <p class="camera-search-status" role="status">
-              {COPY.lookingForCode}
+              {cameraUi.starting ? COPY.startingCamera : COPY.lookingForCode}
             </p>
             {cameraUi.notice !== null ? (
               <p class="camera-notice" role="status">
@@ -1204,6 +1228,8 @@ export function App(props: AppProps) {
         {view.kind === "error" ? (() => {
           const problem = PROBLEM_COPY[view.problem];
           const canResumeCamera = problem.primaryAction === "resume-camera";
+          const canRetryCamera = problem.primaryAction === "retry-camera";
+          const canChooseImage = problem.imageFallback === true;
           const isRecovery = problem.tone === "recovery";
           return (
             <section
@@ -1216,7 +1242,7 @@ export function App(props: AppProps) {
               </span>
               <h1 ref={viewHeadingRef} tabIndex={-1}>{problem.heading}</h1>
               <p>{problem.body}</p>
-              {canResumeCamera ? (
+              {canResumeCamera || canRetryCamera ? (
                 <div class="recovery-actions">
                   <button
                     type="button"
@@ -1224,11 +1250,38 @@ export function App(props: AppProps) {
                     disabled={locked}
                     onClick={resumeCamera}
                   >
-                    {COPY.resumeScanning}
+                    {canResumeCamera ? COPY.resumeScanning : COPY.retryCamera}
                   </button>
-                  <button type="button" class="secondary-button" onClick={goHome}>
-                    {COPY.tryAnotherCode}
-                  </button>
+                  {canChooseImage ? (
+                    <>
+                      <button
+                        type="button"
+                        class="secondary-button"
+                        disabled={locked}
+                        onClick={() => recoveryImageInputRef.current?.click()}
+                      >
+                        {COPY.chooseImage}
+                      </button>
+                      <input
+                        ref={recoveryImageInputRef}
+                        class="visually-hidden"
+                        type="file"
+                        tabIndex={-1}
+                        aria-hidden="true"
+                        accept="image/jpeg,image/png,image/webp"
+                        disabled={locked}
+                        onChange={(event) => {
+                          const files = Array.from(event.currentTarget.files ?? []);
+                          event.currentTarget.value = "";
+                          chooseImages(files);
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <button type="button" class="secondary-button" onClick={goHome}>
+                      {COPY.tryAnotherCode}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <button type="button" class="primary-button" onClick={goHome}>

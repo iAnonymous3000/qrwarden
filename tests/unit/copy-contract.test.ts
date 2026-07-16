@@ -7,9 +7,9 @@ import * as copyModule from "../../src/copy";
 import { COPY } from "../../src/copy";
 
 const SOURCE_SHA256 =
-  "2e949109ac28a01b9fd393d728c405e07051e7d0668a00fbd636de89e9a0ddea";
+  "b513e1034918b20cbcb1f0204f70a27b27de8c3dacf3c05010a3c76b88c24825";
 const RUNTIME_CONTRACT_SHA256 =
-  "931daed9ff028a44f1b9ec1cb0714c50410d4aa380f1558b7dbb36b280066742";
+  "34bb7152e122908ff1bb34ba85701a8acd12c7294cde30e127fd1cc24869fb58";
 
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
@@ -48,7 +48,7 @@ describe("reviewed copy contract", () => {
 
     expect(Object.keys(copyModule)).toEqual(["COPY"]);
     expect(Object.isFrozen(COPY)).toBe(true);
-    expect(snapshot).toHaveLength(92);
+    expect(snapshot).toHaveLength(96);
     expect(snapshot.every(([key, value]) => key.length > 0 && value.length > 0)).toBe(
       true,
     );

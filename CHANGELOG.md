@@ -31,6 +31,8 @@ All notable changes to QRWarden are documented here. Release headings use exact 
 - Result and recovery language now distinguishes evidence, review cues, and genuine failures; reviewed URL destinations show their scheme, host, and explicit port consistently.
 - View changes hand keyboard focus to the new heading, system appearance can be restored after an override, and technical release data stays available without dominating the About page.
 - Scan actions remain visible on short phones, use recognizable high-contrast-safe icons, and provide hover and pressed feedback on pointer devices.
+- Camera-permission recovery now gives an actionable iPhone and iPad settings path and offers image selection directly from camera failure cards.
+- Camera and service-worker startup waits are bounded; camera failures can be retried directly, while unverifiable controlled releases stop with an explicit reload action instead of polling forever.
 
 ### Fixed
 

@@ -22,7 +22,8 @@ export type ProblemCode =
 export interface ProblemCopy {
   readonly heading: string;
   readonly body: string;
-  readonly primaryAction?: "resume-camera";
+  readonly primaryAction?: "resume-camera" | "retry-camera";
+  readonly imageFallback?: boolean;
   readonly tone: "danger" | "recovery";
 }
 
@@ -86,21 +87,29 @@ export const PROBLEM_COPY: Readonly<Record<ProblemCode, ProblemCopy>> =
     "camera-unavailable": {
       heading: COPY.cameraUnavailableHeading,
       body: COPY.cameraUnavailableBody,
+      primaryAction: "retry-camera",
+      imageFallback: true,
       tone: "recovery",
     },
     "camera-access-needed": {
       heading: COPY.cameraAccessHeading,
       body: COPY.cameraAccessBody,
+      primaryAction: "retry-camera",
+      imageFallback: true,
       tone: "recovery",
     },
     "no-camera": {
       heading: COPY.noCameraHeading,
       body: COPY.noCameraBody,
+      primaryAction: "retry-camera",
+      imageFallback: true,
       tone: "recovery",
     },
     "camera-could-not-start": {
       heading: COPY.cameraStartHeading,
       body: COPY.cameraStartBody,
+      primaryAction: "retry-camera",
+      imageFallback: true,
       tone: "recovery",
     },
     "camera-stopped": {

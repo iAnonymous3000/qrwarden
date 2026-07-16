@@ -219,6 +219,7 @@ test("keeps the camera surface reachable in portrait and short landscape", async
   await expect(
     page.getByRole("heading", { name: "Hold the QR code inside the frame" }),
   ).toBeVisible();
+  await expect(page.getByText(COPY.startingCamera, { exact: true })).toBeVisible();
   const cancel = page.getByRole("button", { name: COPY.cancel });
   await expect(cancel).toBeVisible();
   const frame = page.locator(".video-frame");

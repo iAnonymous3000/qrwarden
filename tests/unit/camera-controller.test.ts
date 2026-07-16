@@ -433,6 +433,27 @@ describe("CameraController lifecycle", () => {
     expect(harness.decoder.terminate).toHaveBeenCalledOnce();
   });
 
+  it("bounds a camera request that never settles and stops a late stream", async () => {
+    vi.useFakeTimers();
+    const harness = createHarness();
+    const permission = deferred<MediaStream>();
+    const lateTrack = new TrackDouble("late-after-timeout");
+    harness.mediaDevices.getUserMedia.mockReturnValueOnce(permission.promise);
+
+    const starting = harness.controller.start();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await starting;
+
+    expect(harness.controller.active).toBe(false);
+    expect(harness.onProblem).toHaveBeenCalledExactlyOnceWith(
+      "camera-could-not-start",
+    );
+
+    permission.resolve(streamFor(lateTrack));
+    await Promise.resolve();
+    expect(lateTrack.stop).toHaveBeenCalledOnce();
+  });
+
   it("keeps camera startup alive when the viewport changes before metadata is ready", async () => {
     const harness = createHarness();
     const { starting } = await beginMetadataWait(harness);
