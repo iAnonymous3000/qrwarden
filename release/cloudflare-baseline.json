@@ -10,6 +10,7 @@
   },
   "disabledAccountFeatures": [
     "Workers Builds and Git integration",
+    "Workers Logs and observability",
     "Web Analytics",
     "Zaraz",
     "Rocket Loader",
@@ -33,5 +34,23 @@
     "observability binding",
     "compatibility flag",
     "runtime secret"
-  ]
+  ],
+  "requiredOperationalControls": [
+    "DNSSEC",
+    "Always Use HTTPS",
+    "minimum TLS 1.2",
+    "HSTS max-age=31536000",
+    "persistent deny-by-default Access application for all preview deployments",
+    "persistent deny-by-default Access application for QRWarden preview deployments",
+    "no cache rule overriding signed Cache-Control",
+    "no transform rule mutating signed response bodies or headers"
+  ],
+  "releaseKeyDns": {
+    "recordType": "TXT",
+    "ownerPrefix": "_qrwarden-release-key",
+    "valueFormat": "64-lowercase-hex-sha256-minisign-decoded-key-blob",
+    "steadyStateValueCount": 1,
+    "plannedRotationValueCount": 2,
+    "dnssecRequired": true
+  }
 }

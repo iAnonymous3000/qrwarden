@@ -46,6 +46,7 @@
     "validate": "npm run validate:runtime && npm run validate:data && npm run validate:constants && npm run validate:metadata && npm run validate:workflows && npm run lint && npm run typecheck && npm run test && npm run test:release",
     "release:artifacts": "node scripts/release/assemble-release-candidate.mjs --commit \"$QRWARDEN_COMMIT\" --epoch \"$SOURCE_DATE_EPOCH\"",
     "release:wrangler:check": "node scripts/release/render-wrangler-configs.mjs --check",
+    "release:verify:live": "node scripts/release/verify-cloudflare-live.mjs",
     "release:validate": "node scripts/validate-release-constants.mjs --release && node scripts/validate-release-readiness.mjs && npm run release:wrangler:check && npm run validate && npm run verify:reproducible && npm run test:browser"
   },
   "dependencies": {

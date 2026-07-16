@@ -405,6 +405,31 @@ for (const [path, commitField, requiredFields] of [
 
 const cloudflare = await json("release/cloudflare-baseline.json");
 if (cloudflare) {
+  closed(
+    cloudflare,
+    [
+      "schemaVersion",
+      "compatibilityDate",
+      "production",
+      "disabledAccountFeatures",
+      "forbiddenBindingsAndRuntimeFeatures",
+      "requiredOperationalControls",
+      "releaseKeyDns"
+    ],
+    "Cloudflare baseline"
+  );
+  closed(
+    cloudflare.releaseKeyDns,
+    [
+      "recordType",
+      "ownerPrefix",
+      "valueFormat",
+      "steadyStateValueCount",
+      "plannedRotationValueCount",
+      "dnssecRequired"
+    ],
+    "Cloudflare release-key DNS contract"
+  );
   if (
     cloudflare.schemaVersion !== 1 ||
     cloudflare.compatibilityDate !== "2026-07-15" ||
@@ -415,6 +440,35 @@ if (cloudflare) {
     !Array.isArray(cloudflare.forbiddenBindingsAndRuntimeFeatures)
   ) {
     errors.push("Cloudflare baseline differs from the locked no-runtime production shape");
+  }
+  equal(
+    cloudflare.requiredOperationalControls,
+    [
+      "DNSSEC",
+      "Always Use HTTPS",
+      "minimum TLS 1.2",
+      "HSTS max-age=31536000",
+      "persistent deny-by-default Access application for all preview deployments",
+      "persistent deny-by-default Access application for QRWarden preview deployments",
+      "no cache rule overriding signed Cache-Control",
+      "no transform rule mutating signed response bodies or headers"
+    ],
+    "Cloudflare operational controls"
+  );
+  equal(
+    cloudflare.releaseKeyDns,
+    {
+      recordType: "TXT",
+      ownerPrefix: "_qrwarden-release-key",
+      valueFormat: "64-lowercase-hex-sha256-minisign-decoded-key-blob",
+      steadyStateValueCount: 1,
+      plannedRotationValueCount: 2,
+      dnssecRequired: true
+    },
+    "Cloudflare release-key DNS contract"
+  );
+  if (!cloudflare.disabledAccountFeatures.includes("Workers Logs and observability")) {
+    errors.push("Cloudflare account baseline must disable Workers Logs and observability");
   }
 }
 

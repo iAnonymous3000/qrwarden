@@ -11,7 +11,13 @@ function requireLiteral(value, label) {
   return value;
 }
 
-export function wranglerConfig(constants, baseline, previewUrls) {
+export function wranglerConfig(
+  constants,
+  baseline,
+  previewUrls,
+  attachDomain = true,
+  includeAssets = true,
+) {
   const domain = requireLiteral(
     constants.production?.canonicalDomain,
     "production.canonicalDomain",
@@ -31,18 +37,32 @@ export function wranglerConfig(constants, baseline, previewUrls) {
     compatibility_flags: [],
     workers_dev: false,
     preview_urls: previewUrls,
-    routes: [{ pattern: domain, custom_domain: true }],
-    assets: {
-      directory: "./dist",
-      html_handling: "auto-trailing-slash",
-      not_found_handling: "none",
-      run_worker_first: false,
-    },
+    ...(attachDomain ? { routes: [{ pattern: domain, custom_domain: true }] } : {}),
+    ...(includeAssets
+      ? {
+          assets: {
+            directory: "./dist",
+            html_handling: "auto-trailing-slash",
+            not_found_handling: "none",
+            run_worker_first: false,
+          },
+        }
+      : {}),
   };
 }
 
-export function renderWranglerConfig(constants, baseline, previewUrls) {
-  return `${JSON.stringify(wranglerConfig(constants, baseline, previewUrls), null, 2)}\n`;
+export function renderWranglerConfig(
+  constants,
+  baseline,
+  previewUrls,
+  attachDomain = true,
+  includeAssets = true,
+) {
+  return `${JSON.stringify(
+    wranglerConfig(constants, baseline, previewUrls, attachDomain, includeAssets),
+    null,
+    2,
+  )}\n`;
 }
 
 async function main() {
@@ -61,6 +81,26 @@ async function main() {
     [
       new URL("../../wrangler.release.jsonc", import.meta.url),
       renderWranglerConfig(constants, baseline, true),
+    ],
+    [
+      new URL("../../wrangler.preview.jsonc", import.meta.url),
+      renderWranglerConfig(constants, baseline, true, false),
+    ],
+    [
+      new URL("../../wrangler.triggers.production.jsonc", import.meta.url),
+      renderWranglerConfig(constants, baseline, false, true, false),
+    ],
+    [
+      new URL("../../wrangler.triggers.release.jsonc", import.meta.url),
+      renderWranglerConfig(constants, baseline, true, true, false),
+    ],
+    [
+      new URL("../../wrangler.triggers.preview.jsonc", import.meta.url),
+      renderWranglerConfig(constants, baseline, true, false, false),
+    ],
+    [
+      new URL("../../wrangler.triggers.closed.jsonc", import.meta.url),
+      renderWranglerConfig(constants, baseline, false, false, false),
     ],
   ];
 

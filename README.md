@@ -67,6 +67,7 @@ The production build verifies the reader WASM hash, emits fixed same-origin work
 - [Self-hosting](SELF_HOSTING.md)
 - [Reproducible builds](REPRODUCIBLE_BUILDS.md)
 - [Release process](RELEASE.md)
+- [Cloudflare release operations](docs/DEPLOY_CLOUDFLARE.md)
 - [Release signing](SIGNING.md)
 - [Dependencies and provenance](DEPENDENCIES.md)
 - [GitHub repository setup](docs/REPOSITORY_SETUP.md)

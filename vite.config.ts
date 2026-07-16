@@ -1,7 +1,27 @@
 import preact from "@preact/preset-vite";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
+
+// The application requests the decoder worker only at the fixed production
+// path validated by trustedScripts. The dev server has no such emitted chunk,
+// so serve a module shim that loads the worker source through Vite instead.
+function devDecoderWorkerEndpoint(): Plugin {
+  return {
+    name: "qrwarden-dev-decoder-worker",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        if (request.url?.split("?", 1)[0] === "/decoder-worker.js") {
+          response.setHeader("Content-Type", "text/javascript; charset=utf-8");
+          response.end('import "/decoder-worker/index.ts";\n');
+          return;
+        }
+        next();
+      });
+    },
+  };
+}
 
 const developmentCommit = "0000000000000000000000000000000000000000";
 const commit = process.env.QRWARDEN_COMMIT ?? developmentCommit;
@@ -31,7 +51,7 @@ const sourceRepository =
     : null;
 
 export default defineConfig({
-  plugins: [preact()],
+  plugins: [preact(), devDecoderWorkerEndpoint()],
   publicDir: "public",
   define: {
     __QRWARDEN_RELEASE_ID__: JSON.stringify(releaseId),

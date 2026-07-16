@@ -23,6 +23,30 @@ test("production and release Wrangler configs differ only by preview_urls", () =
   assert.equal(production.assets.not_found_handling, "none");
 });
 
+test("the first-release upload config cannot attach the canonical domain", () => {
+  const preview = wranglerConfig(constants, baseline, true, false);
+  assert.equal("routes" in preview, false);
+  assert.equal("assets" in preview, true);
+  assert.deepEqual(
+    { ...wranglerConfig(constants, baseline, true), routes: undefined },
+    { ...preview, routes: undefined },
+  );
+});
+
+test("trigger-only configs never validate or upload a checkout-local dist", () => {
+  const production = wranglerConfig(constants, baseline, false, true, false);
+  const release = wranglerConfig(constants, baseline, true, true, false);
+  const preview = wranglerConfig(constants, baseline, true, false, false);
+  const closed = wranglerConfig(constants, baseline, false, false, false);
+  for (const config of [production, release, preview, closed]) {
+    assert.equal("assets" in config, false);
+  }
+  assert.deepEqual({ ...production, preview_urls: true }, release);
+  assert.equal("routes" in preview, false);
+  assert.equal("routes" in closed, false);
+  assert.deepEqual({ ...preview, preview_urls: false }, closed);
+});
+
 test("rendering is normalized JSON with one trailing newline", () => {
   const rendered = renderWranglerConfig(constants, baseline, false);
   assert.equal(rendered.endsWith("\n"), true);

@@ -9,7 +9,7 @@
     "dnsReleaseKeyOwner": "<SET_DNS_RELEASE_KEY_OWNER>"
   },
   "cloudflare": {
-    "accountId": "<SET_CLOUDFLARE_ACCOUNT_ID>"
+    "accountId": "dea2502fea1fef952043925374196ae9"
   },
   "github": {
     "owner": "iAnonymous3000",

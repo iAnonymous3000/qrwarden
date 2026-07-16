@@ -34,6 +34,8 @@ minisign -Vm minisign-0.12-linux.tar.gz -p minisign-upstream.pub
 
 The fingerprint is lowercase SHA-256 of the canonical base64-decoded Minisign public-key material line: the complete 42-byte blob containing algorithm identifier, key ID, and Ed25519 public key. Comment lines do not participate. The repository, About view, well-known public key, and DNSSEC TXT record must agree.
 
+At steady state, publish exactly one TXT value at `_qrwarden-release-key.<canonical-domain>`. After DNS TXT-string concatenation, its value is exactly the 64-character lowercase hexadecimal fingerprint: no label, algorithm prefix, whitespace, quotes in the logical value, or public-key material. The zone must validate with DNSSEC. During a planned rotation, the RRset contains exactly the predecessor and successor fingerprints for the documented 30-day overlap; after the overlap, remove only the predecessor value.
+
 ## Signature contract
 
 Use untrusted comment `QRWarden release signature` and trusted comment:

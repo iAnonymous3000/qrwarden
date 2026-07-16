@@ -77,6 +77,19 @@ if (
 }
 
 const headers = await readFile(path.join(dist, "_headers"), "utf8");
+for (const expected of [
+  "Referrer-Policy: no-referrer",
+  "X-Content-Type-Options: nosniff",
+  "X-Frame-Options: DENY",
+  "X-DNS-Prefetch-Control: off",
+  "Strict-Transport-Security: max-age=31536000",
+  "Cross-Origin-Opener-Policy: same-origin",
+  "Cross-Origin-Resource-Policy: same-origin",
+]) {
+  if (!headers.includes(`\n  ${expected}\n`)) {
+    throw new Error(`missing common production header: ${expected}`);
+  }
+}
 for (const [route, expected] of [
   ["/", "require-trusted-types-for 'script'"],
   ["/decoder-worker.js", "'wasm-unsafe-eval'"],

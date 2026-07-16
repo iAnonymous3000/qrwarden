@@ -189,6 +189,7 @@ const headers = `/*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   X-DNS-Prefetch-Control: off
+  Strict-Transport-Security: max-age=31536000
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
   Permissions-Policy: ${permissions}
