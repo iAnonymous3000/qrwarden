@@ -1,6 +1,6 @@
 # Release process
 
-This checkout is not release-ready. Production, Cloudflare, maintainer, and signing constants and the well-known public key remain placeholders; rendered Wrangler configs, a signed clean `main` commit, final name-clearance evidence, physical-browser evidence, independent review, digest-pinned dual-build evidence, signing-ceremony evidence, and production-rehearsal evidence are absent. Analyzer data and local implementation gates are complete. `npm run release:validate` fails closed on the machine-checkable release inputs, and the manual gates above remain mandatory.
+Releases fail closed. `npm run release:validate` rejects placeholder values for the deliberately public release constants — canonical domain, DNS release-key owner, maintainer roster, and Minisign public key — and enforces every machine-checkable release input. The manual evidence gates below (signed clean `main` commit, rendered Wrangler configs, physical-browser evidence, independent review, digest-pinned dual-build evidence, signing-ceremony evidence, and production-rehearsal evidence) remain mandatory for every release.
 
 ## Candidate gate
 

@@ -2,10 +2,6 @@
 
 QRWarden is a local-first progressive web app for inspecting QR codes before acting on them. Scans stay in the browser, decoded content is not uploaded, and the app does not visit a destination while analyzing it.
 
-> **Project status:** Development candidate. The scanner and analyzer are implemented and tested, but this is not yet a signed public release. See [Release status](#release-status) for the remaining gates.
-
-This public repository publishes development source for review. Contribution intake opens after the owner-specific maintainer, conduct-reporting, and repository controls in [GitHub repository setup](docs/REPOSITORY_SETUP.md) are complete. Source availability does not make the current build a supported or release-ready product.
-
 ## What it does
 
 - Scans QR codes with a camera or from a local image.
@@ -46,18 +42,16 @@ npm run test:browser
 
 `npm run data:generate` deterministically rebuilds the pinned PSL, IANA, and Unicode analyzer modules. It is needed only when reviewing a data update.
 
-## Release status
+## Release engineering
 
-Development validation accepts the explicit placeholders in `release/constants.json`. Release validation rejects them:
+Releases are produced by a fail-closed pipeline. `npm run release:validate` rejects placeholder release constants and runs the complete verification suite:
 
 ```sh
 npm run validate:constants
 npm run release:validate
 ```
 
-The local implementation and analyzer-data gates are complete. A public release still requires a real canonical domain, repository-pinned public Cloudflare account ID, maintainer roster, and Minisign public-key values; a signed clean `main` commit; rendered Wrangler configs; [name clearance](docs/NAME_CLEARANCE.md); independent security review; physical-device testing; digest-pinned dual-build evidence; a signing ceremony; and a deployment rehearsal. Cloudflare zone, Access, service-token, preview, and deployment identifiers are operational evidence and remain outside public source.
-
-The production build verifies the reader WASM hash, emits fixed same-origin workers, verifies precache integrity and size, generates route-specific security headers, rejects source maps, and enforces a closed artifact contract. The dispatch-only release workflow adds two independent digest-pinned builds, normalized archives and manifests, an SBOM, a license report, attestations, and byte-for-byte candidate comparison.
+The production build verifies the reader WASM hash, emits fixed same-origin workers, verifies precache integrity and size, generates route-specific security headers, rejects source maps, and enforces a closed artifact contract. The dispatch-only release workflow adds two independent digest-pinned builds, normalized archives and manifests, an SBOM, a license report, attestations, and byte-for-byte candidate comparison. Deployment, verification, and rollback follow [RELEASE.md](RELEASE.md) and [docs/DEPLOY_CLOUDFLARE.md](docs/DEPLOY_CLOUDFLARE.md); artifact signing follows [SIGNING.md](SIGNING.md).
 
 ## Documentation
 
@@ -70,13 +64,9 @@ The production build verifies the reader WASM hash, emits fixed same-origin work
 - [Cloudflare release operations](docs/DEPLOY_CLOUDFLARE.md)
 - [Release signing](SIGNING.md)
 - [Dependencies and provenance](DEPENDENCIES.md)
-- [GitHub repository setup](docs/REPOSITORY_SETUP.md)
-- [Support](SUPPORT.md)
-- [Contributing](CONTRIBUTING.md)
-- [Code of conduct](CODE_OF_CONDUCT.md)
 
 Do not open a public issue for a suspected vulnerability. Follow the private-reporting instructions in [SECURITY.md](SECURITY.md).
 
 ## License
 
-QRWarden's original source code and documentation are licensed under AGPL-3.0-or-later except where a file says otherwise. Vendored packages and analyzer data retain their upstream licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [DEPENDENCIES.md](DEPENDENCIES.md). Copyright remains with the respective contributors and upstream rightsholders. Contributions require a Developer Certificate of Origin `Signed-off-by` line; see [CONTRIBUTING.md](CONTRIBUTING.md) and [DCO.txt](DCO.txt).
+QRWarden's original source code and documentation are licensed under AGPL-3.0-or-later except where a file says otherwise. Vendored packages and analyzer data retain their upstream licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [DEPENDENCIES.md](DEPENDENCIES.md). Copyright remains with the respective contributors and upstream rightsholders.

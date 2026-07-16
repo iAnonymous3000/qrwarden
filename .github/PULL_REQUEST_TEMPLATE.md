@@ -13,6 +13,5 @@ List the commands and manual checks you ran.
 - [ ] I updated affected documentation, provenance, snapshots, notices, and release fixtures.
 - [ ] I ran `npm run validate` and the relevant build or browser checks.
 - [ ] I reviewed the privacy, security, offline, and no-egress impact.
-- [ ] My commits include a Developer Certificate of Origin `Signed-off-by` line.
 
 Suspected vulnerabilities must be reported privately using [SECURITY.md](../SECURITY.md), not described in a public pull request.

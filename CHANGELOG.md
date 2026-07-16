@@ -6,7 +6,7 @@ All notable changes to QRWarden are documented here. Release headings use exact 
 
 ### Added
 
-- Repository and exact-pinned toolchain, with governance, privacy, threat-model, release, signing, manifest, and machine-readable release contracts.
+- Repository and exact-pinned toolchain, with privacy, threat-model, release, signing, manifest, and machine-readable release contracts.
 - Disposable same-origin decoder worker with pinned ZXing WASM, bounded image parsing/rasterization, ECI handling, QR-only limits, and multi-code selection data.
 - Pure offline analyzer with inert display fields, explicit action policies, URL/host/IDN/control-character signals, and machine-readable data-provenance status.
 - Camera lifecycle, exact two-frame matching, local image intake, stale-work invalidation, and report-lifetime controls.
@@ -19,8 +19,4 @@ All notable changes to QRWarden are documented here. Release headings use exact 
 - Exact-purl license overrides for published packages without eligible root texts, optional-platform lockfile validation, and Unicode License v3 inclusion in deterministic release reports.
 - SHA-pinned CI and a protected, dual-build unsigned-candidate workflow with normalized artifact generators, CycloneDX/license contracts, attestations, and bytewise final comparison.
 - Expanded image-header/intake, camera lifecycle, report/work/clipboard, copy-contract, adversarial corpus, Trusted Types, mutation, no-egress, permissions, and release-contract tests.
-
-### Release blockers
-
-- External domain/account/maintainer literals, final well-known signing key, name clearance, and signed release inputs are not yet available.
-- An initial signed `main` commit, committed Wrangler configs, independent security review, the complete physical-device matrix, Safari cold-offline gate, final dual-container evidence, and a full release rehearsal remain incomplete.
+- Cloudflare release operations runbook with rendered upload/trigger Wrangler configs, live byte/header verification, and rollback contracts.
