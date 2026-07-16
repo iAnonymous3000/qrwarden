@@ -220,6 +220,7 @@ test("scans an image locally and requires two-step review", async ({ page }) => 
     }),
   ).toBeVisible();
   await expect(page.getByText("Scans stay in this browser.")).toBeVisible();
+  await expect(page.getByText(COPY.pasteHint, { exact: true })).toBeVisible();
 
   await page.locator('input[type="file"]').setInputFiles(fixture);
   await expect(
@@ -235,6 +236,8 @@ test("scans an image locally and requires two-step review", async ({ page }) => 
   await expect(queryField).toBeVisible();
   await queryField.getByText("Show query names", { exact: true }).click();
   await expect(queryField.getByText("token", { exact: true })).toBeVisible();
+  await expect(queryField.getByText("Hide query names", { exact: true })).toBeVisible();
+  await expect(queryField.getByText("Show query names", { exact: true })).toBeHidden();
   await expect(page.getByText("hidden", { exact: true })).toHaveCount(0);
   await expect(page.locator('a[href*="127.0.0.1:8080"]')).toHaveCount(0);
   expect(destinationRequests).toEqual([]);
@@ -377,6 +380,16 @@ test("keeps information views in-memory and exposes privacy limits", async ({
     page.getByText("Not configured in this development build", { exact: true }),
   ).toHaveCount(3);
   await expect(page.locator("body")).not.toContainText("<SET_");
+
+  await page.getByRole("button", { name: COPY.glossaryLink }).click();
+  await expect(
+    page.getByRole("heading", { name: COPY.glossaryTitle }),
+  ).toBeVisible();
+  await expect(page).toHaveTitle(`${COPY.titleGlossary} · ${COPY.brand}`);
+  await page.getByRole("button", { name: COPY.backToAbout }).click();
+  await expect(
+    page.getByRole("heading", { name: "Built to show evidence, not a verdict." }),
+  ).toBeVisible();
 });
 
 test("guides denied camera users and offers image recovery directly", async ({ page }) => {

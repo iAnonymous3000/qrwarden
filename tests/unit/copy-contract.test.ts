@@ -12,12 +12,12 @@ import { ES_COPY } from "../../src/copy/locales/es";
 const SOURCE_SHA256: Readonly<Record<string, string>> = {
   "index.ts": "e5a010ff1f36bef2fd5706ce201994e9496199cfbac96f410f598a0798a58a8c",
   "locale.ts": "8c3cd89b27b1a98041d170c8425318292d9b98dca8087e29de0a6f71d10b2ed0",
-  "locales/en.ts": "0cd8174d7877f641827b10af37c7a1326fc711be93647d362059962da7b852ea",
-  "locales/es.ts": "a92532c8e1ac4d451ab5484952622799e02fdf92db7d85b42a34bf63c12bd958",
+  "locales/en.ts": "5a0e4d9b71ec6ad849e9d5d9b4a4b616faf6c405d952281cdec6dd6a8907238c",
+  "locales/es.ts": "b78c438c024cd4825d6f09e4b0dc3f528253f33f1bddee23ccc7780f38c75856",
 };
 const RUNTIME_CONTRACT_SHA256 =
-  "ebc228f42a90d3120097bbef07082a7883ad7948f73c6bcc47670f6d24376b9d";
-const COPY_KEY_COUNT = 189;
+  "063dacabfc3e020049bcaea84dec1855b91c3107cb773f652012ececa8684627";
+const COPY_KEY_COUNT = 191;
 
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
@@ -45,6 +45,7 @@ function materialize(key: string, value: unknown): string {
       );
     case "copyField":
     case "showField":
+    case "hideField":
       return (value as (label: string) => string)("path");
     case "omittedFromDisplay":
       return [

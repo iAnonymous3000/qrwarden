@@ -198,6 +198,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   mask: "Ocultar",
   copyField: (label: string): string => `Copiar ${label}`,
   showField: (label: string): string => `Mostrar ${label}`,
+  hideField: (label: string): string => `Ocultar ${label}`,
   omittedFromDisplay: (omitted: number, total?: number): string =>
     total === undefined
       ? `${omitted} omitidos de la vista.`
@@ -206,6 +207,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   lockedFieldDetails:
     "Detalles no disponibles mientras se comprueba la versión de la aplicación.",
   backToScanner: "Volver al escáner",
+  backToAbout: "Volver a la página Acerca de",
   privacyEyebrow: "Privacidad",
   privacyTitle: "Qué se queda en tu dispositivo",
   privacyNoLookupHeading: "Sin consultas al destino",

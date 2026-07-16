@@ -40,6 +40,7 @@ All notable changes to QRWarden are documented here. Release headings use exact 
 - Scan actions remain visible on short phones, use recognizable high-contrast-safe icons, and provide hover and pressed feedback on pointer devices.
 - Camera-permission recovery now gives an actionable iPhone and iPad settings path and offers image selection directly from camera failure cards.
 - Camera and service-worker startup waits are bounded; camera failures can be retried directly, while unverifiable controlled releases stop with an explicit reload action instead of polling forever.
+- Field actions preserve acronym casing (QR, SSID), decoded-content expanders label their open state as Hide instead of Show, and the signal glossary links directly back to About.
 
 ### Fixed
 

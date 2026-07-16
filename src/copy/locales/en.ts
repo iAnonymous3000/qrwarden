@@ -198,6 +198,7 @@ export const EN_COPY = Object.freeze({
   mask: "Mask",
   copyField: (label: string): string => `Copy ${label}`,
   showField: (label: string): string => `Show ${label}`,
+  hideField: (label: string): string => `Hide ${label}`,
   omittedFromDisplay: (omitted: number, total?: number): string =>
     total === undefined
       ? `${omitted} omitted from display.`
@@ -205,6 +206,7 @@ export const EN_COPY = Object.freeze({
   truncatedNote: "Value truncated for display.",
   lockedFieldDetails: "Details unavailable while the app version is checked.",
   backToScanner: "Back to scanner",
+  backToAbout: "Back to About",
   privacyEyebrow: "Privacy",
   privacyTitle: "What stays on your device",
   privacyNoLookupHeading: "No destination lookup",

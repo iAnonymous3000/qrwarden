@@ -362,7 +362,14 @@ function FieldValue({
     }
     return (
       <details>
-        <summary>{COPY.showField(fieldLabelForSentence(label))}</summary>
+        <summary>
+          <span class="summary-closed-label">
+            {COPY.showField(fieldLabelForSentence(label))}
+          </span>
+          <span class="summary-open-label">
+            {COPY.hideField(fieldLabelForSentence(label))}
+          </span>
+        </summary>
         <bdi dir="auto" class="field-value field-value-long">
           {presentation.value}
         </bdi>
@@ -1627,7 +1634,16 @@ export function App(props: AppProps) {
                 </div>
               ))}
             </dl>
-            <button type="button" class="primary-button" onClick={goHome}>{COPY.backToScanner}</button>
+            <div class="prose-actions">
+              <button
+                type="button"
+                class="secondary-button"
+                onClick={() => navigateInfo("about")}
+              >
+                {COPY.backToAbout}
+              </button>
+              <button type="button" class="primary-button" onClick={goHome}>{COPY.backToScanner}</button>
+            </div>
           </article>
         ) : null}
       </main>

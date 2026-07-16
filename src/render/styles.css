@@ -243,6 +243,8 @@ button.source-card { width: 100%; text-align: left; }
 .field-heading { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .45rem; color: var(--muted); font-size: .76rem; font-weight: 750; text-transform: uppercase; letter-spacing: .06em; }
 .field-value { display: block; max-width: 100%; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.55; white-space: pre-wrap; }
 .field-value-long { padding: .75rem 0; }
+details:not([open]) > summary .summary-open-label { display: none; }
+details[open] > summary .summary-closed-label { display: none; }
 .field-actions { display: flex; gap: .6rem; margin-top: .65rem; }
 .microcopy, .clipboard-warning, .copy-status { color: var(--muted); font-size: .77rem; line-height: 1.45; }
 .intake-hint { max-width: 760px; margin: .8rem auto 0; text-align: center; }
@@ -273,6 +275,7 @@ body:has(dialog[open]) { overflow: hidden; }
 .dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
 
 .prose-card { max-width: 720px; padding: clamp(1.4rem, 5vw, 3rem); border: 1px solid var(--line); border-radius: 1rem; background: var(--paper); }
+.prose-actions { display: flex; flex-wrap: wrap; gap: .7rem; }
 .prose-card h1 { margin: .5rem 0 1rem; font-size: clamp(2rem, 6vw, 3.6rem); line-height: 1.05; letter-spacing: -.045em; }
 .prose-card h2 { margin-top: 2rem; }
 .prose-card p { color: var(--muted); line-height: 1.7; }
