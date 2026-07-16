@@ -201,19 +201,25 @@ const headers = `/*
 /decoder-worker.js
   Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'
   Cache-Control: no-cache, must-revalidate
+  Content-Type: text/javascript; charset=utf-8
 
 /sw.js
   Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'self'
   Cache-Control: no-cache, must-revalidate
+  Content-Type: text/javascript; charset=utf-8
 
 /app.webmanifest
   Cache-Control: no-cache, must-revalidate
 
 /.well-known/qrwarden-release-key.pub
   Cache-Control: no-cache, must-revalidate
+  Content-Type: text/plain; charset=utf-8
 
 /icons/*
   Cache-Control: no-cache, must-revalidate
+
+/assets/*.js
+  Content-Type: text/javascript; charset=utf-8
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
