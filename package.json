@@ -63,7 +63,7 @@
     "eslint": "10.7.0",
     "license-checker-rseidelsohn": "5.0.1",
     "spdx-exceptions": "2.5.0",
-    "spdx-expression-parse": "4.0.0",
+    "spdx-expression-parse": "5.0.0",
     "spdx-license-ids": "3.0.23",
     "typescript": "6.0.3",
     "typescript-eslint": "8.64.0",
