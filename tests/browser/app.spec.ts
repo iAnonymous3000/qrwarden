@@ -17,6 +17,16 @@ const permissionsRegistry = JSON.parse(
     readonly allow: "self" | "none";
   }[];
 };
+const releaseConstants = JSON.parse(
+  await readFile(new URL("../../release/constants.json", import.meta.url), "utf8"),
+) as {
+  readonly github: {
+    readonly owner: string;
+    readonly repository: string;
+  };
+};
+const expectedSourceRepository =
+  `https://github.com/${releaseConstants.github.owner}/${releaseConstants.github.repository}`;
 const expectedPermissionsPolicy = permissionsRegistry.directives
   .map(({ name, allow }) => `${name}=(${allow === "self" ? "self" : ""})`)
   .join(", ");
@@ -129,9 +139,10 @@ test("keeps information views in-memory and exposes privacy limits", async ({
         ? COPY.installMac
         : COPY.installUnavailable;
   await expect(page.getByText(expectedInstallCopy, { exact: true })).toBeVisible();
+  await expect(page.getByText(expectedSourceRepository, { exact: true })).toBeVisible();
   await expect(
     page.getByText("Not configured in this development build", { exact: true }),
-  ).toHaveCount(4);
+  ).toHaveCount(3);
   await expect(page.locator("body")).not.toContainText("<SET_");
 });
 
