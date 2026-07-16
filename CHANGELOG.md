@@ -21,16 +21,22 @@ All notable changes to QRWarden are documented here. Release headings use exact 
 - Expanded image-header/intake, camera lifecycle, report/work/clipboard, copy-contract, adversarial corpus, Trusted Types, mutation, no-egress, permissions, and release-contract tests.
 - Cloudflare release operations runbook with rendered upload/trigger Wrangler configs, live byte/header verification, and rollback contracts.
 - Dark-first adaptive appearance with an accessible persistent light/dark control and matching browser, PWA, and privacy metadata.
-- Dedicated Pixel, narrow-Android, and iPhone browser projects covering touch targets, responsive review flows, dialogs, multi-code selection, and short-landscape camera use.
+- Dedicated Pixel, narrow-Android, 280px-reflow, and iPhone browser projects covering touch targets, responsive review flows, dialogs, multi-code selection, and short-landscape camera use.
 
 ### Changed
 
 - Positioned the repository as production-grade pre-action QR inspection source while keeping signed public-release gates fail closed until operator, domain, signing, deployment, and live-verification facts are configured.
 - Every structured payload report now preserves the exact decoded QR content as masked, collapsed, inert evidence when its parsed summary is selective.
 - Mobile camera previews show the complete decoded frame instead of a visually cropped region, respect display cutouts and dynamic viewport height, and reset new workflows to the top of the view.
+- Result and recovery language now distinguishes evidence, review cues, and genuine failures; reviewed URL destinations show their scheme, host, and explicit port consistently.
+- View changes hand keyboard focus to the new heading, system appearance can be restored after an override, and technical release data stays available without dominating the About page.
+- Scan actions remain visible on short phones, use recognizable high-contrast-safe icons, and provide hover and pressed feedback on pointer devices.
 
 ### Fixed
 
 - Camera startup no longer stalls when orientation changes before metadata is ready, and stale overlapping camera switches cannot tear down the newest stream.
 - Camera controls now identify the active track rather than assuming enumeration order, and iOS camera selectors avoid focus zoom.
 - The locked application shell renders immediately while service-worker verification is pending instead of leaving slow mobile launches blank.
+- Result-status symbols remain circular beside long headings, 280px cover-width viewports no longer pan horizontally, and multi-code rows reflow below 320px.
+- Browser chrome now receives a first-paint theme color that matches the system preference and the app's dark header palette.
+- Stale camera work, consumed multi-code previews, failed canvas draws, and deferred service-worker updates now recover without poisoning the next interaction or presenting a blank surface.

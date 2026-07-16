@@ -7,7 +7,8 @@ const multiFixture = new URL("../corpus/multi-selection.png", import.meta.url).p
 
 async function expectNoHorizontalOverflow(page: Page, label: string): Promise<void> {
   const result = await page.evaluate(() => {
-    const viewportWidth = document.documentElement.clientWidth;
+    const documentClientWidth = document.documentElement.clientWidth;
+    const viewportWidth = Math.min(window.innerWidth, documentClientWidth);
     const offenders = Array.from(document.querySelectorAll<HTMLElement>("body *"))
       .flatMap((element) => {
         const style = getComputedStyle(element);
@@ -17,12 +18,13 @@ async function expectNoHorizontalOverflow(page: Page, label: string): Promise<vo
           style.visibility === "hidden" ||
           rect.width === 0 ||
           rect.height === 0 ||
-          rect.right <= viewportWidth + 1
+          (rect.left >= -1 && rect.right <= viewportWidth + 1)
         ) {
           return [];
         }
         return [{
           className: element.className,
+          left: Math.round(rect.left * 10) / 10,
           right: Math.round(rect.right * 10) / 10,
           tag: element.tagName,
           text: (element.textContent ?? "").trim().slice(0, 80),
@@ -31,6 +33,8 @@ async function expectNoHorizontalOverflow(page: Page, label: string): Promise<vo
       .slice(0, 8);
     return {
       clientWidth: viewportWidth,
+      documentClientWidth,
+      innerWidth: window.innerWidth,
       offenders,
       scrollWidth: document.documentElement.scrollWidth,
     };
@@ -40,6 +44,7 @@ async function expectNoHorizontalOverflow(page: Page, label: string): Promise<vo
     result.scrollWidth,
     `${label} overflowed horizontally: ${JSON.stringify(result.offenders)}`,
   ).toBeLessThanOrEqual(result.clientWidth);
+  expect(result.offenders, `${label} painted outside the viewport`).toEqual([]);
 }
 
 async function expectTouchTargets(page: Page, label: string): Promise<void> {
@@ -79,6 +84,17 @@ test("keeps home and information views usable on mobile touch screens", async ({
   ).toBeVisible();
   await expectNoHorizontalOverflow(page, "home");
   await expectTouchTargets(page, "home");
+  const viewport = page.viewportSize();
+  if (viewport !== null && viewport.width <= 400 && viewport.height <= 650) {
+    const firstSourceCard = page.getByRole("button", { name: "Scan with camera" });
+    const cardTop = await firstSourceCard.evaluate(
+      (element) => element.getBoundingClientRect().top,
+    );
+    expect(
+      cardTop,
+      "At least one full-size tap row of the first scan action should be visible initially",
+    ).toBeLessThanOrEqual(viewport.height - 44);
+  }
 
   const theme = page.getByRole("button", { name: "Dark mode" });
   await theme.click();
@@ -95,6 +111,7 @@ test("keeps home and information views usable on mobile touch screens", async ({
   await expect(
     page.getByRole("heading", { name: "Built to show evidence, not a verdict." }),
   ).toBeVisible();
+  await page.getByText("Technical and release details", { exact: true }).click();
   await expectNoHorizontalOverflow(page, "about");
   await expectTouchTargets(page, "about");
 });
@@ -114,6 +131,20 @@ test("reflows review, confirmation, and multi-code selection at mobile widths", 
   ).toBeVisible({ timeout: 15_000 });
   await expectNoHorizontalOverflow(page, "review result");
   await expectTouchTargets(page, "review result");
+  const statusSymbol = page.locator(".result-status .status-symbol");
+  await expect(statusSymbol).toHaveText("!");
+  const statusGeometry = await statusSymbol.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      borderRadius: getComputedStyle(element).borderRadius,
+      height: rect.height,
+      width: rect.width,
+    };
+  });
+  expect(statusGeometry.width).toBeCloseTo(42, 1);
+  expect(statusGeometry.height).toBeCloseTo(42, 1);
+  expect(Math.abs(statusGeometry.width - statusGeometry.height)).toBeLessThanOrEqual(.1);
+  expect(statusGeometry.borderRadius).toBe("50%");
 
   await page.getByRole("button", { name: COPY.continueToLink }).click();
   const dialog = page.getByRole("dialog", { name: "Open this link?" });
@@ -136,14 +167,41 @@ test("reflows review, confirmation, and multi-code selection at mobile widths", 
   await expect(
     page.getByRole("heading", { name: COPY.chooseQrHeading }),
   ).toBeVisible({ timeout: 15_000 });
+  const selectionCanvas = page.locator(".selection-canvas");
+  await expect(selectionCanvas).toBeVisible();
+  const canvasGeometry = await selectionCanvas.evaluate((element: HTMLCanvasElement) => {
+    const rect = element.getBoundingClientRect();
+    const documentClientWidth = document.documentElement.clientWidth;
+    return {
+      height: rect.height,
+      intrinsicHeight: element.height,
+      intrinsicWidth: element.width,
+      left: rect.left,
+      parentWidth: element.parentElement?.clientWidth ?? 0,
+      right: rect.right,
+      viewportWidth: Math.min(innerWidth, documentClientWidth),
+      width: rect.width,
+    };
+  });
+  expect(canvasGeometry.width).toBeGreaterThan(0);
+  expect(canvasGeometry.height).toBeGreaterThan(0);
+  expect(canvasGeometry.intrinsicWidth).toBeGreaterThan(0);
+  expect(canvasGeometry.intrinsicHeight).toBeGreaterThan(0);
+  expect(canvasGeometry.parentWidth).toBeGreaterThan(1);
+  expect(canvasGeometry.width).toBeCloseTo(canvasGeometry.parentWidth, 0);
+  expect(canvasGeometry.left).toBeGreaterThanOrEqual(-1);
+  expect(canvasGeometry.right).toBeLessThanOrEqual(canvasGeometry.viewportWidth + 1);
+  expect(canvasGeometry.width / canvasGeometry.height).toBeCloseTo(
+    canvasGeometry.intrinsicWidth / canvasGeometry.intrinsicHeight,
+    2,
+  );
   await expectNoHorizontalOverflow(page, "multi-code selection");
   await expectTouchTargets(page, "multi-code selection");
 });
 
-test("keeps the camera surface reachable in a short mobile landscape", async ({
+test("keeps the camera surface reachable in portrait and short landscape", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 667, height: 375 });
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
@@ -163,13 +221,24 @@ test("keeps the camera surface reachable in a short mobile landscape", async ({
   ).toBeVisible();
   const cancel = page.getByRole("button", { name: COPY.cancel });
   await expect(cancel).toBeVisible();
+  const frame = page.locator(".video-frame");
+  await expect(frame).toBeVisible();
+  const portraitGeometry = await frame.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return { left: rect.left, right: rect.right, viewportWidth: innerWidth };
+  });
+  expect(portraitGeometry.left).toBeGreaterThanOrEqual(-1);
+  expect(portraitGeometry.right).toBeLessThanOrEqual(portraitGeometry.viewportWidth + 1);
+  await expectNoHorizontalOverflow(page, "portrait camera");
+  await expectTouchTargets(page, "portrait camera");
+
+  await page.setViewportSize({ width: 667, height: 375 });
   const cancelGeometry = await cancel.evaluate((element) => {
     const rect = element.getBoundingClientRect();
     return { bottom: rect.bottom, top: rect.top, viewportHeight: innerHeight };
   });
   expect(cancelGeometry.top).toBeGreaterThanOrEqual(-1);
   expect(cancelGeometry.bottom).toBeLessThanOrEqual(cancelGeometry.viewportHeight + 1);
-  const frame = page.locator(".video-frame");
   await expect(frame).toBeVisible();
   const frameGeometry = await frame.evaluate((element) => {
     const rect = element.getBoundingClientRect();

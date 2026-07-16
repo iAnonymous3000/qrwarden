@@ -28,4 +28,14 @@ describe("problem recovery actions", () => {
     expect(COPY.resumeScanning).toBe("Resume scanning");
     expect(COPY.tryAnotherCode).toBe("Try another code");
   });
+
+  it("reserves danger styling for reader and link-integrity failures", () => {
+    const dangerProblems = Object.entries(PROBLEM_COPY)
+      .filter(([, copy]) => copy.tone === "danger")
+      .map(([problem]) => problem);
+
+    expect(dangerProblems).toEqual(["reader-stopped", "link-changed"]);
+    expect(PROBLEM_COPY["no-result"].tone).toBe("recovery");
+    expect(PROBLEM_COPY["camera-access-needed"].tone).toBe("recovery");
+  });
 });

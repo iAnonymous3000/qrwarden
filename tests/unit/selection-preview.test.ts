@@ -57,6 +57,27 @@ describe("selection preview ownership", () => {
     expect(work.hasRetainedResources).toBe(false);
   });
 
+  it("rejects a second canvas after the one-shot bitmap is consumed", () => {
+    const close = vi.fn();
+    const work = new WorkState();
+    const preview = retainSelectionPreview(work, {
+      bitmap: { close } as unknown as ImageBitmap,
+      width: 100,
+      height: 100,
+      positions: [],
+    });
+    const firstCanvas = { width: 100, height: 100 } as HTMLCanvasElement;
+    const secondCanvas = { width: 100, height: 100 } as HTMLCanvasElement;
+
+    expect(preview.attachCanvas(firstCanvas)).toBe(true);
+    preview.consumeBitmap();
+
+    expect(preview.attachCanvas(secondCanvas)).toBe(false);
+    expect(secondCanvas.width).toBe(0);
+    expect(secondCanvas.height).toBe(0);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it("prevents a deferred effect from drawing after suspension", () => {
     const close = vi.fn();
     const work = new WorkState();

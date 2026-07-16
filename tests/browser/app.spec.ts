@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
 import { COPY } from "../../src/copy";
@@ -32,6 +32,44 @@ const expectedPermissionsPolicy = permissionsRegistry.directives
   .map(({ name, allow }) => `${name}=(${allow === "self" ? "self" : ""})`)
   .join(", ");
 
+async function expectThemeColor(page: Page, expected: string): Promise<void> {
+  await expect
+    .poll(() =>
+      page
+        .locator('meta[name="theme-color"]')
+        .evaluateAll((elements) => elements.map((element) => element.getAttribute("content"))),
+    )
+    .toEqual([expected, expected]);
+}
+
+test("matches the system theme color before JavaScript starts", async ({
+  baseURL,
+  browser,
+}) => {
+  for (const appearance of [
+    { color: "#fffdf8", scheme: "light" },
+    { color: "#191715", scheme: "dark" },
+  ] as const) {
+    const context = await browser.newContext({
+      ...(baseURL === undefined ? {} : { baseURL }),
+      colorScheme: appearance.scheme,
+      javaScriptEnabled: false,
+    });
+    try {
+      const page = await context.newPage();
+      await page.goto("/");
+      await expect(page.locator('meta[name="theme-color"]')).toHaveCount(2);
+      await expect(
+        page.locator(
+          `meta[name="theme-color"][media="(prefers-color-scheme: ${appearance.scheme})"]`,
+        ),
+      ).toHaveAttribute("content", appearance.color);
+    } finally {
+      await context.close();
+    }
+  }
+});
+
 test("follows the system theme and persists an explicit choice", async ({
   context,
   page,
@@ -43,19 +81,18 @@ test("follows the system theme and persists an explicit choice", async ({
   const toggle = page.getByRole("button", { name: "Dark mode" });
   await expect(root).toHaveAttribute("data-theme", "light");
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
-    "content",
-    "#fffdf8",
-  );
+  await expectThemeColor(page, "#fffdf8");
 
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(root).toHaveAttribute("data-theme", "dark");
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expectThemeColor(page, "#191715");
 
   await toggle.focus();
   await page.keyboard.press("Space");
   await expect(root).toHaveAttribute("data-theme", "light");
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expectThemeColor(page, "#fffdf8");
   await expect
     .poll(() => page.evaluate((key) => localStorage.getItem(key), THEME_STORAGE_KEY))
     .toBe("light");
@@ -68,10 +105,26 @@ test("follows the system theme and persists an explicit choice", async ({
   const reopened = await context.newPage();
   await reopened.goto("/");
   await expect(reopened.locator("html")).toHaveAttribute("data-theme", "light");
+  await expectThemeColor(reopened, "#fffdf8");
   await expect(reopened.getByRole("button", { name: "Dark mode" })).toHaveAttribute(
     "aria-pressed",
     "false",
   );
+
+  await reopened.emulateMedia({ colorScheme: "dark" });
+  await reopened.getByRole("button", { name: "About" }).click();
+  const systemThemeButton = reopened.getByRole("button", { name: "Use device setting" });
+  await expect(systemThemeButton).toBeEnabled();
+  await systemThemeButton.click();
+  await expect
+    .poll(() => reopened.evaluate((key) => localStorage.getItem(key), THEME_STORAGE_KEY))
+    .toBeNull();
+  await expect(reopened.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(reopened.getByRole("button", { name: "Using device setting" })).toBeDisabled();
+
+  await reopened.emulateMedia({ colorScheme: "light" });
+  await expect(reopened.locator("html")).toHaveAttribute("data-theme", "light");
+  await expectThemeColor(reopened, "#fffdf8");
 });
 
 test("keeps theme controls usable when preference storage is blocked", async ({ page }) => {
@@ -100,6 +153,58 @@ test("keeps theme controls usable when preference storage is blocked", async ({ 
   ).toBeVisible();
 });
 
+test("keeps the skip link and view focus handoff keyboard-visible", async ({
+  browserName,
+  page,
+}) => {
+  await page.goto("/");
+  await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
+  const skipLink = page.getByRole("link", { name: "Skip to content" });
+  await expect(skipLink).toBeFocused();
+  await expect(skipLink).toBeVisible();
+  expect(await skipLink.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+
+  await page.keyboard.press("Enter");
+  await expect(page.locator("main")).toBeFocused();
+  await page.getByRole("button", { name: "Privacy" }).click();
+  await expect(page.getByRole("heading", { name: "What stays on your device" })).toBeFocused();
+  await expect(page).toHaveTitle(`Privacy · ${COPY.brand}`);
+});
+
+test("keeps the desktop headline balanced", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+
+  const lineCount = await page.getByRole("heading", { name: COPY.primaryMessage }).evaluate(
+    (heading) => {
+      const range = document.createRange();
+      range.selectNodeContents(heading);
+      return Array.from(range.getClientRects()).filter((rect) => rect.width > 1).length;
+    },
+  );
+  expect(lineCount).toBeLessThanOrEqual(2);
+});
+
+test("preserves home controls in forced colors", async ({ browserName, page }) => {
+  test.skip(browserName !== "chromium", "Forced-colors emulation is a Chromium contract.");
+  await page.emulateMedia({ forcedColors: "active" });
+  await page.goto("/");
+
+  const sourceIcons = page.locator(".source-icon svg");
+  await expect(sourceIcons).toHaveCount(2);
+  await expect(sourceIcons.first()).toBeVisible();
+  const scanAction = page.getByRole("button", { name: "Scan with camera" });
+  expect(await scanAction.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return Number.parseFloat(style.borderTopWidth);
+  })).toBeGreaterThan(0);
+  await scanAction.focus();
+  expect(await scanAction.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return Number.parseFloat(style.outlineWidth);
+  })).toBeGreaterThanOrEqual(3);
+});
+
 test("scans an image locally and requires two-step review", async ({ page }) => {
   const destinationRequests: string[] = [];
   page.on("request", (request) => {
@@ -120,10 +225,15 @@ test("scans an image locally and requires two-step review", async ({ page }) => 
   await expect(
     page.getByRole("heading", { name: "Review before opening." }),
   ).toBeVisible({ timeout: 15_000 });
+  await expect(
+    page.getByRole("heading", { name: "Review before opening." }),
+  ).toBeFocused();
+  await expect(page.locator(".destination-card")).toContainText("http://127.0.0.1:8080");
+  await expect(page.getByText("Needs review", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("127.0.0.1", { exact: true }).first()).toBeVisible();
   const queryField = page.locator(".field-row").filter({ hasText: "Query names" });
   await expect(queryField).toBeVisible();
-  await queryField.getByText("Show details", { exact: true }).click();
+  await queryField.getByText("Show query names", { exact: true }).click();
   await expect(queryField.getByText("token", { exact: true })).toBeVisible();
   await expect(page.getByText("hidden", { exact: true })).toHaveCount(0);
   await expect(page.locator('a[href*="127.0.0.1:8080"]')).toHaveCount(0);
@@ -139,6 +249,7 @@ test("scans an image locally and requires two-step review", async ({ page }) => 
   await continueButton.click();
   const dialog = page.getByRole("dialog", { name: "Open this link?" });
   await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("http://127.0.0.1:8080");
   expect(
     await dialog.evaluate((element) => ({
       focusInside: element.contains(document.activeElement),
@@ -232,6 +343,7 @@ test("keeps information views in-memory and exposes privacy limits", async ({
     "aria-current",
   );
   await expect(page.getByRole("heading", { name: "What stays on your device" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What stays on your device" })).toBeFocused();
   await expect(page.getByText("No destination lookup")).toBeVisible();
   await expect(page.getByRole("heading", { name: "App hosting traffic" })).toBeVisible();
   await expect(page.getByText(/hosting provider.*IP address/u)).toBeVisible();
@@ -246,6 +358,11 @@ test("keeps information views in-memory and exposes privacy limits", async ({
   await expect(
     page.getByRole("heading", { name: "Built to show evidence, not a verdict." }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Built to show evidence, not a verdict." }),
+  ).toBeFocused();
+  await expect(page).toHaveTitle(`About · ${COPY.brand}`);
+  await page.getByText("Technical and release details", { exact: true }).click();
   await expect(page.getByText("AGPL-3.0-or-later").first()).toBeVisible();
   await expect(page.getByText("MPL-2.0 · CC0-1.0 · Unicode-3.0", { exact: true })).toBeVisible();
   const expectedInstallCopy =
@@ -295,6 +412,7 @@ test("offers a real camera restart after background suspension", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "Scan with camera" }).click();
   await expect(page.getByRole("heading", { name: "Hold the QR code inside the frame" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hold the QR code inside the frame" })).toBeFocused();
   await expect(page.getByText(COPY.lookingForCode, { exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() =>
     (window as unknown as { __qrwardenFakeCamera: { calls: number } })
@@ -618,6 +736,43 @@ test("labels selection positions and drops canvas geometry when hidden", async (
   ]);
 });
 
+test("uses field-specific controls for sensitive multi-code contents", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('input[type="file"]').setInputFiles(multiFixture);
+  const wifiChoice = page.getByRole("button", {
+    name: "QR code 2, right, Wi-Fi details",
+  });
+  await expect(wifiChoice).toBeVisible({ timeout: 15_000 });
+  await wifiChoice.click();
+
+  await expect(
+    page.getByRole("heading", { name: COPY.inspectOnlyHeading }),
+  ).toBeFocused();
+  await expect(page.locator(".result-status")).toHaveClass(/status-unavailable/u);
+  const passwordRow = page.locator(".field-row").filter({ hasText: "Password" });
+  const revealPassword = passwordRow.getByRole("button", { name: "Reveal password" });
+  await expect(revealPassword).toHaveAttribute("aria-expanded", "false");
+  const controlledValue = await revealPassword.getAttribute("aria-controls");
+  expect(controlledValue).toBeTruthy();
+  await expect(passwordRow.locator(`#${controlledValue ?? "missing"}`)).toHaveText("••••••••");
+  await expect(passwordRow.getByRole("button", { name: "Copy password" })).toHaveCount(0);
+
+  await revealPassword.click();
+  await expect(passwordRow.getByRole("button", { name: "Mask password" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expect(passwordRow.getByRole("button", { name: "Copy password" })).toBeVisible();
+  await expect(passwordRow.locator("details")).toHaveCount(0);
+
+  await passwordRow.getByRole("button", { name: "Mask password" }).click();
+  await expect(passwordRow.getByRole("button", { name: "Reveal password" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await expect(passwordRow.getByRole("button", { name: "Copy password" })).toHaveCount(0);
+});
+
 test("fails closed when a selection canvas cannot acquire a 2D context", async ({
   page,
 }) => {
@@ -634,6 +789,31 @@ test("fails closed when a selection canvas cannot acquire a 2D context", async (
           return null;
         }
         return Reflect.apply(original, this, [contextId, ...args]) as RenderingContext | null;
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.locator('input[type="file"]').setInputFiles(multiFixture);
+  await expect(
+    page.getByRole("heading", { name: COPY.readerStoppedHeading }),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Choose a QR code" })).toHaveCount(0);
+  await expect(page.locator(".selection-canvas")).toHaveCount(0);
+});
+
+test("recovers when a selection canvas cannot draw its one-shot bitmap", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = CanvasRenderingContext2D.prototype.drawImage;
+    Object.defineProperty(CanvasRenderingContext2D.prototype, "drawImage", {
+      configurable: true,
+      value(this: CanvasRenderingContext2D, ...args: unknown[]): void {
+        if (this.canvas.classList.contains("selection-canvas")) {
+          throw new DOMException("Bitmap already consumed", "InvalidStateError");
+        }
+        Reflect.apply(original, this, args);
       },
     });
   });
@@ -738,6 +918,7 @@ test("cold-launches the verified shell while offline", async ({
   page,
   context,
   browserName,
+  baseURL,
 }) => {
   test.skip(
     browserName === "webkit",
@@ -753,7 +934,8 @@ test("cold-launches the verified shell while offline", async ({
   await page.close();
   await context.setOffline(true);
   const offlinePage = await context.newPage();
-  await offlinePage.goto("http://127.0.0.1:4173/");
+  if (baseURL === undefined) throw new TypeError("Browser base URL is required");
+  await offlinePage.goto(baseURL);
   await expect(
     offlinePage.getByRole("heading", {
       name: COPY.primaryMessage,

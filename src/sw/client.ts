@@ -543,8 +543,20 @@ export class ServiceWorkerClient {
     }
 
     if (
-      (message.type === "RELEASE_UPDATE_PREPARE" ||
-        message.type === "ACTIVATION_FAILED") &&
+      message.type === "RELEASE_UPDATE_PREPARE" &&
+      this.#leaseMatches(message)
+    ) {
+      // Another client being busy (or the prepared client set changing) is a
+      // benign deferral, not an activation failure. Release this document's
+      // prepare lease, then re-read the authoritative worker state so the
+      // waiting update remains retryable when it is still present.
+      this.#releaseLease(false);
+      this.#regateFromLifecycle();
+      return;
+    }
+
+    if (
+      message.type === "ACTIVATION_FAILED" &&
       this.#leaseMatches(message)
     ) {
       void this.#reconcileLease(false);

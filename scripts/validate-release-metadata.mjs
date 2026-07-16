@@ -166,7 +166,7 @@ const expectedManifest = {
   scope: "/",
   display: "standalone",
   background_color: "#0c0a09",
-  theme_color: "#1c1c1c",
+  theme_color: "#191715",
   icons: [
     { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
     { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
@@ -179,7 +179,7 @@ equal(await json("public/app.webmanifest"), expectedManifest, "public/app.webman
 try {
   const indexHtml = await readFile(new URL("index.html", root), "utf8");
   const colorSchemeTags = indexHtml.match(/<meta\s+name="color-scheme"\s+content="[^"]+">/gu) ?? [];
-  const themeColorTags = indexHtml.match(/<meta\s+name="theme-color"\s+content="[^"]+">/gu) ?? [];
+  const themeColorTags = indexHtml.match(/<meta\s+name="theme-color"[^>]*>/gu) ?? [];
   equal(
     colorSchemeTags,
     ['<meta name="color-scheme" content="dark light">'],
@@ -187,7 +187,10 @@ try {
   );
   equal(
     themeColorTags,
-    ['<meta name="theme-color" content="#1c1c1c">'],
+    [
+      '<meta name="theme-color" content="#191715" media="(prefers-color-scheme: dark)">',
+      '<meta name="theme-color" content="#fffdf8" media="(prefers-color-scheme: light)">',
+    ],
     "index theme-color metadata",
   );
 } catch (error) {

@@ -9,11 +9,11 @@ export const COPY = Object.freeze({
     "QRWarden did not find the offline URL patterns that require extra confirmation. It did not visit or verify this website.",
   reviewHeading: "Review before opening.",
   reviewBody: (count: number): string =>
-    `QRWarden found ${count} details to review. These signals do not prove the website is harmful.`,
-  inspectOnlyHeading: "QRWarden won't open this code.",
+    `QRWarden found ${count} ${count === 1 ? "detail" : "details"} to review. These signals do not prove the website is harmful.`,
+  inspectOnlyHeading: "Decoded for inspection.",
   inspectOnlyBody:
-    "This action type is inspect-only. You can review the decoded content below.",
-  rawBytesHeading: "Shown as raw bytes.",
+    "Review the decoded contents below. QRWarden does not act on this code type.",
+  rawBytesHeading: "Encoding could not be confirmed.",
   rawBytesBody:
     "QRWarden could not confirm how this text is encoded, so it is shown as bytes. QRWarden does not guess encodings.",
   emptyHeading: "Empty QR code.",
@@ -25,8 +25,8 @@ export const COPY = Object.freeze({
   openLink: "Open link",
   continueToLink: "Continue to link…",
   confirmHeading: "Open this link?",
-  confirmBody: (host: string): string =>
-    `You are about to open ${host}. Review the details above before continuing.`,
+  confirmBody: (destination: string): string =>
+    `You are about to open ${destination}. Review the details above before continuing.`,
   cancel: "Cancel",
   scanAnother: "Scan another code",
   resumeScanning: "Resume scanning",
@@ -38,7 +38,7 @@ export const COPY = Object.freeze({
   copyFailed: "Could not copy this value.",
   noQrHeading: "No QR code found.",
   noQrBody:
-    "QRWarden could not find a QR code. Try brighter, more even lighting, reduce glare, and hold the code flatter and closer.",
+    "QRWarden could not find a QR code in this image. Try a sharper image, crop closer to the code, and reduce glare.",
   unsupportedCodeHeading: "Unsupported code type.",
   unsupportedCodeBody:
     "This is a code format QRWarden does not read (for example Micro QR or a multi-part code).",
@@ -66,10 +66,10 @@ export const COPY = Object.freeze({
     "Reading stopped when QRWarden went into the background. Choose the image again to continue.",
   readerStoppedHeading: "Reader stopped.",
   readerStoppedBody:
-    "The code reader stopped unexpectedly and was restarted. Try scanning again.",
-  linkChangedHeading: "Link changed.",
+    "The code reader stopped unexpectedly. Return to the scanner and try again.",
+  linkChangedHeading: "Link opening stopped.",
   linkChangedBody:
-    "The link no longer matches the result you reviewed. Scan the code again.",
+    "QRWarden could not confirm that this action still matches the result you reviewed. Scan the code again.",
   preparingOfflineHeading: "Preparing offline use.",
   preparingOfflineBody: "Setting up offline use…",
   checkingVersionHeading: "Checking app version.",
@@ -86,7 +86,7 @@ export const COPY = Object.freeze({
     "A QRWarden update is ready. Choose Install update when scanning and review are idle.",
   updateFailedHeading: "Update failed.",
   updateFailedBody:
-    "The update could not be installed. The current version keeps working. QRWarden will try again on a later launch.",
+    "The update could not be installed. QRWarden will try again on a later online launch.",
   installUpdate: "Install update",
   updateBusyBody: "Finish or leave this screen, then choose Install update.",
   updateStartingBody: "Starting the update…",

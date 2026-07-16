@@ -42,7 +42,7 @@ export function retainSelectionPreview(
     }
   };
   const attachCanvas = (next: HTMLCanvasElement): boolean => {
-    if (disposed) {
+    if (disposed || bitmapClosed) {
       next.width = 0;
       next.height = 0;
       return false;

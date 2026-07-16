@@ -7,9 +7,9 @@ import * as copyModule from "../../src/copy";
 import { COPY } from "../../src/copy";
 
 const SOURCE_SHA256 =
-  "c699a7aa7611f2689e3e8bfc0878b672b8dbba8e4380b1d3fe233fa87c0c9e18";
+  "2e949109ac28a01b9fd393d728c405e07051e7d0668a00fbd636de89e9a0ddea";
 const RUNTIME_CONTRACT_SHA256 =
-  "2051123f89a3a78129d848f51f92333e7f535e4d686fa4a3029b680ef1936b29";
+  "931daed9ff028a44f1b9ec1cb0714c50410d4aa380f1558b7dbb36b280066742";
 
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
@@ -32,6 +32,11 @@ function materialize(key: string, value: unknown): string {
 }
 
 describe("reviewed copy contract", () => {
+  it("pluralizes review details for plain-language results", () => {
+    expect(COPY.reviewBody(1)).toContain("1 detail to review");
+    expect(COPY.reviewBody(2)).toContain("2 details to review");
+  });
+
   it("snapshots every source byte, runtime export, key, and rendered string", async () => {
     const source = await readFile(
       new URL("../../src/copy/index.ts", import.meta.url),

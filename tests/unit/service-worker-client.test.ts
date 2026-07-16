@@ -552,6 +552,82 @@ describe("waiting update activation", () => {
     });
   });
 
+  it("restores a deferred waiting update as unlocked and retryable", async () => {
+    const active = new FakeWorker(readyState());
+    const waiting = new FakeWorker(waitingState());
+    const harness = installHarness(active);
+    harness.registration.waiting = waiting;
+    const locks: boolean[] = [];
+    const states: OfflineState[] = [];
+    const client = createClient({
+      onLockChange: (locked) => locks.push(locked),
+      onState: (state) => states.push(state),
+    });
+    const nonce = "a".repeat(32);
+    const release = waitingState().releaseId;
+
+    await client.gate();
+    const message = harness.workerHandlers.get("message");
+    expect(message).toBeDefined();
+    locks.length = 0;
+    states.length = 0;
+    expect(client.activateWaitingUpdate()).toEqual({ status: "started" });
+    message?.({
+      data: { type: "PREPARE_UPDATE", nonce, release },
+      source: waiting,
+    });
+    expect(locks.at(-1)).toBe(true);
+    expect(waiting.messages).toContainEqual({ type: "READY", nonce, release });
+
+    message?.({
+      data: { type: "RELEASE_UPDATE_PREPARE", nonce, release },
+      source: waiting,
+    });
+
+    await vi.waitFor(() => expect(states.at(-1)).toBe("update-ready"));
+    expect(states).not.toContain("update-failed");
+    expect(locks.at(-1)).toBe(false);
+    expect(harness.serviceWorkers.getRegistration).toHaveBeenCalledTimes(2);
+    expect(client.activateWaitingUpdate()).toEqual({ status: "started" });
+    expect(
+      waiting.messages.filter((entry) => entry.type === "BEGIN_UPDATE_COORDINATION"),
+    ).toHaveLength(2);
+  });
+
+  it("retains update-failed for a genuine activation failure", async () => {
+    const active = new FakeWorker(readyState());
+    const waiting = new FakeWorker(waitingState());
+    const harness = installHarness(active);
+    harness.registration.waiting = waiting;
+    const locks: boolean[] = [];
+    const states: OfflineState[] = [];
+    const client = createClient({
+      onLockChange: (locked) => locks.push(locked),
+      onState: (state) => states.push(state),
+    });
+    const nonce = "b".repeat(32);
+    const release = waitingState().releaseId;
+
+    await client.gate();
+    const message = harness.workerHandlers.get("message");
+    expect(message).toBeDefined();
+    locks.length = 0;
+    states.length = 0;
+    message?.({
+      data: { type: "PREPARE_UPDATE", nonce, release },
+      source: waiting,
+    });
+    expect(locks.at(-1)).toBe(true);
+
+    message?.({
+      data: { type: "ACTIVATION_FAILED", nonce, release },
+      source: waiting,
+    });
+
+    await vi.waitFor(() => expect(states.at(-1)).toBe("update-failed"));
+    expect(locks.at(-1)).toBe(false);
+  });
+
   it("reports unavailable and reconciles when no waiting worker remains", async () => {
     const active = new FakeWorker(readyState());
     const waiting = new FakeWorker(waitingState());

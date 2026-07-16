@@ -120,6 +120,23 @@ function releaseValue(value: string): string {
     : value;
 }
 
+function sourceRepositorySegments(value: string): readonly string[] {
+  try {
+    const parsed = new URL(value);
+    const path = parsed.pathname
+      .split("/")
+      .filter((segment) => segment.length > 0)
+      .map((segment) => `/${segment}`);
+    return [
+      `${parsed.protocol}//${parsed.host}`,
+      ...path,
+      `${parsed.search}${parsed.hash}`,
+    ].filter((segment) => segment.length > 0);
+  } catch {
+    return [value];
+  }
+}
+
 function displayedReleaseId(value: string): string {
   return value.endsWith(`+${DEVELOPMENT_COMMIT}`)
     ? `${value.slice(0, -(DEVELOPMENT_COMMIT.length))}development`
@@ -212,6 +229,32 @@ function statusForReport(report: AnalysisReport): {
   };
 }
 
+function destinationOrigin(report: AnalysisReport): string | null {
+  if (report.kind !== "web-url" || report.canonicalHref === undefined) return null;
+  try {
+    const parsed = new URL(report.canonicalHref);
+    return parsed.protocol === "https:" || parsed.protocol === "http:"
+      ? parsed.origin
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function documentTitleForView(kind: View["kind"]): string {
+  const titles: Readonly<Record<View["kind"], string>> = {
+    home: COPY.tagline,
+    camera: "Camera scan",
+    reading: "Reading image",
+    selection: "Choose a QR code",
+    result: "Inspection result",
+    error: "Scanning problem",
+    privacy: "Privacy",
+    about: "About",
+  };
+  return kind === "home" ? `${COPY.brand}: ${titles[kind]}` : `${titles[kind]} · ${COPY.brand}`;
+}
+
 function problemFromImage(problem: ImageIntakeProblem): ProblemCode | null {
   if (problem === "cancelled") return null;
   return problem === "image-too-large" ||
@@ -260,7 +303,10 @@ function SelectionCanvas({
       onUnavailable();
       return;
     }
-    if (!preview.attachCanvas(canvas)) return;
+    if (!preview.attachCanvas(canvas)) {
+      if (!preview.disposed) onUnavailable();
+      return;
+    }
     try {
       if (preview.disposed) return;
       context.drawImage(preview.bitmap, 0, 0, preview.width, preview.height);
@@ -291,6 +337,9 @@ function SelectionCanvas({
         context.fillStyle = "#fff7ed";
         context.fillText(String(index + 1), x, y);
       });
+    } catch {
+      preview.dispose();
+      onUnavailable();
     } finally {
       preview.consumeBitmap();
     }
@@ -301,25 +350,29 @@ function SelectionCanvas({
 
 function FieldValue({
   field,
+  label,
   revealRequested,
   locked,
+  valueId,
 }: {
   field: DisplayField;
+  label: string;
   revealRequested: boolean;
   locked: boolean;
+  valueId: string;
 }) {
   const presentation = presentFieldValue(field, revealRequested, locked);
-  if (field.collapsed && !presentation.masked) {
+  if (field.collapsed && !presentation.masked && !field.sensitive) {
     if (locked) {
       return (
-        <span class="field-value field-value-long" aria-disabled="true">
+        <span id={valueId} class="field-value field-value-long" aria-disabled="true">
           Details unavailable while the app version is checked.
         </span>
       );
     }
     return (
       <details>
-        <summary>Show details</summary>
+        <summary>Show {label.toLowerCase()}</summary>
         <bdi dir="auto" class="field-value field-value-long">
           {presentation.value}
         </bdi>
@@ -327,20 +380,20 @@ function FieldValue({
     );
   }
   return (
-    <bdi dir="auto" class="field-value">
+    <bdi id={valueId} dir="auto" class="field-value">
       {presentation.value}
     </bdi>
   );
 }
 
 function ConfirmationDialog({
-  hostname,
+  destination,
   locked,
   returnFocus,
   onOpen,
   onCancel,
 }: {
-  hostname: string;
+  destination: string;
   locked: boolean;
   returnFocus: HTMLElement | null;
   onOpen: (event: MouseEvent) => void;
@@ -377,7 +430,7 @@ function ConfirmationDialog({
     >
       <h2 id="confirm-title">{COPY.confirmHeading}</h2>
       <div id="confirm-description">
-        <p>{COPY.confirmBody(hostname)}</p>
+        <p>{COPY.confirmBody(destination)}</p>
         <p>{COPY.launchNotice}</p>
       </div>
       <div class="dialog-actions">
@@ -407,6 +460,8 @@ export function App(props: AppProps) {
   const work = useMemo(() => new WorkState(), []);
   const [view, setView] = useState<View>({ kind: "home" });
   const viewRef = useRef<View>(view);
+  const viewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const previousViewKindRef = useRef<View["kind"]>(view.kind);
   const [offlineState, setOfflineState] = useState(props.initialOfflineState);
   const [locked, setLocked] = useState(props.initialLocked);
   const lockedRef = useRef(props.initialLocked);
@@ -421,18 +476,38 @@ export function App(props: AppProps) {
   const confirmationTriggerRef = useRef<HTMLButtonElement>(null);
   const cameraRef = useRef<CameraController<DetectionResult> | null>(null);
   const cameraTaskCount = useRef(0);
+  const cameraTaskGeneration = useRef(0);
   const [cameraTaskRevision, setCameraTaskRevision] = useState(0);
   const [theme, setTheme] = useState(props.themeController.theme);
+  const [followsSystemTheme, setFollowsSystemTheme] = useState(
+    props.themeController.followsSystem,
+  );
 
   useEffect(
     () => props.themeController.subscribe(setTheme),
     [props.themeController],
   );
 
+  useLayoutEffect(() => {
+    document.title = documentTitleForView(view.kind);
+    const previousKind = previousViewKindRef.current;
+    previousViewKindRef.current = view.kind;
+    if (previousKind === view.kind || view.kind === "error") return;
+    viewHeadingRef.current?.focus({ preventScroll: true });
+  }, [view.kind]);
+
+  const resetCameraTasks = (): void => {
+    cameraTaskGeneration.current += 1;
+    cameraTaskCount.current = 0;
+    setCameraTaskRevision((current) => current + 1);
+  };
+
   const trackCameraTask = (task: Promise<unknown>): void => {
+    const generation = cameraTaskGeneration.current;
     cameraTaskCount.current += 1;
     setCameraTaskRevision((current) => current + 1);
     const settle = (): void => {
+      if (generation !== cameraTaskGeneration.current) return;
       cameraTaskCount.current = Math.max(0, cameraTaskCount.current - 1);
       setCameraTaskRevision((current) => current + 1);
     };
@@ -542,6 +617,7 @@ export function App(props: AppProps) {
     const camera = cameraRef.current;
     cameraRef.current = null;
     camera?.cancel();
+    resetCameraTasks();
     reports.drop();
     navigation.clearConfirmation();
     clipboard.invalidate();
@@ -686,6 +762,7 @@ export function App(props: AppProps) {
       window.removeEventListener("resize", orientation);
       screen.orientation?.removeEventListener("change", orientation);
       controller.cancel();
+      resetCameraTasks();
       if (cameraRef.current === controller) cameraRef.current = null;
     };
   }, [props.workerFactory, view.kind]);
@@ -728,6 +805,7 @@ export function App(props: AppProps) {
     const camera = cameraRef.current;
     cameraRef.current = null;
     camera?.cancel();
+    resetCameraTasks();
     navigation.clearConfirmation();
     clipboard.invalidate();
     reports.drop();
@@ -742,6 +820,7 @@ export function App(props: AppProps) {
   };
 
   const resumeCamera = (): void => {
+    resetCameraTasks();
     setCameraUi(EMPTY_CAMERA_UI);
     work.begin();
     transitionView({ kind: "camera" });
@@ -771,7 +850,12 @@ export function App(props: AppProps) {
         Skip to content
       </a>
       <header class="site-header">
-        <button class="brand-button" type="button" onClick={goHome}>
+        <button
+          class="brand-button"
+          type="button"
+          aria-label="QRWarden home"
+          onClick={goHome}
+        >
           <span class="brand-mark" aria-hidden="true">
             <span />
             <span />
@@ -806,9 +890,15 @@ export function App(props: AppProps) {
             aria-label="Dark mode"
             aria-pressed={theme === "dark"}
             title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            onClick={() => props.themeController.toggle()}
+            onClick={() => {
+              props.themeController.toggle();
+              setFollowsSystemTheme(false);
+            }}
           >
             <span class="theme-toggle-label" aria-hidden="true">Dark</span>
+            <span class="theme-toggle-icon" aria-hidden="true">
+              {theme === "dark" ? "☾" : "☀"}
+            </span>
             <span class="theme-toggle-track" aria-hidden="true">
               <span />
             </span>
@@ -816,7 +906,7 @@ export function App(props: AppProps) {
         </div>
       </header>
 
-      <main id="main-content" class="main-content">
+      <main id="main-content" class="main-content" tabIndex={-1}>
         <div class={`offline-strip offline-${offlineState}`} role="status" aria-live="polite">
           <span class="status-dot" aria-hidden="true" />
           <span>
@@ -854,8 +944,10 @@ export function App(props: AppProps) {
 
         {view.kind === "home" ? (
           <section class="hero" aria-labelledby="hero-title" aria-busy={locked}>
-            <div class="eyebrow">Private by design · works offline</div>
-            <h1 id="hero-title">{COPY.primaryMessage}</h1>
+            <div class="eyebrow">Private by design · analyzed on device</div>
+            <h1 id="hero-title" ref={viewHeadingRef} tabIndex={-1}>
+              {COPY.primaryMessage}
+            </h1>
             <p class="hero-copy">
               Scan with your camera or choose an image. QRWarden decodes and explains the contents on this device without visiting the destination.
             </p>
@@ -869,12 +961,23 @@ export function App(props: AppProps) {
                   transitionView({ kind: "camera" });
                 }}
               >
-                <span class="source-icon camera-icon" aria-hidden="true" />
+                <span class="source-icon camera-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M4 8.5h3l1.4-2h7.2l1.4 2h3v10H4z" />
+                    <circle cx="12" cy="13.5" r="3.25" />
+                  </svg>
+                </span>
                 <strong>Scan with camera</strong>
                 <span>Point your camera at a QR code</span>
               </button>
               <label class={`source-card source-image${controlsDisabled ? " source-disabled" : ""}`}>
-                <span class="source-icon image-icon" aria-hidden="true" />
+                <span class="source-icon image-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+                    <circle cx="8.25" cy="9" r="1.5" />
+                    <path d="m5.5 17 4.5-4.5 3 3 2-2 3.5 3.5" />
+                  </svg>
+                </span>
                 <strong>Choose an image</strong>
                 <span>JPEG, PNG, or WebP · up to 25 MB</span>
                 <input
@@ -910,7 +1013,7 @@ export function App(props: AppProps) {
         {view.kind === "reading" ? (
           <section class="center-card" aria-live="polite" aria-busy={locked}>
             <span class="reader-pulse" aria-hidden="true" />
-            <h1>Reading image…</h1>
+            <h1 ref={viewHeadingRef} tabIndex={-1}>Reading image…</h1>
             <p>The image is being decoded on this device.</p>
             <button type="button" class="secondary-button" onClick={goHome}>Cancel</button>
           </section>
@@ -921,7 +1024,9 @@ export function App(props: AppProps) {
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Camera scan</p>
-                <h1 id="camera-title">Hold the QR code inside the frame</h1>
+                <h1 id="camera-title" ref={viewHeadingRef} tabIndex={-1}>
+                  Hold the QR code inside the frame
+                </h1>
               </div>
               <button type="button" class="secondary-button" onClick={goHome}>Cancel</button>
             </div>
@@ -979,9 +1084,12 @@ export function App(props: AppProps) {
               ) : null}
               {cameraUi.zoom !== null ? (
                 <label>
-                  Zoom
+                  <span class="camera-control-label">
+                    Zoom <output>{Math.round(cameraUi.zoomValue * 10) / 10}×</output>
+                  </span>
                   <input
                     type="range"
+                    aria-label="Zoom"
                     disabled={locked || cameraTaskBusy}
                     min={cameraUi.zoom.min}
                     max={cameraUi.zoom.max}
@@ -1029,7 +1137,9 @@ export function App(props: AppProps) {
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Multiple codes</p>
-                <h1 id="selection-title">{COPY.chooseQrHeading}</h1>
+                <h1 id="selection-title" ref={viewHeadingRef} tabIndex={-1}>
+                  {COPY.chooseQrHeading}
+                </h1>
                 <p>{COPY.chooseQrBody}</p>
               </div>
               <button type="button" class="secondary-button" onClick={goHome}>Cancel</button>
@@ -1042,8 +1152,9 @@ export function App(props: AppProps) {
             />
             <ol class="selection-list">
               {view.entries.map((entry, index) => {
+                const entryReport = entry.report;
                 const payloadKind =
-                  entry.report === null ? "Unsupported code" : kindLabel(entry.report);
+                  entryReport === null ? "Unsupported code" : kindLabel(entryReport);
                 const position = view.preview.positions[index];
                 const positionLabel =
                   position === undefined
@@ -1053,19 +1164,30 @@ export function App(props: AppProps) {
                         view.preview.width,
                         view.preview.height,
                       );
+                const label = `QR code ${index + 1}, ${positionLabel}, ${payloadKind}`;
+                if (entryReport === null) {
+                  return (
+                    <li key={entry.detection.originalIndex}>
+                      <div
+                        class="selection-option selection-option-unavailable"
+                        aria-label={`${label}, unavailable`}
+                      >
+                        <span class="number-badge">{index + 1}</span>
+                        <span class="selection-position">{positionLabel}</span>
+                        <span class="kind-chip">{payloadKind}</span>
+                        <span class="selection-unavailable">Unavailable</span>
+                      </div>
+                    </li>
+                  );
+                }
                 return (
                   <li key={entry.detection.originalIndex}>
                     <button
                       type="button"
+                      class="selection-option"
                       disabled={locked}
-                      aria-label={`QR code ${index + 1}, ${positionLabel}, ${payloadKind}`}
-                      onClick={() => {
-                        if (entry.report === null) {
-                          transitionView({ kind: "error", problem: "unsupported" });
-                        } else {
-                          showReport(entry.report);
-                        }
-                      }}
+                      aria-label={label}
+                      onClick={() => showReport(entryReport)}
                     >
                       <span class="number-badge">{index + 1}</span>
                       <span class="selection-position">{positionLabel}</span>
@@ -1082,16 +1204,17 @@ export function App(props: AppProps) {
         {view.kind === "error" ? (() => {
           const problem = PROBLEM_COPY[view.problem];
           const canResumeCamera = problem.primaryAction === "resume-camera";
+          const isRecovery = problem.tone === "recovery";
           return (
             <section
-              class={`center-card ${canResumeCamera ? "recovery-card" : "error-card"}`}
-              role={canResumeCamera ? "status" : "alert"}
+              class={`center-card ${isRecovery ? "recovery-card" : "error-card"}`}
+              role="alert"
               aria-busy={locked}
             >
-              <span class={canResumeCamera ? "recovery-glyph" : "error-glyph"} aria-hidden="true">
-                {canResumeCamera ? "||" : "!"}
+              <span class={isRecovery ? "recovery-glyph" : "error-glyph"} aria-hidden="true">
+                {canResumeCamera ? "↻" : isRecovery ? "i" : "!"}
               </span>
-              <h1>{problem.heading}</h1>
+              <h1 ref={viewHeadingRef} tabIndex={-1}>{problem.heading}</h1>
               <p>{problem.body}</p>
               {canResumeCamera ? (
                 <div class="recovery-actions">
@@ -1119,7 +1242,7 @@ export function App(props: AppProps) {
         {view.kind === "result" ? (() => {
           const report = view.active.report;
           const status = statusForReport(report);
-          const hostname = report.displayFields.find((field) => field.kind === "hostname");
+          const destination = destinationOrigin(report);
           return (
             <section class="result-layout" aria-labelledby="result-title" aria-busy={locked}>
               <div class="result-topline">
@@ -1128,14 +1251,16 @@ export function App(props: AppProps) {
               <div class={`result-status status-${status.tone}`}>
                 <span class="status-symbol" aria-hidden="true">{status.tone === "review" ? "!" : "i"}</span>
                 <div>
-                  <h1 id="result-title">{status.heading}</h1>
+                  <h1 id="result-title" ref={viewHeadingRef} tabIndex={-1}>
+                    {status.heading}
+                  </h1>
                   <p>{status.body}</p>
                 </div>
               </div>
-              {hostname !== undefined ? (
+              {destination !== null ? (
                 <div class="destination-card">
                   <span>Actual destination</span>
-                  <bdi dir="auto">{hostname.value}</bdi>
+                  <bdi dir="auto">{destination}</bdi>
                 </div>
               ) : null}
               {report.signals.length > 0 ? (
@@ -1145,7 +1270,13 @@ export function App(props: AppProps) {
                     {report.signals.map((signal) => (
                       <li class={`signal-${signal.level}`} key={signal.code}>
                         <span aria-hidden="true">{signal.level === "review" ? "!" : "i"}</span>
-                        <div><strong>{signal.title}</strong><p>{signal.detail}</p></div>
+                        <div>
+                          <small class="signal-level">
+                            {signal.level === "review" ? "Needs review" : "Context"}
+                          </small>
+                          <strong>{signal.title}</strong>
+                          <p>{signal.detail}</p>
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -1158,6 +1289,7 @@ export function App(props: AppProps) {
                   {report.displayFields.map((field) => {
                     const revealRequested = revealed.has(field.id);
                     const isRevealed = revealRequested && !locked;
+                    const valueId = `field-value-${field.id}`;
                     return (
                       <div class="field-row" key={field.id}>
                         <div class="field-heading">
@@ -1166,8 +1298,10 @@ export function App(props: AppProps) {
                         </div>
                         <FieldValue
                           field={field}
+                          label={field.label}
                           revealRequested={revealRequested}
                           locked={locked}
+                          valueId={valueId}
                         />
                         <div class="field-actions">
                           {field.sensitive ? (
@@ -1175,7 +1309,9 @@ export function App(props: AppProps) {
                               type="button"
                               class="text-button"
                               disabled={locked}
+                              aria-controls={valueId}
                               aria-expanded={isRevealed}
+                              aria-label={`${isRevealed ? "Mask" : "Reveal"} ${field.label.toLowerCase()}`}
                               onClick={() => {
                                 setRevealed((current) => {
                                   const next = new Set(current);
@@ -1254,9 +1390,9 @@ export function App(props: AppProps) {
                   {COPY.continueToLink}
                 </button>
               ) : null}
-              {confirmation !== null && hostname !== undefined ? (
+              {confirmation !== null && destination !== null ? (
                 <ConfirmationDialog
-                  hostname={hostname.value}
+                  destination={destination}
                   locked={locked}
                   returnFocus={confirmationTriggerRef.current}
                   onOpen={(event) => {
@@ -1283,7 +1419,7 @@ export function App(props: AppProps) {
         {view.kind === "privacy" ? (
           <article class="prose-card" aria-busy={locked}>
             <p class="eyebrow">Privacy</p>
-            <h1>What stays on your device</h1>
+            <h1 ref={viewHeadingRef} tabIndex={-1}>What stays on your device</h1>
             <p class="lead">{COPY.privacyStatement}</p>
             <h2>No destination lookup</h2>
             <p>QRWarden does not visit decoded links, request favicons, check reputation, or send scan contents to a server. Analysis uses only the bytes inside the QR code and pinned data shipped with the app.</p>
@@ -1302,30 +1438,64 @@ export function App(props: AppProps) {
           return (
             <article class="prose-card" aria-busy={locked}>
               <p class="eyebrow">About</p>
-              <h1>Built to show evidence, not a verdict.</h1>
+              <h1 ref={viewHeadingRef} tabIndex={-1}>
+                Built to show evidence, not a verdict.
+              </h1>
               <p class="lead">QRWarden explains observable properties of a QR code. It never calls a destination safe, trusted, malicious, or verified.</p>
-              <dl class="about-grid">
-                <div><dt>Application release</dt><dd>{displayedReleaseId(props.releaseId)}</dd></div>
-                <div><dt>Analyzer</dt><dd>{ANALYZER_VERSION}</dd></div>
-                <div><dt>PSL snapshot</dt><dd>{ANALYZER_DATA_STATUS.publicSuffix.captured}</dd></div>
-                <div><dt>IANA snapshot</dt><dd>{ANALYZER_DATA_STATUS.ianaSpecialPurpose.captured}</dd></div>
-                <div><dt>Unicode</dt><dd>{ANALYZER_DATA_STATUS.unicodeSecurity.unicodeVersion}</dd></div>
-                <div><dt>First-party code license</dt><dd>AGPL-3.0-or-later</dd></div>
-                <div><dt>Bundled data licenses</dt><dd>MPL-2.0 · CC0-1.0 · Unicode-3.0</dd></div>
-                <div><dt>Release key fingerprint</dt><dd><bdi>{releaseValue(props.signingFingerprint)}</bdi></dd></div>
-                <div><dt>Release public key</dt><dd><bdi>{releaseValue(props.signingPublicKey)}</bdi></dd></div>
-                <div><dt>DNS trust anchor</dt><dd><bdi>{releaseValue(props.dnsKeyOwner)}</bdi></dd></div>
-                <div>
-                  <dt>Source</dt>
-                  <dd>
-                    <bdi>{props.sourceRepository ?? "Not configured in this development build"}</bdi>
-                  </dd>
-                </div>
-              </dl>
               <section class="install-card">
                 <h2>{guidance.heading}</h2>
                 <p>{guidance.body}</p>
               </section>
+              <section class="appearance-card" aria-labelledby="appearance-title">
+                <h2 id="appearance-title">Appearance</h2>
+                <p>
+                  {followsSystemTheme
+                    ? `Following this device's ${theme} appearance.`
+                    : `Using ${theme} mode on this device.`}
+                </p>
+                <button
+                  type="button"
+                  class="secondary-button"
+                  disabled={followsSystemTheme}
+                  onClick={() => {
+                    props.themeController.useSystemTheme();
+                    setFollowsSystemTheme(true);
+                  }}
+                >
+                  {followsSystemTheme ? "Using device setting" : "Use device setting"}
+                </button>
+              </section>
+              <details class="technical-details">
+                <summary>Technical and release details</summary>
+                <dl class="about-grid">
+                  <div><dt>Application release</dt><dd>{displayedReleaseId(props.releaseId)}</dd></div>
+                  <div><dt>Analyzer</dt><dd>{ANALYZER_VERSION}</dd></div>
+                  <div><dt>PSL snapshot</dt><dd>{ANALYZER_DATA_STATUS.publicSuffix.captured}</dd></div>
+                  <div><dt>IANA snapshot</dt><dd>{ANALYZER_DATA_STATUS.ianaSpecialPurpose.captured}</dd></div>
+                  <div><dt>Unicode</dt><dd>{ANALYZER_DATA_STATUS.unicodeSecurity.unicodeVersion}</dd></div>
+                  <div><dt>First-party code license</dt><dd>AGPL-3.0-or-later</dd></div>
+                  <div><dt>Bundled data licenses</dt><dd>MPL-2.0 · CC0-1.0 · Unicode-3.0</dd></div>
+                  <div><dt>Release key fingerprint</dt><dd><bdi>{releaseValue(props.signingFingerprint)}</bdi></dd></div>
+                  <div><dt>Release public key</dt><dd><bdi>{releaseValue(props.signingPublicKey)}</bdi></dd></div>
+                  <div><dt>DNS trust anchor</dt><dd><bdi>{releaseValue(props.dnsKeyOwner)}</bdi></dd></div>
+                  <div>
+                    <dt>Source</dt>
+                    <dd class="source-repository">
+                      {props.sourceRepository === null ? (
+                        "Not configured in this development build"
+                      ) : (
+                        <bdi>
+                          {sourceRepositorySegments(props.sourceRepository).map((segment) => (
+                            <span class="repository-segment" key={segment}>
+                              {segment}<wbr />
+                            </span>
+                          ))}
+                        </bdi>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+              </details>
               <button type="button" class="primary-button" onClick={goHome}>Back to scanner</button>
             </article>
           );
