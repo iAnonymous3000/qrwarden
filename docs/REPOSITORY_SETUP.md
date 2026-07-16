@@ -18,7 +18,7 @@ Create the repository as private, keep Issues and Discussions disabled, and comp
 - Allow GitHub-authored Actions only and require full-length commit SHA pins. The committed workflows currently meet both constraints.
 - Keep the default Actions token permission restricted to read access and leave **Allow GitHub Actions to create and approve pull requests** disabled. Grant write permissions only to reviewed jobs that need a specific permission.
 - Require approval for workflows from all external fork contributors if the resulting review load is acceptable. Never expose write tokens or repository secrets to fork pull requests.
-- Verify that the public dependency graph is populated. Enable Dependabot alerts and Dependabot security updates; `.github/dependabot.yml` already configures version updates.
+- Verify that the public dependency graph is populated and keep Dependabot alerts enabled. Automatic Dependabot version and security-update pull requests are intentionally disabled to preserve the main-only workflow; review alerts and apply dependency updates directly to `main` after validation.
 - Enable CodeQL default setup for JavaScript and TypeScript and review its initial findings before treating the repository as clean.
 - Confirm that automatic public-repository secret scanning is active. Keep account-level push protection enabled and enable repository push protection when the repository settings and plan expose it.
 - Enable private vulnerability reporting as soon as public visibility makes the setting available, subscribe active maintainers to security-alert notifications, and confirm that the route in `SECURITY.md` works from a non-admin account before linking or announcing the repository.
