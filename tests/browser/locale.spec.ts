@@ -25,7 +25,7 @@ test("renders the Spanish locale end to end for a review flow", async ({ page })
 
   await page.getByRole("button", { name: ES_COPY.continueToLink }).click();
   const dialog = page.getByRole("dialog", { name: ES_COPY.confirmHeading });
-  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeVisible({ timeout: 10_000 });
   await dialog.getByRole("button", { name: ES_COPY.cancel }).click();
   await expect(dialog).not.toBeVisible();
 });

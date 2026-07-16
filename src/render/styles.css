@@ -147,7 +147,9 @@ h1[tabindex="-1"]:focus-visible { outline: 3px solid var(--focus); outline-offse
 
 .hero { padding: clamp(3.5rem, 9vw, 7rem) 0 3rem; text-align: center; }
 .eyebrow { color: var(--accent-text); font-size: .75rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
-.hero h1 { max-width: 960px; margin: .8rem auto 1rem; font-size: clamp(2.35rem, 7vw, 5.2rem); line-height: .98; letter-spacing: -.055em; text-wrap: balance; }
+/* The 4.8rem cap and 1000px measure keep the headline on two lines even in
+   the widest common default sans (DejaVu); larger caps wrap to three there. */
+.hero h1 { max-width: 1000px; margin: .8rem auto 1rem; font-size: clamp(2.35rem, 7vw, 4.8rem); line-height: .98; letter-spacing: -.055em; text-wrap: balance; }
 .hero-copy { max-width: 660px; margin: 0 auto; color: var(--muted); font-size: clamp(1rem, 2vw, 1.2rem); line-height: 1.7; }
 .source-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; max-width: 760px; margin: 2.5rem auto 1.5rem; text-align: left; }
 .source-card { position: relative; display: grid; grid-template-columns: 56px 1fr; grid-template-rows: auto auto; column-gap: 1rem; align-items: center; padding: 1.4rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--paper); color: var(--ink); box-shadow: 0 8px 30px var(--card-shadow); transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease; }
