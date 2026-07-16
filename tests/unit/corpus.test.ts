@@ -57,4 +57,19 @@ describe("normative QR image corpus", () => {
       Buffer.from("https://example.net/inverted").toString("hex"),
     ]);
   });
+
+  it("decodes each additional supported matrix symbology", async () => {
+    await expect(decode("microqr-text.png")).resolves.toEqual([
+      Buffer.from("HI123").toString("hex"),
+    ]);
+    await expect(decode("rmqr-url.png")).resolves.toEqual([
+      Buffer.from("https://example.com/rmqr").toString("hex"),
+    ]);
+    await expect(decode("datamatrix-url.png")).resolves.toEqual([
+      Buffer.from("https://example.com/dm").toString("hex"),
+    ]);
+    await expect(decode("aztec-url.png")).resolves.toEqual([
+      Buffer.from("https://example.com/aztec").toString("hex"),
+    ]);
+  });
 });

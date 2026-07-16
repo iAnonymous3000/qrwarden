@@ -1,8 +1,10 @@
 import type { ReaderOptions } from "zxing-wasm/reader";
 
-/** The complete QR-only reader configuration. */
+import { SUPPORTED_READER_FORMATS } from "./symbolProfiles";
+
+/** The complete matrix-symbology reader configuration. */
 export const readerOptions = Object.freeze({
-  formats: Object.freeze(["QRCode"]),
+  formats: SUPPORTED_READER_FORMATS,
   tryHarder: true,
   tryRotate: true,
   tryInvert: true,

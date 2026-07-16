@@ -134,3 +134,23 @@ await emit(
   "inverted-url.png",
   renderSymbol(await symbol("https://example.net/inverted", { invert: true }), 8),
 );
+
+await emit(
+  "microqr-text.png",
+  renderSymbol(await symbol("HI123", { format: "MicroQRCode", options: "" }), 10),
+);
+
+await emit(
+  "rmqr-url.png",
+  renderSymbol(await symbol("https://example.com/rmqr", { format: "rMQRCode", options: "" }), 8),
+);
+
+await emit(
+  "datamatrix-url.png",
+  renderSymbol(await symbol("https://example.com/dm", { format: "DataMatrix", options: "" }), 8),
+);
+
+await emit(
+  "aztec-url.png",
+  renderSymbol(await symbol("https://example.com/aztec", { format: "Aztec", options: "" }), 8),
+);

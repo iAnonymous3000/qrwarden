@@ -19,7 +19,7 @@ import {
   validateStaticImageStructure,
 } from "./imageHeaders";
 import { createStrictLocateFile } from "./locateFile";
-import { isValidQrFamilyResult } from "./model2";
+import { isValidSupportedSymbol } from "./symbolProfiles";
 import {
   PASS_1_MAX_EDGE,
   PASS_2_MAX_EDGE,
@@ -68,7 +68,7 @@ async function decodeImage(
       assertBefore(deadline);
       const results = await readCaptured(imageData);
       assertBefore(deadline);
-      if (results.some(isValidQrFamilyResult)) {
+      if (results.some(isValidSupportedSymbol)) {
         return { done: true as const, outcome: buildWorkerOutcome(results, canvas) };
       }
       return { done: false as const };

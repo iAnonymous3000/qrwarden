@@ -6,12 +6,12 @@ import type {
 } from "../src/decoder/workerProtocol";
 import type { Quadrilateral } from "../src/decoder/types";
 import { decodeCapturedPayload } from "./eci";
-import {
-  checkModel2,
-  enforceResultCount,
-  parseCanonicalModel2Version,
-} from "./model2";
+import { enforceResultCount } from "./model2";
 import { createSelectionPreview } from "./raster";
+import {
+  checkSupportedSymbol,
+  parseCanonicalSymbolVersion,
+} from "./symbolProfiles";
 
 export function captureReaderResults(
   results: readonly ReadResult[],
@@ -32,20 +32,20 @@ function detectionFrom(result: CapturedReaderResult): WorkerDetection {
     position: result.position,
     originalIndex: result.originalIndex,
   } as const;
-  const model2 = checkModel2(result);
-  if (model2.kind === "unsupported") {
+  const check = checkSupportedSymbol(result);
+  if (check.kind === "unsupported") {
     return {
       ...base,
       kind: "unsupported",
-      symbolVersion: parseCanonicalModel2Version(result.extra),
-      reason: model2.reason,
+      symbolVersion: parseCanonicalSymbolVersion(result.format, result.extra),
+      reason: check.reason,
     };
   }
 
   return {
     ...base,
     kind: "supported",
-    symbolVersion: model2.version,
+    symbolVersion: check.version,
     decoding: decodeCapturedPayload(result),
   };
 }

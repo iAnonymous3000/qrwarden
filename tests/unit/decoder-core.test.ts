@@ -74,6 +74,10 @@ describe("locked reader contract", () => {
         "eanAddOnSymbol": "Ignore",
         "formats": [
           "QRCode",
+          "MicroQRCode",
+          "rMQRCode",
+          "DataMatrix",
+          "Aztec",
         ],
         "isPure": false,
         "maxNumberOfSymbols": 9,
