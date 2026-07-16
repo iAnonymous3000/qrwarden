@@ -304,5 +304,35 @@
     "displayFields": { "scheme": "ftp", "summary": "Custom application link (inspect only)" },
     "signals": [],
     "actionPolicy": "inspect-only"
+  },
+  {
+    "id": "link-shortener-review",
+    "original": "https://bit.ly/3xample",
+    "parseOutcome": true,
+    "canonicalHref": "https://bit.ly/3xample",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "bit.ly", "registrable-domain": "bit.ly" },
+    "signals": ["link-shortener"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "link-shortener-subdomain",
+    "original": "https://www.tinyurl.com/abc",
+    "parseOutcome": true,
+    "canonicalHref": "https://www.tinyurl.com/abc",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "www.tinyurl.com", "registrable-domain": "tinyurl.com" },
+    "signals": ["link-shortener"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "link-shortener-lookalike-not-flagged",
+    "original": "https://bit.ly.example.com/path",
+    "parseOutcome": true,
+    "canonicalHref": "https://bit.ly.example.com/path",
+    "kind": "web-url",
+    "displayFields": { "ascii-hostname": "bit.ly.example.com", "registrable-domain": "example.com" },
+    "signals": [],
+    "actionPolicy": "open-web"
   }
 ]

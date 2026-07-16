@@ -60,6 +60,7 @@ export type AnalysisSignalCode =
   | "ip-address"
   | "local-or-special-destination"
   | "non-default-port"
+  | "link-shortener"
   | "mixed-scripts"
   | "confusable-label"
   | "hidden-character"

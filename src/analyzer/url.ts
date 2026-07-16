@@ -7,6 +7,7 @@ import {
 import { classifyIp, classifyLocalHostname } from "./ip";
 import { toAsciiDomain, toUnicodeDomain } from "./idna";
 import { ReportFields } from "./limits";
+import { matchLinkShortener } from "./linkShorteners";
 import { registrableDomain } from "./publicSuffix";
 import { createReport, signal } from "./report";
 import type { AnalysisReport, AnalysisSignal } from "./types";
@@ -348,6 +349,17 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
         "review",
         "Non-default port",
         `The address explicitly uses port ${parsed.port}.`,
+      ),
+    );
+  }
+  const shortener = ip === null ? matchLinkShortener(asciiHostname) : null;
+  if (shortener !== null) {
+    signals.push(
+      signal(
+        "link-shortener",
+        "review",
+        "Link-shortener destination",
+        `The host ${shortener} is a link-shortening service. The final destination stays hidden until the link is opened.`,
       ),
     );
   }
