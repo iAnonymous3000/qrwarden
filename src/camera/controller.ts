@@ -91,6 +91,28 @@ interface ExtendedSettings extends MediaTrackSettings {
   readonly zoom?: number;
 }
 
+function capabilitiesFor(track: MediaStreamTrack): ExtendedCapabilities {
+  try {
+    const getCapabilities = track.getCapabilities;
+    return typeof getCapabilities === "function"
+      ? getCapabilities.call(track) as ExtendedCapabilities
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function settingsFor(track: MediaStreamTrack): ExtendedSettings {
+  try {
+    const getSettings = track.getSettings;
+    return typeof getSettings === "function"
+      ? getSettings.call(track) as ExtendedSettings
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 function stopStream(stream: MediaStream | null): void {
   for (const track of stream?.getTracks() ?? []) {
     track.stop();
@@ -372,13 +394,13 @@ export class CameraController<Result> {
       if (epoch !== this.#epoch) {
         return this.#lastZoom;
       }
-      const settings = track.getSettings() as ExtendedSettings;
+      const settings = settingsFor(track);
       this.#lastZoom = settings.zoom ?? value;
       this.#schedule(0);
       return this.#lastZoom;
     } catch {
       if (epoch === this.#epoch) {
-        const settings = track.getSettings() as ExtendedSettings;
+        const settings = settingsFor(track);
         this.#lastZoom = settings.zoom ?? this.#lastZoom;
         this.#onProblem("zoom-unavailable");
         this.#schedule(0);
@@ -432,7 +454,7 @@ export class CameraController<Result> {
       this.#stream = null;
       throw new DOMException("No video track", "NotFoundError");
     }
-    this.#activeDeviceId = track.getSettings().deviceId ?? null;
+    this.#activeDeviceId = settingsFor(track).deviceId ?? null;
     this.#video.muted = true;
     this.#video.playsInline = true;
     this.#video.srcObject = stream;
@@ -496,8 +518,8 @@ export class CameraController<Result> {
   }
 
   #publishCapabilities(track: MediaStreamTrack): void {
-    const capabilities = track.getCapabilities() as ExtendedCapabilities;
-    const settings = track.getSettings() as ExtendedSettings;
+    const capabilities = capabilitiesFor(track);
+    const settings = settingsFor(track);
     const rawZoom = capabilities.zoom;
     const zoom =
       rawZoom !== undefined &&
@@ -554,7 +576,10 @@ export class CameraController<Result> {
   }
 
   #installDeviceChange(): void {
-    if (this.#deviceChangeInstalled) {
+    if (
+      this.#deviceChangeInstalled ||
+      typeof navigator.mediaDevices.addEventListener !== "function"
+    ) {
       return;
     }
     this.#deviceChangeInstalled = true;
@@ -641,7 +666,11 @@ export class CameraController<Result> {
       this.#pendingFrame = null;
       if (epoch === this.#epoch) {
         this.#advanceEpoch();
-        this.#decoder.restart();
+        try {
+          this.#decoder.restart();
+        } catch {
+          this.#teardownStream();
+        }
         this.#onProblem("reader-stopped");
       }
     } finally {
@@ -731,7 +760,9 @@ export class CameraController<Result> {
 
   #teardownStream(): void {
     if (this.#deviceChangeInstalled) {
-      navigator.mediaDevices.removeEventListener("devicechange", this.#onDeviceChange);
+      if (typeof navigator.mediaDevices.removeEventListener === "function") {
+        navigator.mediaDevices.removeEventListener("devicechange", this.#onDeviceChange);
+      }
       this.#deviceChangeInstalled = false;
     }
     stopStream(this.#stream);

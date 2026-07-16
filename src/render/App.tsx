@@ -596,7 +596,13 @@ export function App(props: AppProps) {
 
   useEffect(() => {
     if (view.kind !== "camera" || videoRef.current === null) return;
-    const adapter = new CameraDecoderAdapter(props.workerFactory);
+    let adapter: CameraDecoderAdapter;
+    try {
+      adapter = new CameraDecoderAdapter(props.workerFactory);
+    } catch {
+      transitionView({ kind: "error", problem: "reader-stopped" });
+      return;
+    }
     const controller = new CameraController<DetectionResult>({
       video: videoRef.current,
       decoder: adapter,
@@ -891,7 +897,13 @@ export function App(props: AppProps) {
               <button type="button" class="secondary-button" onClick={goHome}>Cancel</button>
             </div>
             <div class="video-frame">
-              <video ref={videoRef} aria-label="Live camera preview" />
+              <video
+                ref={videoRef}
+                aria-label="Live camera preview"
+                autoPlay
+                muted
+                playsInline
+              />
               <span class="corner corner-a" aria-hidden="true" />
               <span class="corner corner-b" aria-hidden="true" />
               <span class="corner corner-c" aria-hidden="true" />

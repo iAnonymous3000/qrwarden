@@ -5,6 +5,31 @@ const QUERY_RETRY_MS = 500;
 const PREPARE_LEASE_MS = 60_000;
 const UPDATE_MARKER = "qrwarden-update-check";
 
+function readUpdateMarker(): string | null {
+  try {
+    return sessionStorage.getItem(UPDATE_MARKER);
+  } catch {
+    return null;
+  }
+}
+
+function writeUpdateMarker(release: string): boolean {
+  try {
+    sessionStorage.setItem(UPDATE_MARKER, release);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function removeUpdateMarker(): void {
+  try {
+    sessionStorage.removeItem(UPDATE_MARKER);
+  } catch {
+    // Storage-restricted browser sessions remain usable without persistence.
+  }
+}
+
 export type OfflineState =
   | "preparing"
   | "ready"
@@ -215,22 +240,40 @@ export class ServiceWorkerClient {
     if (!("serviceWorker" in navigator) || !window.isSecureContext) {
       return this.#applyGateResult(true, "incomplete");
     }
-    this.#installListeners();
-    const expectedAfterReload = sessionStorage.getItem(UPDATE_MARKER);
+    const expectedAfterReload = readUpdateMarker();
 
-    let registration = await navigator.serviceWorker.getRegistration("/");
-    if (
-      registration === undefined ||
-      (registration.active === null &&
-        registration.installing === null &&
-        registration.waiting === null)
-    ) {
-      this.#firstInstall = true;
-      registration = await navigator.serviceWorker.register(this.#options.scriptURL, {
-        scope: "/",
-        type: "module",
-        updateViaCache: "none",
-      });
+    let registration: ServiceWorkerRegistration;
+    try {
+      this.#installListeners();
+      const existing = await navigator.serviceWorker.getRegistration("/");
+      if (
+        existing === undefined ||
+        (existing.active === null &&
+          existing.installing === null &&
+          existing.waiting === null)
+      ) {
+        this.#firstInstall = true;
+        registration = await navigator.serviceWorker.register(this.#options.scriptURL, {
+          scope: "/",
+          type: "module",
+          updateViaCache: "none",
+        });
+      } else {
+        registration = existing;
+      }
+    } catch {
+      this.#registration = null;
+      this.#firstInstall = false;
+      if (
+        expectedAfterReload !== null ||
+        navigator.serviceWorker.controller !== null ||
+        this.#lease !== null ||
+        this.#reloadStarted
+      ) {
+        this.#options.dropReport();
+        return this.#applyGateResult(false, "update-failed");
+      }
+      return this.#applyGateResult(true, "incomplete");
     }
     this.#registration = registration;
 
@@ -256,7 +299,7 @@ export class ServiceWorkerClient {
       ) {
         const readiness = await this.#readinessState(active);
         if (readiness === "ready") {
-          sessionStorage.removeItem(UPDATE_MARKER);
+          removeUpdateMarker();
           return this.#applyGateResult(true, readiness);
         }
         if (readiness === "preparing") {
@@ -650,7 +693,11 @@ export class ServiceWorkerClient {
       return;
     }
     this.#reloadStarted = true;
-    sessionStorage.setItem(UPDATE_MARKER, expectedRelease);
+    if (!writeUpdateMarker(expectedRelease)) {
+      this.#options.dropReport();
+      this.#setState("update-failed");
+      return;
+    }
     (this.#options.reload ?? (() => location.reload()))();
   }
 

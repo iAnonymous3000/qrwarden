@@ -209,6 +209,122 @@ describe("service-worker release gate races", () => {
     });
   });
 
+  it("keeps controls usable when registration lookup is blocked", async () => {
+    const harness = installHarness(null);
+    harness.serviceWorkers.getRegistration.mockRejectedValueOnce(
+      new DOMException("Storage blocked", "SecurityError"),
+    );
+    const locks: boolean[] = [];
+    const states: OfflineState[] = [];
+    const client = createClient({
+      onLockChange: (locked) => locks.push(locked),
+      onState: (state) => states.push(state),
+    });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "incomplete",
+    });
+    expect(locks.at(-1)).toBe(false);
+    expect(states.at(-1)).toBe("incomplete");
+  });
+
+  it("stays locked when registration lookup cannot verify an active controller", async () => {
+    const worker = new FakeWorker(readyState());
+    const harness = installHarness(worker);
+    harness.serviceWorkers.getRegistration.mockRejectedValueOnce(
+      new DOMException("Storage blocked", "SecurityError"),
+    );
+    const dropReport = vi.fn();
+    const client = createClient({ dropReport });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: false,
+      offlineState: "update-failed",
+    });
+    expect(dropReport).toHaveBeenCalledOnce();
+  });
+
+  it("keeps controls usable when first registration is blocked", async () => {
+    const harness = installHarness(null);
+    harness.serviceWorkers.register.mockRejectedValueOnce(
+      new DOMException("Registration blocked", "SecurityError"),
+    );
+    const client = createClient();
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "incomplete",
+    });
+  });
+
+  it("continues without a reload marker when session storage is unavailable", async () => {
+    const worker = new FakeWorker(readyState());
+    installHarness(worker);
+    vi.stubGlobal("sessionStorage", {
+      getItem: () => {
+        throw new DOMException("Storage blocked", "SecurityError");
+      },
+      setItem: () => {
+        throw new DOMException("Storage blocked", "SecurityError");
+      },
+      removeItem: () => {
+        throw new DOMException("Storage blocked", "SecurityError");
+      },
+    });
+    const client = createClient();
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "ready",
+    });
+  });
+
+  it("stays locked when a known post-update registration check fails", async () => {
+    const worker = new FakeWorker(readyState());
+    const harness = installHarness(worker);
+    harness.storage.set("qrwarden-update-check", RELEASE);
+    harness.serviceWorkers.getRegistration.mockRejectedValueOnce(
+      new DOMException("Registration blocked", "SecurityError"),
+    );
+    const dropReport = vi.fn();
+    const client = createClient({ dropReport });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: false,
+      offlineState: "update-failed",
+    });
+    expect(dropReport).toHaveBeenCalledOnce();
+  });
+
+  it("stays locked instead of reload-looping when marker storage is blocked", async () => {
+    const mismatchedWorker = new FakeWorker(waitingState());
+    installHarness(mismatchedWorker);
+    vi.stubGlobal("sessionStorage", {
+      getItem: () => null,
+      setItem: () => {
+        throw new DOMException("Storage blocked", "SecurityError");
+      },
+      removeItem: () => undefined,
+    });
+    const locks: boolean[] = [];
+    const states: OfflineState[] = [];
+    const reload = vi.fn();
+    const client = createClient({
+      onLockChange: (locked) => locks.push(locked),
+      onState: (state) => states.push(state),
+      reload,
+    });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: false,
+      offlineState: "update-failed",
+    });
+    expect(reload).not.toHaveBeenCalled();
+    expect(locks.at(-1)).toBe(true);
+    expect(states.at(-1)).toBe("update-failed");
+  });
+
   it("keeps a timed-out query locked and retries instead of treating it as a mismatch", async () => {
     vi.useFakeTimers();
     const worker = new FakeWorker(null);

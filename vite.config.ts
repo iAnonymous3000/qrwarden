@@ -56,7 +56,9 @@ export default defineConfig({
     modulePreload: false,
     reportCompressedSize: false,
     sourcemap: false,
-    target: "es2023",
+    // iOS browsers all use WebKit. This matches the first WebKit release with
+    // the worker OffscreenCanvas support required by the decoder.
+    target: "safari16.4",
     rollupOptions: {
       input: {
         app: root("./index.html"),

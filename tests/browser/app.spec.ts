@@ -441,6 +441,43 @@ test("fails closed when a selection canvas cannot acquire a 2D context", async (
   await expect(page.locator(".selection-canvas")).toHaveCount(0);
 });
 
+test("keeps scanner controls usable when service-worker storage is blocked", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(Object.getPrototypeOf(navigator.serviceWorker), "getRegistration", {
+      configurable: true,
+      value: () => Promise.reject(new DOMException("Storage blocked", "SecurityError")),
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByText("Offline setup incomplete.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Scan with camera" })).toBeEnabled();
+  await expect(page.locator('input[type="file"]')).toBeEnabled();
+});
+
+test("reports a blocked decoder worker instead of hanging", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(Object.getPrototypeOf(navigator.serviceWorker), "getRegistration", {
+      configurable: true,
+      value: () => Promise.reject(new DOMException("Storage blocked", "SecurityError")),
+    });
+    Object.defineProperty(globalThis, "Worker", {
+      configurable: true,
+      value: function BlockedWorker(): never {
+        throw new DOMException("Worker blocked", "SecurityError");
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Scan with camera" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: COPY.readerStoppedHeading }),
+  ).toBeVisible();
+});
+
 test("serves the closed production response contract", async ({ page, request }) => {
   const root = await page.goto("/");
   expect(root?.status()).toBe(200);

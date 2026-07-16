@@ -341,6 +341,43 @@ describe("CameraController lifecycle", () => {
     expect(harness.canvases[0]).toMatchObject({ width: 0, height: 0 });
   });
 
+  it("starts without optional track capability APIs", async () => {
+    const harness = createHarness();
+    Object.defineProperties(harness.track, {
+      getCapabilities: { configurable: true, value: undefined },
+      getSettings: { configurable: true, value: undefined },
+    });
+
+    await harness.controller.start();
+
+    expect(harness.controller.active).toBe(true);
+    expect(harness.onProblem).not.toHaveBeenCalled();
+    expect(harness.onCapabilities).toHaveBeenCalledWith({
+      zoom: null,
+      zoomValue: null,
+      torch: false,
+      torchEnabled: false,
+    });
+
+    harness.controller.cancel();
+    expect(harness.track.stop).toHaveBeenCalledOnce();
+  });
+
+  it("starts when device-change events are unavailable", async () => {
+    const harness = createHarness();
+    Object.defineProperties(harness.mediaDevices, {
+      addEventListener: { configurable: true, value: undefined },
+      removeEventListener: { configurable: true, value: undefined },
+    });
+
+    await harness.controller.start();
+
+    expect(harness.controller.active).toBe(true);
+    expect(harness.onProblem).not.toHaveBeenCalled();
+    harness.controller.cancel();
+    expect(harness.track.stop).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["NotAllowedError", "camera-access-needed"],
     ["SecurityError", "camera-access-needed"],
@@ -553,6 +590,23 @@ describe("CameraController timeout and constraints", () => {
     expect(harness.onOverflow).not.toHaveBeenCalled();
 
     harness.controller.cancel();
+  });
+
+  it("stops the camera when decoder replacement fails", async () => {
+    const harness = createHarness();
+    await harness.controller.start();
+    harness.decoder.decodeCameraFrame.mockRejectedValueOnce(new Error("decode failed"));
+    harness.decoder.restart.mockImplementationOnce(() => {
+      throw new DOMException("Worker unavailable", "NotSupportedError");
+    });
+
+    await vi.advanceTimersToNextTimerAsync();
+
+    expect(harness.decoder.restart).toHaveBeenCalledOnce();
+    expect(harness.controller.active).toBe(false);
+    expect(harness.track.stop).toHaveBeenCalledOnce();
+    expect(harness.onProblem).toHaveBeenCalledExactlyOnceWith("reader-stopped");
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("rejects oversized live dimensions and stops the stream before decoding", async () => {

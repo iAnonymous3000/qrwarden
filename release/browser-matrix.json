@@ -34,6 +34,7 @@
       "physical": true,
       "requirements": [
         "Safari tab",
+        "latest Brave in tab",
         "Home Screen standalone with Open as Web App enabled where shown"
       ]
     },

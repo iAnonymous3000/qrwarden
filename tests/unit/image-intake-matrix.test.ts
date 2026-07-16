@@ -96,6 +96,24 @@ describe("image intake validation matrix", () => {
     expect(controller.busy).toBe(false);
   });
 
+  it("reports a synchronous decoder-worker startup failure", () => {
+    const workerFactory = vi.fn<() => Worker>(() => {
+      throw new DOMException("Worker unavailable", "NotSupportedError");
+    });
+    const onProblem = vi.fn();
+    const controller = new ImageController({
+      workerFactory,
+      onResult: vi.fn(),
+      onProblem,
+    });
+
+    controller.choose([fileLike(1, "image/png")]);
+
+    expect(workerFactory).toHaveBeenCalledOnce();
+    expect(onProblem).toHaveBeenCalledExactlyOnceWith("reader-stopped");
+    expect(controller.busy).toBe(false);
+  });
+
   it("filters drop items without reading strings or falling back from a nonempty item list", () => {
     const accepted = fileLike(1, "image/png", "accepted.png");
     const ignoredFallback = fileLike(1, "image/png", "fallback.png");

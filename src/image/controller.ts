@@ -116,9 +116,10 @@ export class ImageController {
   async #decode(file: File): Promise<void> {
     this.cancel();
     const generation = this.#generation;
-    const client = new DecoderWorkerClient(this.#workerFactory);
-    this.#client = client;
+    let client: DecoderWorkerClient | null = null;
     try {
+      client = new DecoderWorkerClient(this.#workerFactory);
+      this.#client = client;
       await client.start();
       if (this.#client !== client || generation !== this.#generation) {
         return;
@@ -133,15 +134,16 @@ export class ImageController {
       this.#onResult({ outcome, generation });
     } catch (error) {
       if (
-        this.#client === client &&
         generation === this.#generation &&
-        error instanceof DecoderFailure &&
-        error.code !== "cancelled"
+        (client === null || this.#client === client)
       ) {
-        this.#onProblem(error.code);
+        const code = error instanceof DecoderFailure ? error.code : "reader-stopped";
+        if (code !== "cancelled") {
+          this.#onProblem(code);
+        }
       }
     } finally {
-      if (this.#client === client) {
+      if (client !== null && this.#client === client) {
         client.dispose("cancelled");
         this.#client = null;
       }
