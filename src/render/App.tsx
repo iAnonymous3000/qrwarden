@@ -35,13 +35,17 @@ import type {
   DetectionResult,
 } from "../decoder";
 import {
+  filesFromDrop,
   ImageController,
   installDropNavigationGuard,
   type ImageIntakeProblem,
 } from "../image/controller";
 import type { OfflineState, ServiceWorkerClient } from "../sw/client";
+import { detectBraveIos } from "./braveGuidance";
 import { presentFieldValue } from "./fieldPresentation";
 import { detectInstallGuidance } from "./installGuidance";
+import { reportAsText } from "./reportText";
+import { SIGNAL_GLOSSARY, SIGNAL_GLOSSARY_CODES } from "./signalGlossary";
 import type { ThemeController } from "./theme";
 import {
   presentUpdateInstall,
@@ -56,6 +60,7 @@ export interface RuntimeBridge {
 export interface AppStatusDetail {
   readonly offlineState?: OfflineState;
   readonly locked?: boolean;
+  readonly sharedImage?: File;
 }
 
 export interface AppProps {
@@ -90,7 +95,8 @@ type View =
   | { readonly kind: "result"; readonly active: ActiveReport<AnalysisReport> }
   | { readonly kind: "error"; readonly problem: ProblemCode }
   | { readonly kind: "privacy" }
-  | { readonly kind: "about" };
+  | { readonly kind: "about" }
+  | { readonly kind: "glossary" };
 
 interface CameraUi {
   readonly devices: readonly MediaDeviceInfo[];
@@ -146,26 +152,7 @@ function displayedReleaseId(value: string): string {
 }
 
 function kindLabel(report: AnalysisReport): string {
-  const labels: Readonly<Record<AnalysisReport["kind"], string>> = {
-    "web-url": "Web link",
-    wifi: "Wi-Fi details",
-    otp: "One-time password setup",
-    dpp: "Device provisioning",
-    contact: "Contact",
-    calendar: "Calendar entry",
-    email: "Email details",
-    sms: "Message details",
-    telephone: "Telephone number",
-    geo: "Location",
-    payment: "Payment details",
-    "custom-uri": "App link",
-    gs1: "GS1 data",
-    "iso-15434": "ISO/IEC 15434 data",
-    empty: "Empty QR code",
-    text: "Text",
-    binary: "Raw bytes",
-  };
-  return labels[report.kind];
+  return COPY.kindLabels[report.kind];
 }
 
 function offlineCopy(state: OfflineState): { heading: string; body: string } {
@@ -246,13 +233,14 @@ function destinationOrigin(report: AnalysisReport): string | null {
 function documentTitleForView(kind: View["kind"]): string {
   const titles: Readonly<Record<View["kind"], string>> = {
     home: COPY.tagline,
-    camera: "Camera scan",
-    reading: "Reading image",
-    selection: "Choose a QR code",
-    result: "Inspection result",
-    error: "Scanning problem",
-    privacy: "Privacy",
-    about: "About",
+    camera: COPY.titleCamera,
+    reading: COPY.titleReading,
+    selection: COPY.titleSelection,
+    result: COPY.titleResult,
+    error: COPY.titleError,
+    privacy: COPY.titlePrivacy,
+    about: COPY.titleAbout,
+    glossary: COPY.titleGlossary,
   };
   return kind === "home" ? `${COPY.brand}: ${titles[kind]}` : `${titles[kind]} · ${COPY.brand}`;
 }
@@ -368,13 +356,13 @@ function FieldValue({
     if (locked) {
       return (
         <span id={valueId} class="field-value field-value-long" aria-disabled="true">
-          Details unavailable while the app version is checked.
+          {COPY.lockedFieldDetails}
         </span>
       );
     }
     return (
       <details>
-        <summary>Show {label.toLowerCase()}</summary>
+        <summary>{COPY.showField(label.toLowerCase())}</summary>
         <bdi dir="auto" class="field-value field-value-long">
           {presentation.value}
         </bdi>
@@ -485,11 +473,24 @@ export function App(props: AppProps) {
   const [followsSystemTheme, setFollowsSystemTheme] = useState(
     props.themeController.followsSystem,
   );
+  const [braveIos, setBraveIos] = useState(false);
+  const pendingShareRef = useRef<File | null>(null);
+  const [shareRevision, setShareRevision] = useState(0);
 
   useEffect(
     () => props.themeController.subscribe(setTheme),
     [props.themeController],
   );
+
+  useEffect(() => {
+    let live = true;
+    void detectBraveIos(navigator).then((detected) => {
+      if (live && detected) setBraveIos(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useLayoutEffect(() => {
     document.title = documentTitleForView(view.kind);
@@ -655,6 +656,10 @@ export function App(props: AppProps) {
           setCopyStatus(null);
         }
       }
+      if (detail.sharedImage !== undefined) {
+        pendingShareRef.current = detail.sharedImage;
+        setShareRevision((current) => current + 1);
+      }
     };
     props.statusEvents.addEventListener("status", handler);
     return () => props.statusEvents.removeEventListener("status", handler);
@@ -671,6 +676,28 @@ export function App(props: AppProps) {
       }),
     [imageController, locked, view.kind, work],
   );
+
+  useEffect(() => {
+    if (locked || view.kind !== "home") return;
+    const file = pendingShareRef.current;
+    if (file === null) return;
+    pendingShareRef.current = null;
+    chooseImages([file]);
+  }, [locked, shareRevision, view.kind]);
+
+  useEffect(() => {
+    if (locked || view.kind !== "home") return;
+    const onPaste = (event: ClipboardEvent): void => {
+      const transfer = event.clipboardData;
+      if (transfer === null) return;
+      const files = filesFromDrop(transfer);
+      if (files.length === 0) return;
+      event.preventDefault();
+      chooseImages(files);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [imageController, locked, view.kind, work]);
 
   useEffect(() => {
     if (
@@ -705,6 +732,7 @@ export function App(props: AppProps) {
       video: videoRef.current,
       decoder: adapter,
       onAccepted: (accepted) => {
+        navigator.vibrate?.(30);
         if (accepted.kind === "single") {
           const detection = accepted.detections[0]?.result;
           if (detection?.kind === "supported") {
@@ -843,7 +871,7 @@ export function App(props: AppProps) {
     transitionView({ kind: "camera" });
   };
 
-  const navigateInfo = (kind: "privacy" | "about"): void => {
+  const navigateInfo = (kind: "privacy" | "about" | "glossary"): void => {
     goHome();
     transitionView({ kind });
   };
@@ -864,13 +892,13 @@ export function App(props: AppProps) {
   return (
     <div class={`app-shell view-${view.kind}`}>
       <a class="skip-link" href="#main-content">
-        Skip to content
+        {COPY.skipToContent}
       </a>
       <header class="site-header">
         <button
           class="brand-button"
           type="button"
-          aria-label="QRWarden home"
+          aria-label={COPY.brandHomeLabel}
           onClick={goHome}
         >
           <span class="brand-mark" aria-hidden="true">
@@ -891,28 +919,28 @@ export function App(props: AppProps) {
               aria-current={view.kind === "privacy" ? "page" : undefined}
               onClick={() => navigateInfo("privacy")}
             >
-              Privacy
+              {COPY.navPrivacy}
             </button>
             <button
               type="button"
               aria-current={view.kind === "about" ? "page" : undefined}
               onClick={() => navigateInfo("about")}
             >
-              About
+              {COPY.navAbout}
             </button>
           </nav>
           <button
             type="button"
             class="theme-toggle"
-            aria-label="Dark mode"
+            aria-label={COPY.themeToggleName}
             aria-pressed={theme === "dark"}
-            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            title={theme === "dark" ? COPY.themeToLight : COPY.themeToDark}
             onClick={() => {
               props.themeController.toggle();
               setFollowsSystemTheme(false);
             }}
           >
-            <span class="theme-toggle-label" aria-hidden="true">Dark</span>
+            <span class="theme-toggle-label" aria-hidden="true">{COPY.themeToggleLabel}</span>
             <span class="theme-toggle-icon" aria-hidden="true">
               {theme === "dark" ? "☾" : "☀"}
             </span>
@@ -970,13 +998,11 @@ export function App(props: AppProps) {
 
         {view.kind === "home" ? (
           <section class="hero" aria-labelledby="hero-title" aria-busy={locked}>
-            <div class="eyebrow">Private by design · analyzed on device</div>
+            <div class="eyebrow">{COPY.heroEyebrow}</div>
             <h1 id="hero-title" ref={viewHeadingRef} tabIndex={-1}>
               {COPY.primaryMessage}
             </h1>
-            <p class="hero-copy">
-              Scan with your camera or choose an image. QRWarden decodes and explains the contents on this device without visiting the destination.
-            </p>
+            <p class="hero-copy">{COPY.heroCopy}</p>
             <div class="source-grid">
               <button
                 type="button"
@@ -993,8 +1019,8 @@ export function App(props: AppProps) {
                     <circle cx="12" cy="13.5" r="3.25" />
                   </svg>
                 </span>
-                <strong>Scan with camera</strong>
-                <span>Point your camera at a QR code</span>
+                <strong>{COPY.sourceCameraTitle}</strong>
+                <span>{COPY.sourceCameraBody}</span>
               </button>
               <label class={`source-card source-image${controlsDisabled ? " source-disabled" : ""}`}>
                 <span class="source-icon image-icon" aria-hidden="true">
@@ -1004,8 +1030,8 @@ export function App(props: AppProps) {
                     <path d="m5.5 17 4.5-4.5 3 3 2-2 3.5 3.5" />
                   </svg>
                 </span>
-                <strong>Choose an image</strong>
-                <span>JPEG, PNG, or WebP · up to 25 MB</span>
+                <strong>{COPY.sourceImageTitle}</strong>
+                <span>{COPY.sourceImageBody}</span>
                 <input
                   class="visually-hidden"
                   type="file"
@@ -1019,17 +1045,18 @@ export function App(props: AppProps) {
                 />
               </label>
             </div>
+            <p class="microcopy intake-hint">{COPY.pasteHint}</p>
             <div class="privacy-promise">
               <span class="lock-glyph" aria-hidden="true" />
               <div>
-                <strong>Your scan stays here.</strong>
+                <strong>{COPY.privacyPromiseTitle}</strong>
                 <p>{COPY.privacyStatement}</p>
               </div>
             </div>
-            <div class="steps" aria-label="How QRWarden works">
-              <div><span>1</span><strong>Scan</strong><small>Camera or image</small></div>
-              <div><span>2</span><strong>Inspect</strong><small>See the real contents</small></div>
-              <div><span>3</span><strong>Decide</strong><small>You choose what happens</small></div>
+            <div class="steps" aria-label={COPY.stepsLabel}>
+              <div><span>1</span><strong>{COPY.stepScan}</strong><small>{COPY.stepScanDetail}</small></div>
+              <div><span>2</span><strong>{COPY.stepInspect}</strong><small>{COPY.stepInspectDetail}</small></div>
+              <div><span>3</span><strong>{COPY.stepDecide}</strong><small>{COPY.stepDecideDetail}</small></div>
             </div>
           </section>
         ) : null}
@@ -1037,9 +1064,9 @@ export function App(props: AppProps) {
         {view.kind === "reading" ? (
           <section class="center-card" aria-live="polite" aria-busy={locked}>
             <span class="reader-pulse" aria-hidden="true" />
-            <h1 ref={viewHeadingRef} tabIndex={-1}>Reading image…</h1>
-            <p>The image is being decoded on this device.</p>
-            <button type="button" class="secondary-button" onClick={goHome}>Cancel</button>
+            <h1 ref={viewHeadingRef} tabIndex={-1}>{COPY.readingHeading}</h1>
+            <p>{COPY.readingBody}</p>
+            <button type="button" class="secondary-button" onClick={goHome}>{COPY.cancel}</button>
           </section>
         ) : null}
 
@@ -1047,17 +1074,17 @@ export function App(props: AppProps) {
           <section class="scanner-panel" aria-labelledby="camera-title" aria-busy={locked}>
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Camera scan</p>
+                <p class="eyebrow">{COPY.cameraEyebrow}</p>
                 <h1 id="camera-title" ref={viewHeadingRef} tabIndex={-1}>
-                  Hold the QR code inside the frame
+                  {COPY.cameraHeading}
                 </h1>
               </div>
-              <button type="button" class="secondary-button" onClick={goHome}>Cancel</button>
+              <button type="button" class="secondary-button" onClick={goHome}>{COPY.cancel}</button>
             </div>
             <div class="video-frame">
               <video
                 ref={videoRef}
-                aria-label="Live camera preview"
+                aria-label={COPY.videoPreviewLabel}
                 autoPlay
                 muted
                 playsInline
@@ -1082,7 +1109,7 @@ export function App(props: AppProps) {
             <div class="camera-controls">
               {cameraUi.devices.length > 1 ? (
                 <label>
-                  Camera
+                  {COPY.cameraSelectLabel}
                   <select
                     value={cameraUi.activeDeviceId ?? ""}
                     disabled={locked || cameraTaskBusy}
@@ -1095,12 +1122,12 @@ export function App(props: AppProps) {
                       (device) => device.deviceId === cameraUi.activeDeviceId,
                     ) ? (
                       <option value={cameraUi.activeDeviceId ?? ""} disabled>
-                        Camera selected automatically
+                        {COPY.cameraSelectedAutomatically}
                       </option>
                     ) : null}
                     {cameraUi.devices.map((device, index) => (
                       <option value={device.deviceId} key={device.deviceId}>
-                        {device.label || `Camera ${index + 1}`}
+                        {device.label || `${COPY.cameraSelectLabel} ${index + 1}`}
                       </option>
                     ))}
                   </select>
@@ -1109,11 +1136,11 @@ export function App(props: AppProps) {
               {cameraUi.zoom !== null ? (
                 <label>
                   <span class="camera-control-label">
-                    Zoom <output>{Math.round(cameraUi.zoomValue * 10) / 10}×</output>
+                    {COPY.zoomLabel} <output>{Math.round(cameraUi.zoomValue * 10) / 10}×</output>
                   </span>
                   <input
                     type="range"
-                    aria-label="Zoom"
+                    aria-label={COPY.zoomLabel}
                     disabled={locked || cameraTaskBusy}
                     min={cameraUi.zoom.min}
                     max={cameraUi.zoom.max}
@@ -1149,7 +1176,7 @@ export function App(props: AppProps) {
                     });
                   }}
                 >
-                  {cameraUi.torchEnabled ? "Turn torch off" : "Turn torch on"}
+                  {cameraUi.torchEnabled ? COPY.torchOff : COPY.torchOn}
                 </button>
               ) : null}
             </div>
@@ -1160,13 +1187,13 @@ export function App(props: AppProps) {
           <section class="result-layout" aria-labelledby="selection-title" aria-busy={locked}>
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Multiple codes</p>
+                <p class="eyebrow">{COPY.selectionEyebrow}</p>
                 <h1 id="selection-title" ref={viewHeadingRef} tabIndex={-1}>
                   {COPY.chooseQrHeading}
                 </h1>
                 <p>{COPY.chooseQrBody}</p>
               </div>
-              <button type="button" class="secondary-button" onClick={goHome}>Cancel</button>
+              <button type="button" class="secondary-button" onClick={goHome}>{COPY.cancel}</button>
             </div>
             <SelectionCanvas
               preview={view.preview}
@@ -1178,28 +1205,28 @@ export function App(props: AppProps) {
               {view.entries.map((entry, index) => {
                 const entryReport = entry.report;
                 const payloadKind =
-                  entryReport === null ? "Unsupported code" : kindLabel(entryReport);
+                  entryReport === null ? COPY.unsupportedCodeChip : kindLabel(entryReport);
                 const position = view.preview.positions[index];
                 const positionLabel =
                   position === undefined
-                    ? "position unavailable"
+                    ? COPY.positionUnavailable
                     : selectionPositionLabel(
                         position,
                         view.preview.width,
                         view.preview.height,
                       );
-                const label = `QR code ${index + 1}, ${positionLabel}, ${payloadKind}`;
+                const label = COPY.selectionOptionLabel(index + 1, positionLabel, payloadKind);
                 if (entryReport === null) {
                   return (
                     <li key={entry.detection.originalIndex}>
                       <div
                         class="selection-option selection-option-unavailable"
-                        aria-label={`${label}, unavailable`}
+                        aria-label={`${label}, ${COPY.selectionUnavailable}`}
                       >
                         <span class="number-badge">{index + 1}</span>
                         <span class="selection-position">{positionLabel}</span>
                         <span class="kind-chip">{payloadKind}</span>
-                        <span class="selection-unavailable">Unavailable</span>
+                        <span class="selection-unavailable">{COPY.selectionUnavailable}</span>
                       </div>
                     </li>
                   );
@@ -1242,6 +1269,9 @@ export function App(props: AppProps) {
               </span>
               <h1 ref={viewHeadingRef} tabIndex={-1}>{problem.heading}</h1>
               <p>{problem.body}</p>
+              {view.problem === "camera-access-needed" && braveIos ? (
+                <p>{COPY.braveIosCameraBody}</p>
+              ) : null}
               {canResumeCamera || canRetryCamera ? (
                 <div class="recovery-actions">
                   <button
@@ -1312,23 +1342,29 @@ export function App(props: AppProps) {
               </div>
               {destination !== null ? (
                 <div class="destination-card">
-                  <span>Actual destination</span>
+                  <span>{COPY.actualDestination}</span>
                   <bdi dir="auto">{destination}</bdi>
                 </div>
               ) : null}
               {report.signals.length > 0 ? (
                 <section aria-labelledby="signals-title">
-                  <h2 id="signals-title">Details to notice</h2>
+                  <h2 id="signals-title">{COPY.signalsHeading}</h2>
                   <ul class="signal-list">
                     {report.signals.map((signal) => (
                       <li class={`signal-${signal.level}`} key={signal.code}>
                         <span aria-hidden="true">{signal.level === "review" ? "!" : "i"}</span>
                         <div>
                           <small class="signal-level">
-                            {signal.level === "review" ? "Needs review" : "Context"}
+                            {signal.level === "review"
+                              ? COPY.signalNeedsReview
+                              : COPY.signalContext}
                           </small>
                           <strong>{signal.title}</strong>
                           <p>{signal.detail}</p>
+                          <details class="signal-explainer">
+                            <summary>{COPY.signalExplainerSummary}</summary>
+                            <p>{SIGNAL_GLOSSARY[signal.code].explanation}</p>
+                          </details>
                         </div>
                       </li>
                     ))}
@@ -1336,7 +1372,7 @@ export function App(props: AppProps) {
                 </section>
               ) : null}
               <section aria-labelledby="contents-title">
-                <h2 id="contents-title">Decoded contents</h2>
+                <h2 id="contents-title">{COPY.contentsHeading}</h2>
                 <p class="clipboard-warning">{COPY.clipboardWarning}</p>
                 <div class="field-list">
                   {report.displayFields.map((field) => {
@@ -1347,7 +1383,7 @@ export function App(props: AppProps) {
                       <div class="field-row" key={field.id}>
                         <div class="field-heading">
                           <span>{field.label}</span>
-                          {field.sensitive ? <span class="sensitive-chip">Sensitive</span> : null}
+                          {field.sensitive ? <span class="sensitive-chip">{COPY.sensitiveChip}</span> : null}
                         </div>
                         <FieldValue
                           field={field}
@@ -1364,7 +1400,7 @@ export function App(props: AppProps) {
                               disabled={locked}
                               aria-controls={valueId}
                               aria-expanded={isRevealed}
-                              aria-label={`${isRevealed ? "Mask" : "Reveal"} ${field.label.toLowerCase()}`}
+                              aria-label={`${isRevealed ? COPY.mask : COPY.reveal} ${field.label.toLowerCase()}`}
                               onClick={() => {
                                 setRevealed((current) => {
                                   const next = new Set(current);
@@ -1374,7 +1410,7 @@ export function App(props: AppProps) {
                                 });
                               }}
                             >
-                              {isRevealed ? "Mask" : "Reveal"}
+                              {isRevealed ? COPY.mask : COPY.reveal}
                             </button>
                           ) : null}
                           {(!field.sensitive || isRevealed) ? (
@@ -1386,18 +1422,17 @@ export function App(props: AppProps) {
                                 clipboard.copy(event, view.active, field)
                               }
                             >
-                              Copy {field.label.toLowerCase()}
+                              {COPY.copyField(field.label.toLowerCase())}
                             </button>
                           ) : null}
                         </div>
                         {field.omittedCount !== undefined && field.omittedCount > 0 ? (
                           <p class="microcopy">
-                            {field.omittedCount} omitted from display
-                            {field.count === undefined ? "." : ` (${field.count} total).`}
+                            {COPY.omittedFromDisplay(field.omittedCount, field.count)}
                           </p>
                         ) : null}
                         {field.truncated ? (
-                          <p class="microcopy">Value truncated for display.</p>
+                          <p class="microcopy">{COPY.truncatedNote}</p>
                         ) : null}
                         {field.sensitive ? <p class="microcopy">{COPY.revealWarning}</p> : null}
                       </div>
@@ -1412,7 +1447,7 @@ export function App(props: AppProps) {
               </section>
               {report.kind === "web-url" ? (
                 <section class="limitations" aria-labelledby="limits-title">
-                  <h2 id="limits-title">What offline analysis cannot check</h2>
+                  <h2 id="limits-title">{COPY.limitsHeading}</h2>
                   <p>{COPY.offlineLimitations}</p>
                   <p>{COPY.launchNotice}</p>
                 </section>
@@ -1443,6 +1478,22 @@ export function App(props: AppProps) {
                   {COPY.continueToLink}
                 </button>
               ) : null}
+              <button
+                type="button"
+                class="secondary-button action-button"
+                disabled={locked}
+                onClick={(event) =>
+                  clipboard.copyReport(event, view.active, (live) =>
+                    reportAsText({
+                      report: live,
+                      kindLabel: kindLabel(live),
+                      statusHeading: statusForReport(live).heading,
+                    }),
+                  )
+                }
+              >
+                {COPY.copyReportButton}
+              </button>
               {confirmation !== null && destination !== null ? (
                 <ConfirmationDialog
                   destination={destination}
@@ -1471,18 +1522,18 @@ export function App(props: AppProps) {
 
         {view.kind === "privacy" ? (
           <article class="prose-card" aria-busy={locked}>
-            <p class="eyebrow">Privacy</p>
-            <h1 ref={viewHeadingRef} tabIndex={-1}>What stays on your device</h1>
+            <p class="eyebrow">{COPY.privacyEyebrow}</p>
+            <h1 ref={viewHeadingRef} tabIndex={-1}>{COPY.privacyTitle}</h1>
             <p class="lead">{COPY.privacyStatement}</p>
-            <h2>No destination lookup</h2>
-            <p>QRWarden does not visit decoded links, request favicons, check reputation, or send scan contents to a server. Analysis uses only the bytes inside the QR code and pinned data shipped with the app.</p>
-            <h2>No scan history</h2>
-            <p>Images, decoded content, and reports are kept only in memory while you review them. They are not stored in browser databases, caches, or URLs. Offline caches contain application files only, and a short-lived session marker may hold a release identifier while a verified update activates; neither contains scan contents. QRWarden may also store your light or dark appearance choice.</p>
-            <h2>App hosting traffic</h2>
-            <p>Opening or updating QRWarden sends ordinary HTTPS requests for application files to the host. The host, hosting provider, and network can observe connection metadata such as your IP address, request time, user agent, and requested application files. QRWarden does not add scan contents to those requests.</p>
-            <h2>Actions you control</h2>
-            <p>Opening a link sends it to your browser or operating system. Copying places the reviewed value on your system clipboard, which may sync with other devices or apps.</p>
-            <button type="button" class="primary-button" onClick={goHome}>Back to scanner</button>
+            <h2>{COPY.privacyNoLookupHeading}</h2>
+            <p>{COPY.privacyNoLookupBody}</p>
+            <h2>{COPY.privacyNoHistoryHeading}</h2>
+            <p>{COPY.privacyNoHistoryBody}</p>
+            <h2>{COPY.privacyHostingHeading}</h2>
+            <p>{COPY.privacyHostingBody}</p>
+            <h2>{COPY.privacyActionsHeading}</h2>
+            <p>{COPY.privacyActionsBody}</p>
+            <button type="button" class="primary-button" onClick={goHome}>{COPY.backToScanner}</button>
           </article>
         ) : null}
 
@@ -1490,21 +1541,30 @@ export function App(props: AppProps) {
           const guidance = detectInstallGuidance(navigator.userAgent);
           return (
             <article class="prose-card" aria-busy={locked}>
-              <p class="eyebrow">About</p>
+              <p class="eyebrow">{COPY.aboutEyebrow}</p>
               <h1 ref={viewHeadingRef} tabIndex={-1}>
-                Built to show evidence, not a verdict.
+                {COPY.aboutTitle}
               </h1>
-              <p class="lead">QRWarden explains observable properties of a QR code. It never calls a destination safe, trusted, malicious, or verified.</p>
+              <p class="lead">{COPY.aboutLead}</p>
+              <p>
+                <button
+                  type="button"
+                  class="text-button"
+                  onClick={() => navigateInfo("glossary")}
+                >
+                  {COPY.glossaryLink}
+                </button>
+              </p>
               <section class="install-card">
                 <h2>{guidance.heading}</h2>
                 <p>{guidance.body}</p>
               </section>
               <section class="appearance-card" aria-labelledby="appearance-title">
-                <h2 id="appearance-title">Appearance</h2>
+                <h2 id="appearance-title">{COPY.appearanceHeading}</h2>
                 <p>
                   {followsSystemTheme
-                    ? `Following this device's ${theme} appearance.`
-                    : `Using ${theme} mode on this device.`}
+                    ? COPY.appearanceFollowing(theme)
+                    : COPY.appearanceUsing(theme)}
                 </p>
                 <button
                   type="button"
@@ -1515,11 +1575,11 @@ export function App(props: AppProps) {
                     setFollowsSystemTheme(true);
                   }}
                 >
-                  {followsSystemTheme ? "Using device setting" : "Use device setting"}
+                  {followsSystemTheme ? COPY.usingDeviceSetting : COPY.useDeviceSetting}
                 </button>
               </section>
               <details class="technical-details">
-                <summary>Technical and release details</summary>
+                <summary>{COPY.technicalDetails}</summary>
                 <dl class="about-grid">
                   <div><dt>Application release</dt><dd>{displayedReleaseId(props.releaseId)}</dd></div>
                   <div><dt>Analyzer</dt><dd>{ANALYZER_VERSION}</dd></div>
@@ -1549,15 +1609,32 @@ export function App(props: AppProps) {
                   </div>
                 </dl>
               </details>
-              <button type="button" class="primary-button" onClick={goHome}>Back to scanner</button>
+              <button type="button" class="primary-button" onClick={goHome}>{COPY.backToScanner}</button>
             </article>
           );
         })() : null}
+
+        {view.kind === "glossary" ? (
+          <article class="prose-card" aria-busy={locked}>
+            <p class="eyebrow">{COPY.glossaryEyebrow}</p>
+            <h1 ref={viewHeadingRef} tabIndex={-1}>{COPY.glossaryTitle}</h1>
+            <p class="lead">{COPY.glossaryLead}</p>
+            <dl class="glossary-list">
+              {SIGNAL_GLOSSARY_CODES.map((code) => (
+                <div key={code}>
+                  <dt>{SIGNAL_GLOSSARY[code].title}</dt>
+                  <dd>{SIGNAL_GLOSSARY[code].explanation}</dd>
+                </div>
+              ))}
+            </dl>
+            <button type="button" class="primary-button" onClick={goHome}>{COPY.backToScanner}</button>
+          </article>
+        ) : null}
       </main>
 
       <footer>
-        <p>Local analysis only. No app analytics or telemetry. No verdicts.</p>
-        <p>QRWarden · AGPL-3.0-or-later</p>
+        <p>{COPY.footerFacts}</p>
+        <p>{COPY.footerLicense}</p>
       </footer>
     </div>
   );

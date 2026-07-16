@@ -22,6 +22,13 @@ All notable changes to QRWarden are documented here. Release headings use exact 
 - Cloudflare release operations runbook with rendered upload/trigger Wrangler configs, live byte/header verification, and rollback contracts.
 - Dark-first adaptive appearance with an accessible persistent light/dark control and matching browser, PWA, and privacy metadata.
 - Dedicated Pixel, narrow-Android, 280px-reflow, and iPhone browser projects covering touch targets, responsive review flows, dialogs, multi-code selection, and short-landscape camera use.
+- Micro QR, rMQR, Data Matrix, and Aztec decoding behind per-symbology canonical-verification profiles with reader-verified identifiers, version allowlists, and generated corpus fixtures.
+- A pinned link-shortener signal that flags redirect services as hidden destinations, with corpus and analyzer coverage.
+- Web Share Target intake for installed instances: a shared image is handed to the redirected document as an in-memory message, is never written to storage, and re-enters the standard bounded image pipeline.
+- Paste-from-clipboard image intake on the home view, haptic acknowledgment on camera detections, and a user-initiated plain-text report copy that always excludes sensitive values.
+- An offline signal glossary view plus per-signal "What this means" explainers, exhaustively typed against the analyzer signal codes.
+- Locale-negotiated Spanish interface copy behind a typed dictionary contract, with hash-pinned copy sources for both languages and a Spanish end-to-end browser flow.
+- Brave-on-iOS camera guidance driven by the injected `navigator.brave` marker, and a browser regression suite for Brave-style instrumentation, missing service workers, and denied registrations.
 
 ### Changed
 
@@ -42,3 +49,4 @@ All notable changes to QRWarden are documented here. Release headings use exact 
 - Result-status symbols remain circular beside long headings, 280px cover-width viewports no longer pan horizontally, and multi-code rows reflow below 320px.
 - Browser chrome now receives a first-paint theme color that matches the system preference and the app's dark header palette.
 - Stale camera work, consumed multi-code previews, failed canvas draws, and deferred service-worker updates now recover without poisoning the next interaction or presenting a blank surface.
+- The page behind an open confirmation dialog can no longer scroll on touch devices, and dialog overscroll is contained.

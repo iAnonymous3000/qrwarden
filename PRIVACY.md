@@ -8,6 +8,10 @@ QRWarden decodes QR codes, classifies payloads, parses eligible URLs, and create
 
 Decoded images, frames, bytes, text, filenames, reports, and destinations are held only in bounded in-memory work. QRWarden does not intentionally put them in application storage, service-worker caches, history, logs, error reports, or URLs. Sensitive values are masked after lifecycle changes. JavaScript cannot guarantee cryptographic erasure from browser memory.
 
+Images can arrive by camera, file selection, drag and drop, clipboard paste, or — on an installed instance — the operating system's share sheet. A shared image is handed from the service worker to the open page as an in-memory message, is never written to caches or storage, and is discarded if no page appears to receive it. Every intake path enters the same bounded in-memory pipeline.
+
+The interface language follows the browser's language setting (English and Spanish are available). The choice is derived on each launch and is not stored. Analyzer evidence strings inside reports currently remain English.
+
 QRWarden may store one device-local appearance preference, `light` or `dark`, in browser storage after the user changes the theme. That preference contains no scan contents or report data, and clearing site data removes it.
 
 Separately, the service worker caches application files for verified offline use, and a short-lived release identifier may be held in session storage while an update activates. Neither storage path contains decoded images, payloads, reports, or destinations.

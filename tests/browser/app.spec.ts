@@ -735,10 +735,10 @@ test("labels selection positions and drops canvas geometry when hidden", async (
     timeout: 15_000,
   });
   await expect(
-    page.getByRole("button", { name: "QR code 1, left, Web link" }),
+    page.getByRole("button", { name: "Code 1, left, Web link" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "QR code 2, right, Wi-Fi details" }),
+    page.getByRole("button", { name: "Code 2, right, Wi-Fi details" }),
   ).toBeVisible();
 
   const canvas = page.locator(".selection-canvas");
@@ -775,7 +775,7 @@ test("uses field-specific controls for sensitive multi-code contents", async ({ 
   await page.goto("/");
   await page.locator('input[type="file"]').setInputFiles(multiFixture);
   const wifiChoice = page.getByRole("button", {
-    name: "QR code 2, right, Wi-Fi details",
+    name: "Code 2, right, Wi-Fi details",
   });
   await expect(wifiChoice).toBeVisible({ timeout: 15_000 });
   await wifiChoice.click();
@@ -1003,4 +1003,61 @@ test("cold-launches the verified shell while offline", async ({
   await expect(
     offlinePage.getByText("Ready offline.", { exact: true }),
   ).toBeVisible();
+});
+
+test("delivers a shared image through the installed share target", async ({
+  baseURL,
+  browserName,
+  page,
+}) => {
+  test.skip(
+    browserName === "webkit",
+    "Web Share Target is a Chromium-family feature; WebKit exposes no share-target entry point and its service workers do not surface navigation POST bodies. The worker drops the request fail-safe there.",
+  );
+  if (baseURL === undefined) throw new TypeError("Browser base URL is required");
+  await page.goto("/");
+  await expect(page.getByText("Ready offline.", { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect
+    .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null))
+    .toBe(true);
+
+  // A real share-target POST is issued by the browser itself, outside any
+  // document CSP. The app page's own form-action 'none' forbids submissions,
+  // so the test submits from a CSP-free blank document instead.
+  await page.goto("about:blank");
+  const bytes = await readFile(fixture);
+  await page.evaluate(
+    async ({ base64, action }) => {
+      const binary = atob(base64);
+      const data = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        data[index] = binary.charCodeAt(index);
+      }
+      const file = new File([data], "shared.png", { type: "image/png" });
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = action;
+      form.enctype = "multipart/form-data";
+      const input = document.createElement("input");
+      input.type = "file";
+      input.name = "image";
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      input.files = transfer.files;
+      form.append(input);
+      document.body.append(form);
+      form.submit();
+    },
+    {
+      base64: bytes.toString("base64"),
+      action: new URL("/share-target", baseURL).href,
+    },
+  );
+
+  await expect(
+    page.getByRole("heading", { name: COPY.reviewHeading }),
+  ).toBeVisible({ timeout: 20_000 });
+  expect(new URL(page.url()).pathname).toBe("/");
 });

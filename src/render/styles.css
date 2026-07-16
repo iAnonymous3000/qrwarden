@@ -228,6 +228,13 @@ button.source-card { width: 100%; text-align: left; }
 .signal-list .signal-review > span { color: var(--on-accent); background: var(--accent-fill); }
 .signal-level { display: block; margin-bottom: .15rem; color: var(--muted); font-size: .68rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .signal-list p { margin: .2rem 0 0; color: var(--muted); line-height: 1.45; }
+.signal-explainer { margin-top: .2rem; }
+.signal-explainer summary { min-height: 44px; display: flex; align-items: center; padding: .4rem 0; color: var(--accent-text); font-size: .82rem; font-weight: 700; }
+.signal-explainer p { margin: 0 0 .4rem; font-size: .84rem; }
+.glossary-list { margin: 2rem 0; display: grid; gap: 1.1rem; }
+.glossary-list div { padding: .9rem 1rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--soft); }
+.glossary-list dt { font-weight: 800; }
+.glossary-list dd { margin: .3rem 0 0; color: var(--muted); line-height: 1.55; }
 .field-list { border: 1px solid var(--line); border-radius: .8rem; overflow: hidden; }
 .field-row { padding: 1rem 1.1rem; background: var(--paper); }
 .field-row + .field-row { border-top: 1px solid var(--line); }
@@ -236,6 +243,7 @@ button.source-card { width: 100%; text-align: left; }
 .field-value-long { padding: .75rem 0; }
 .field-actions { display: flex; gap: .6rem; margin-top: .65rem; }
 .microcopy, .clipboard-warning, .copy-status { color: var(--muted); font-size: .77rem; line-height: 1.45; }
+.intake-hint { max-width: 760px; margin: .8rem auto 0; text-align: center; }
 .limitations { padding: 1rem 1.2rem; border: 1px dashed var(--line); background: var(--soft); }
 .limitations h2 { margin-top: 0; }
 .limitations p { color: var(--muted); line-height: 1.5; }
@@ -254,7 +262,8 @@ button.selection-option:hover:not(:disabled) { border-color: var(--accent); }
 .selection-unavailable { color: var(--muted); font-size: .75rem; font-weight: 700; }
 .number-badge { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--ink); color: var(--on-ink); }
 .selection-position { color: var(--muted); font-weight: 650; text-transform: capitalize; }
-.confirm-dialog { width: min(calc(100% - 2rem - env(safe-area-inset-left) - env(safe-area-inset-right)), 480px); max-width: none; max-height: calc(100% - 2rem); max-height: calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)); margin: auto; padding: 1.5rem; overflow: auto; border: 1px solid var(--line); border-radius: .9rem; color: var(--ink); background: var(--paper); box-shadow: 0 30px 80px rgba(0, 0, 0, .5); }
+.confirm-dialog { width: min(calc(100% - 2rem - env(safe-area-inset-left) - env(safe-area-inset-right)), 480px); max-width: none; max-height: calc(100% - 2rem); max-height: calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)); margin: auto; padding: 1.5rem; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: .9rem; color: var(--ink); background: var(--paper); box-shadow: 0 30px 80px rgba(0, 0, 0, .5); }
+body:has(dialog[open]) { overflow: hidden; }
 .confirm-dialog::backdrop { background: rgba(12, 10, 9, .72); }
 .confirm-dialog h2 { margin: 0; font-size: 1.6rem; }
 .confirm-dialog p { color: var(--muted); line-height: 1.55; }

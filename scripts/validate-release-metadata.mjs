@@ -167,6 +167,19 @@ const expectedManifest = {
   display: "standalone",
   background_color: "#0c0a09",
   theme_color: "#191715",
+  share_target: {
+    action: "/share-target",
+    method: "POST",
+    enctype: "multipart/form-data",
+    params: {
+      files: [
+        {
+          name: "image",
+          accept: ["image/jpeg", "image/png", "image/webp"]
+        }
+      ]
+    }
+  },
   icons: [
     { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
     { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },

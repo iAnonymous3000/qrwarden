@@ -4,12 +4,13 @@ QRWarden is a production-grade, local-first progressive web app for inspecting Q
 
 ## What it does
 
-- Scans QR codes with a camera or from a local image.
-- Decodes in a disposable same-origin worker with strict input and time limits.
+- Scans QR, Micro QR, rMQR, Data Matrix, and Aztec codes with a camera or from a local image, pasted image, dropped file, or (when installed) the system share sheet.
+- Decodes in a disposable same-origin worker with strict input and time limits behind per-symbology canonical-verification profiles.
 - Shows decoded content as inert text before offering any action.
-- Highlights observable URL, hostname, Unicode, control-character, and payload properties.
-- Requires explicit confirmation for actions that need additional review.
+- Highlights observable URL, hostname, Unicode, control-character, link-shortener, and payload properties, with a plain-language glossary for every signal.
+- Requires explicit confirmation for actions that need additional review, and can copy a sensitive-value-free plain-text report.
 - Works offline after the application shell has been installed and verified.
+- Follows the browser language for its interface (English and Spanish).
 
 QRWarden reports evidence, not reputation. It does not label a destination safe, trusted, malicious, clean, or verified.
 

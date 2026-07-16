@@ -4,6 +4,7 @@ import {
   createQrwardenModuleWorker,
   initializeTrustedWorkerScripts,
 } from "./app/trustedScripts";
+import { APP_LOCALE } from "./copy/locale";
 import { DecoderWorkerClient } from "./decoder";
 import { App, type AppStatusDetail, type RuntimeBridge } from "./render/App";
 import "./render/styles.css";
@@ -25,6 +26,7 @@ if (root === null) {
   throw new TypeError("Missing application root");
 }
 const themeController = createBrowserThemeController();
+document.documentElement.lang = APP_LOCALE;
 
 const trustedScripts = initializeTrustedWorkerScripts();
 const workerFactory = (): Worker =>
@@ -44,6 +46,19 @@ const emit = (detail: AppStatusDetail): void => {
 let offlineState: OfflineState = "preparing";
 let locked = true;
 let serviceWorker: ServiceWorkerClient | null = null;
+
+// Share-target images arrive as an in-memory service-worker message for the
+// redirected document. The listener is installed before the first render so
+// browser-buffered messages cannot be dropped; App owns consumption gating.
+navigator.serviceWorker?.addEventListener("message", (event) => {
+  const data = event.data as { readonly type?: string; readonly file?: unknown };
+  if (data?.type === "SHARED_IMAGE" && data.file instanceof File) {
+    emit({ sharedImage: data.file });
+  }
+});
+// addEventListener alone never enables the client message queue; without this
+// call a message posted before (or after) load is buffered forever.
+navigator.serviceWorker?.startMessages();
 
 const smokeDecoder = async (): Promise<boolean> => {
   const client = new DecoderWorkerClient(workerFactory);

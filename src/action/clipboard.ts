@@ -60,19 +60,53 @@ export class ClipboardBroker<Report extends ReportForClipboardActions> {
     candidate: ActiveReport<Report>,
     reviewedField: Report["displayFields"][number],
   ): void {
+    this.#copyValue(event, candidate, (live) =>
+      live.displayFields.includes(reviewedField) &&
+      typeof reviewedField.actionValue === "string"
+        ? reviewedField.actionValue
+        : null,
+    );
+  }
+
+  /**
+   * Copies a plain-text rendering of the live report. The renderer runs only
+   * after every liveness guard passes and receives the live report, so the
+   * copied text can never describe a superseded result.
+   */
+  copyReport(
+    event: MouseEvent,
+    candidate: ActiveReport<Report>,
+    renderReport: (report: Report) => string,
+  ): void {
+    this.#copyValue(event, candidate, (live) => {
+      try {
+        return renderReport(live);
+      } catch {
+        return null;
+      }
+    });
+  }
+
+  #copyValue(
+    event: MouseEvent,
+    candidate: ActiveReport<Report>,
+    resolveValue: (live: Report) => string | null,
+  ): void {
     this.#copyGeneration += 1;
     const copyGeneration = this.#copyGeneration;
     const reportGeneration = this.#reports.generation;
     const workGeneration = this.#getWorkGeneration();
 
     const live = this.#reports.active;
+    const value =
+      live !== null &&
+      !this.#isLocked() &&
+      clickIsLive(event) &&
+      this.#reports.isLive(candidate)
+        ? resolveValue(live.report)
+        : null;
     if (
-      this.#isLocked() ||
-      !clickIsLive(event) ||
-      live === null ||
-      !this.#reports.isLive(candidate) ||
-      !live.report.displayFields.includes(reviewedField) ||
-      typeof reviewedField.actionValue !== "string" ||
+      value === null ||
       typeof navigator.clipboard?.writeText !== "function"
     ) {
       this.#settle(
@@ -87,7 +121,7 @@ export class ClipboardBroker<Report extends ReportForClipboardActions> {
 
     let write: Promise<void>;
     try {
-      write = navigator.clipboard.writeText(reviewedField.actionValue);
+      write = navigator.clipboard.writeText(value);
     } catch {
       this.#settle(
         "failed",

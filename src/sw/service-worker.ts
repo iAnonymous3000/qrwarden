@@ -549,8 +549,101 @@ registerRoute(
   },
 );
 
+const SHARE_TARGET_PATH = "/share-target";
+const SHARE_TARGET_MAX_BYTES = 25_000_000;
+const SHARE_TARGET_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const SHARE_TARGET_CLIENT_ATTEMPTS = 20;
+const SHARE_TARGET_CLIENT_RETRY_MS = 250;
+
+/**
+ * Finds the document created by the redirected share navigation. Browsers
+ * discard the reserved client of a redirected POST navigation, so the id
+ * lookup is only a fast path; the fallback takes the most recently focused
+ * same-scope root document, which is the tab the share just opened.
+ */
+async function resultingShareClient(event: FetchEvent): Promise<Client | null> {
+  for (let attempt = 0; attempt < SHARE_TARGET_CLIENT_ATTEMPTS; attempt += 1) {
+    const clientId = event.resultingClientId || event.clientId;
+    if (clientId !== "") {
+      const client = await self.clients.get(clientId);
+      if (client !== undefined) {
+        return client;
+      }
+    }
+    const windows = await self.clients.matchAll({
+      type: "window",
+      includeUncontrolled: true,
+    });
+    const candidate = windows.find((client) => {
+      try {
+        const url = new URL(client.url);
+        return url.origin === self.location.origin && url.pathname === "/";
+      } catch {
+        return false;
+      }
+    });
+    if (candidate !== undefined) {
+      return candidate;
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, SHARE_TARGET_CLIENT_RETRY_MS),
+    );
+  }
+  return null;
+}
+
+/**
+ * Hands a shared image to the redirected document as an in-memory message.
+ * Nothing is written to caches or storage: if no client appears, the share
+ * is dropped. Validation here only bounds transport; the image intake
+ * pipeline re-validates type and size like any chosen file.
+ */
+async function deliverSharedImage(event: FetchEvent): Promise<void> {
+  let file: File | null = null;
+  try {
+    const data = await event.request.formData();
+    const entry = data.get("image");
+    if (
+      entry instanceof File &&
+      entry.size > 0 &&
+      entry.size <= SHARE_TARGET_MAX_BYTES &&
+      (entry.type === "" || SHARE_TARGET_TYPES.has(entry.type))
+    ) {
+      file = entry;
+    }
+  } catch {
+    return;
+  }
+  if (file === null) {
+    return;
+  }
+  const client = await resultingShareClient(event);
+  client?.postMessage({ type: "SHARED_IMAGE", release: RELEASE_ID, file });
+}
+
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
+  if (
+    url.origin === self.location.origin &&
+    url.pathname === SHARE_TARGET_PATH
+  ) {
+    if (event.request.method === "POST") {
+      event.respondWith(Response.redirect("/", 303));
+      event.waitUntil(deliverSharedImage(event));
+      return;
+    }
+    if (event.request.method === "GET" && event.request.mode === "navigate") {
+      event.respondWith(
+        Promise.resolve(
+          new Response(null, {
+            status: 303,
+            headers: { Location: "/" },
+          }),
+        ),
+      );
+      return;
+    }
+  }
   if (
     event.request.method === "GET" &&
     event.request.mode === "navigate" &&
