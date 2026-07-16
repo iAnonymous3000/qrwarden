@@ -7,7 +7,9 @@ export default defineConfig({
   outputDir: "test-results",
   fullyParallel: false,
   forbidOnly: true,
-  retries: 0,
+  // Linux Firefox can occasionally stall at the browser/context boundary. A
+  // single clean-context retry keeps CI sensitive to persistent regressions.
+  retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: "line",
   use: {
