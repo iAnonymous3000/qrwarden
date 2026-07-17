@@ -1,6 +1,10 @@
 import type { AnalysisReport } from "../analyzer";
 import { COPY } from "../copy";
-import { translateFieldLabel, translateSignalTitle } from "../copy/evidence";
+import {
+  translateFieldLabel,
+  translateFieldValue,
+  translateSignalTitle,
+} from "../copy/evidence";
 
 export interface ReportTextInput {
   readonly report: AnalysisReport;
@@ -48,8 +52,20 @@ export function reportAsText(input: ReportTextInput): string {
     const value =
       field.sensitive || field.reportRedacted
         ? COPY.reportHiddenValue
-        : (field.reportValue ?? field.value);
+        : // Synthesized English values localize by stable field id, exactly
+          // as on screen; verbatim QR content passes through unchanged.
+          translateFieldValue({
+            id: field.id,
+            label: field.label,
+            kind: field.kind,
+            value: field.reportValue ?? field.value,
+          }).text;
     lines.push(`- ${translateFieldLabel(field.label).text}: ${value}`);
+    if (field.omittedCount !== undefined && field.omittedCount > 0) {
+      // The on-screen review discloses this omission, so the forwarded
+      // report must disclose it too rather than read as complete evidence.
+      lines.push(`  ${COPY.omittedFromDisplay(field.omittedCount, field.count)}`);
+    }
     if (field.truncated) {
       lines.push(`  ${COPY.reportTruncatedNote}`);
     }

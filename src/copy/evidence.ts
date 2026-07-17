@@ -1,3 +1,4 @@
+import type { DisplayField } from "../analyzer/types";
 import { COPY } from "./index";
 import { APP_LOCALE } from "./locale";
 
@@ -37,4 +38,65 @@ export function translateFieldLabel(label: string): EvidenceText {
 
 export function translateSignalTitle(title: string): EvidenceText {
   return translateEvidence(COPY.signalTitles, title);
+}
+
+/**
+ * Field ids whose values the analyzer synthesizes entirely in English, so an
+ * unlisted value is still English and stays marked lang="en" (fail closed).
+ */
+const SYNTHESIZED_VALUE_FIELD_IDS: ReadonlySet<string> = new Set([
+  "fragment",
+  "destination-category",
+  "otp-type",
+  "dpp-type",
+  "summary",
+]);
+
+/**
+ * Field ids that usually carry verbatim decoded evidence but fall back to
+ * exact synthesized English strings; only those strings translate, and every
+ * other value passes through unmarked as verbatim content.
+ */
+const MIXED_VALUE_FALLBACKS: Readonly<Record<string, readonly string[]>> =
+  Object.freeze({
+    "registrable-domain": Object.freeze(["Not available"]),
+    "byte-count": Object.freeze(["Unavailable"]),
+    "hex-preview": Object.freeze(["Unavailable", "Empty"]),
+    "security": Object.freeze(["Not specified"]),
+  });
+
+const PORT_DESCRIPTOR = /^(\d+) \((effective|explicit)\)$/u;
+
+/**
+ * Translates the analyzer's synthesized English field values for display,
+ * keyed by the stable field id so verbatim QR content is never rewritten.
+ * Unknown synthesized values (for example IANA registry category names)
+ * remain English marked lang="en" per the language-of-parts policy.
+ */
+export function translateFieldValue(
+  field: Pick<DisplayField, "id" | "label" | "kind" | "value">,
+): EvidenceText {
+  if (APP_LOCALE === "en") return { text: field.value, lang: undefined };
+  if (field.id === "port" && field.kind === "port") {
+    const match = PORT_DESCRIPTOR.exec(field.value);
+    if (match === null) return { text: field.value, lang: "en" };
+    return {
+      text:
+        match[2] === "effective"
+          ? COPY.portValueEffective(match[1]!)
+          : COPY.portValueExplicit(match[1]!),
+      lang: undefined,
+    };
+  }
+  if (
+    SYNTHESIZED_VALUE_FIELD_IDS.has(field.id) ||
+    (field.id === "content" && field.label === "QR content")
+  ) {
+    return translateEvidence(COPY.fieldValues, field.value);
+  }
+  const fallbacks = MIXED_VALUE_FALLBACKS[field.id];
+  if (fallbacks !== undefined && fallbacks.includes(field.value)) {
+    return translateEvidence(COPY.fieldValues, field.value);
+  }
+  return { text: field.value, lang: undefined };
 }

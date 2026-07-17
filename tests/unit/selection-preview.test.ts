@@ -3,8 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   retainSelectionPreview,
   selectionPositionLabel,
+  type SelectionPosition,
 } from "../../src/app/selectionPreview";
 import { WorkState } from "../../src/app/workState";
+import { EN_COPY } from "../../src/copy/locales/en";
+import { ES_COPY } from "../../src/copy/locales/es";
 import type { Quadrilateral } from "../../src/decoder/types";
 
 function square(x: number, y: number): Quadrilateral {
@@ -123,5 +126,25 @@ describe("selection position labels", () => {
     expect(selectionPositionLabel(square(5, 5), 100, 100)).toBe("top left");
     expect(selectionPositionLabel(square(45, 45), 100, 100)).toBe("center");
     expect(selectionPositionLabel(square(85, 85), 100, 100)).toBe("bottom right");
+  });
+
+  it("localizes every reachable position token in both copy tables", () => {
+    const tokens = new Set<SelectionPosition>();
+    for (const x of [5, 45, 85]) {
+      for (const y of [5, 45, 85]) {
+        tokens.add(selectionPositionLabel(square(x, y), 100, 100));
+      }
+    }
+    // Nine cells, nine distinct tokens: the union is fully reachable.
+    expect(tokens.size).toBe(9);
+    expect([...tokens].sort()).toEqual(Object.keys(EN_COPY.positionLabels).sort());
+    expect(Object.keys(ES_COPY.positionLabels)).toEqual(
+      Object.keys(EN_COPY.positionLabels),
+    );
+    for (const token of tokens) {
+      // The Spanish table must actually translate; identity entries would
+      // reintroduce English announcements under Spanish pronunciation.
+      expect(ES_COPY.positionLabels[token]).not.toBe(EN_COPY.positionLabels[token]);
+    }
   });
 });

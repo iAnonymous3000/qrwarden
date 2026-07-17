@@ -53,6 +53,13 @@ export class ReportFields {
 
     const available = Math.min(ANALYZER_LIMITS.fieldScalars, this.#remaining);
     const bounded = truncateScalars(escapeForbiddenForDisplay(value), available);
+    // The replacement report value obeys the same escape-and-truncate bound,
+    // so the copied report never carries content beyond what review could
+    // have shown on screen.
+    const boundedReport =
+      options.reportValue === undefined
+        ? undefined
+        : truncateScalars(escapeForbiddenForDisplay(options.reportValue), available);
     this.#remaining -= bounded.used;
     this.#fields.push({
       id,
@@ -63,14 +70,12 @@ export class ReportFields {
       sensitive: options.sensitive ?? false,
       masked: options.masked ?? false,
       collapsed: options.collapsed ?? false,
-      truncated: bounded.truncated,
+      truncated: bounded.truncated || (boundedReport?.truncated ?? false),
       ...(options.count === undefined ? {} : { count: options.count }),
       ...(options.omittedCount === undefined
         ? {}
         : { omittedCount: options.omittedCount }),
-      ...(options.reportValue === undefined
-        ? {}
-        : { reportValue: options.reportValue }),
+      ...(boundedReport === undefined ? {} : { reportValue: boundedReport.value }),
       ...(options.reportRedacted === undefined
         ? {}
         : { reportRedacted: options.reportRedacted }),

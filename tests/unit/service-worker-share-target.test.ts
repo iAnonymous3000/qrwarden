@@ -101,20 +101,14 @@ async function loadWorker(): Promise<WorkerHarness> {
   };
 }
 
-function dispatchSharePost(
+function dispatchShareForm(
   handler: WorkerHandler,
+  form: FormData,
   ids: { readonly resultingClientId?: string; readonly clientId?: string } = {},
 ): {
   readonly lifetime: readonly Promise<unknown>[];
   readonly respondWith: ReturnType<typeof vi.fn>;
 } {
-  const form = new FormData();
-  form.append(
-    "image",
-    new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "shared.png", {
-      type: "image/png",
-    }),
-  );
   const lifetime: Promise<unknown>[] = [];
   const respondWith = vi.fn();
   handler({
@@ -128,6 +122,29 @@ function dispatchSharePost(
     waitUntil: (promise) => lifetime.push(promise),
   });
   return { lifetime, respondWith };
+}
+
+function dispatchSharePost(
+  handler: WorkerHandler,
+  ids: {
+    readonly resultingClientId?: string;
+    readonly clientId?: string;
+    readonly fileName?: string;
+  } = {},
+): {
+  readonly lifetime: readonly Promise<unknown>[];
+  readonly respondWith: ReturnType<typeof vi.fn>;
+} {
+  const form = new FormData();
+  form.append(
+    "image",
+    new File(
+      [new Uint8Array([0x89, 0x50, 0x4e, 0x47])],
+      ids.fileName ?? "shared.png",
+      { type: "image/png" },
+    ),
+  );
+  return dispatchShareForm(handler, form, ids);
 }
 
 function messageClient(id: string): MessageClient {
@@ -151,6 +168,22 @@ function sharedImageMessages(
       (message): message is { readonly release?: string; readonly file?: unknown } =>
         message.type === "SHARED_IMAGE",
     );
+}
+
+function shareRejectedMessages(
+  client: MessageClient,
+): readonly { readonly release?: string; readonly reason?: string }[] {
+  return client.postMessage.mock.calls
+    .map((call) => call[0] as { readonly type?: string })
+    .filter(
+      (message): message is { readonly release?: string; readonly reason?: string } =>
+        message.type === "SHARE_REJECTED",
+    );
+}
+
+function sharedFileName(client: MessageClient, index = 0): string | undefined {
+  const file = sharedImageMessages(client)[index]?.file;
+  return file instanceof File ? file.name : undefined;
 }
 
 afterEach(() => {
@@ -309,6 +342,191 @@ describe("service-worker share-target delivery", () => {
     const redirectedDocument = messageClient("redirected-document");
     dispatchPull(message!, redirectedDocument);
     expect(sharedImageMessages(redirectedDocument)).toHaveLength(1);
+  });
+
+  it("drops a marker pull left over from a delivered share so a later share cannot reach it", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+    const tabA = messageClient("resulting-1");
+    harness.clientsGet.mockImplementation((id) =>
+      Promise.resolve(id === "resulting-1" ? tabA : undefined),
+    );
+
+    const first = dispatchSharePost(fetchHandler!, {
+      resultingClientId: "resulting-1",
+      fileName: "first.png",
+    });
+    await Promise.all(first.lifetime);
+    expect(sharedFileName(tabA)).toBe("first.png");
+
+    // The redirected document posts its marker pull unconditionally, even
+    // after a direct delivery. With nothing parked and nothing in flight the
+    // pull must be dropped, not left waiting for the next share.
+    dispatchPull(message!, tabA);
+
+    const second = dispatchSharePost(fetchHandler!, { fileName: "second.png" });
+    await Promise.all(second.lifetime);
+
+    expect(sharedImageMessages(tabA)).toHaveLength(1);
+    const tabB = messageClient("redirected-2");
+    dispatchPull(message!, tabB);
+    expect(sharedFileName(tabB)).toBe("second.png");
+  });
+
+  it("clears a raced-ahead pull once its share settles through the resulting client", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+    const tabA = messageClient("resulting-1");
+    harness.clientsGet.mockImplementation((id) =>
+      Promise.resolve(id === "resulting-1" ? tabA : undefined),
+    );
+
+    const first = dispatchSharePost(fetchHandler!, {
+      resultingClientId: "resulting-1",
+      fileName: "first.png",
+    });
+    // The marker pull can be processed while the multipart body still
+    // parses; once the share settles directly, the parked pull is stale.
+    dispatchPull(message!, tabA);
+    await Promise.all(first.lifetime);
+    expect(sharedFileName(tabA)).toBe("first.png");
+
+    const second = dispatchSharePost(fetchHandler!, { fileName: "second.png" });
+    await Promise.all(second.lifetime);
+
+    expect(sharedImageMessages(tabA)).toHaveLength(1);
+    const tabB = messageClient("redirected-2");
+    dispatchPull(message!, tabB);
+    expect(sharedFileName(tabB)).toBe("second.png");
+  });
+
+  it("queues overlapping id-less shares in arrival order instead of overwriting", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+
+    const first = dispatchSharePost(fetchHandler!, { fileName: "first.png" });
+    const second = dispatchSharePost(fetchHandler!, { fileName: "second.png" });
+    await Promise.all([...first.lifetime, ...second.lifetime]);
+
+    const docA = messageClient("doc-a");
+    const docB = messageClient("doc-b");
+    dispatchPull(message!, docA);
+    dispatchPull(message!, docB);
+    expect(sharedFileName(docA)).toBe("first.png");
+    expect(sharedFileName(docB)).toBe("second.png");
+  });
+
+  it("delivers each overlapping share to its own document on the push path", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+    const docA = messageClient("resulting-a");
+    harness.clientsGet.mockImplementation((id) =>
+      Promise.resolve(id === "resulting-a" ? docA : undefined),
+    );
+
+    const first = dispatchSharePost(fetchHandler!, {
+      resultingClientId: "resulting-a",
+      fileName: "first.png",
+    });
+    const second = dispatchSharePost(fetchHandler!, { fileName: "second.png" });
+    await Promise.all([...first.lifetime, ...second.lifetime]);
+
+    expect(sharedImageMessages(docA)).toHaveLength(1);
+    expect(sharedFileName(docA)).toBe("first.png");
+    const docB = messageClient("doc-b");
+    dispatchPull(message!, docB);
+    expect(sharedFileName(docB)).toBe("second.png");
+  });
+
+  it("parks an explicit rejection for a multi-file share", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+    const form = new FormData();
+    for (const name of ["one.png", "two.png", "three.png"]) {
+      form.append(
+        "image",
+        new File([new Uint8Array([1])], name, { type: "image/png" }),
+      );
+    }
+
+    const { lifetime, respondWith } = dispatchShareForm(fetchHandler!, form);
+    await Promise.all(lifetime);
+
+    const response = respondWith.mock.calls[0]?.[0] as Response;
+    expect(response.status).toBe(303);
+    const doc = messageClient("redirected-document");
+    dispatchPull(message!, doc);
+    expect(sharedImageMessages(doc)).toHaveLength(0);
+    const rejections = shareRejectedMessages(doc);
+    expect(rejections).toHaveLength(1);
+    expect(rejections[0]?.reason).toBe("multiple-files");
+    expect(rejections[0]?.release).toBe(RELEASE);
+  });
+
+  it("rejects an oversized share through the resulting client", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const doc = messageClient("resulting-1");
+    harness.clientsGet.mockImplementation((id) =>
+      Promise.resolve(id === "resulting-1" ? doc : undefined),
+    );
+    const form = new FormData();
+    form.append(
+      "image",
+      new File([new Uint8Array(25_000_001)], "huge.jpg", {
+        type: "image/jpeg",
+      }),
+    );
+
+    const { lifetime } = dispatchShareForm(fetchHandler!, form, {
+      resultingClientId: "resulting-1",
+    });
+    await Promise.all(lifetime);
+
+    expect(sharedImageMessages(doc)).toHaveLength(0);
+    const rejections = shareRejectedMessages(doc);
+    expect(rejections).toHaveLength(1);
+    expect(rejections[0]?.reason).toBe("too-large");
+  });
+
+  it("rejects an unsupported media type instead of dropping it silently", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+    const form = new FormData();
+    form.append(
+      "image",
+      new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], "doc.pdf", {
+        type: "application/pdf",
+      }),
+    );
+
+    const { lifetime } = dispatchShareForm(fetchHandler!, form);
+    await Promise.all(lifetime);
+
+    const doc = messageClient("redirected-document");
+    dispatchPull(message!, doc);
+    expect(shareRejectedMessages(doc)[0]?.reason).toBe("unsupported-type");
+  });
+
+  it("rejects a file-less share as unreadable", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+    const form = new FormData();
+    form.append("text", "not an image");
+
+    const { lifetime } = dispatchShareForm(fetchHandler!, form);
+    await Promise.all(lifetime);
+
+    const doc = messageClient("redirected-document");
+    dispatchPull(message!, doc);
+    expect(shareRejectedMessages(doc)[0]?.reason).toBe("unreadable");
   });
 
   it("serves the offline shell for the share marker navigation", async () => {

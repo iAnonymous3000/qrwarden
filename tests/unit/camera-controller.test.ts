@@ -153,6 +153,7 @@ interface Harness {
   readonly bitmaps: BitmapDouble[];
   readonly createBitmap: ReturnType<typeof vi.fn>;
   readonly decoder: {
+    readonly ready: ReturnType<typeof vi.fn>;
     readonly decodeCameraFrame: ReturnType<typeof vi.fn>;
     readonly restart: ReturnType<typeof vi.fn>;
     readonly terminate: ReturnType<typeof vi.fn>;
@@ -211,6 +212,7 @@ function createHarness(): Harness {
   vi.stubGlobal("createImageBitmap", createBitmap);
 
   const decoder = {
+    ready: vi.fn(async () => undefined),
     decodeCameraFrame: vi.fn(
       async (
         bitmap: ImageBitmap,
@@ -777,6 +779,115 @@ describe("CameraController timeout and constraints", () => {
     expect(harness.track.stop).toHaveBeenCalledOnce();
     expect(harness.onProblem).toHaveBeenCalledExactlyOnceWith("reader-stopped");
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("waits beyond the frame deadline for a decoder that is not ready yet", async () => {
+    const harness = createHarness();
+    const readiness = deferred<void>();
+    harness.decoder.ready.mockReturnValue(readiness.promise);
+    await harness.controller.start();
+
+    await vi.advanceTimersToNextTimerAsync();
+    expect(harness.decoder.ready).toHaveBeenCalledOnce();
+    expect(harness.decoder.decodeCameraFrame).not.toHaveBeenCalled();
+    // No attempt deadline may run while readiness is pending; the decoder's
+    // own startup budget bounds this wait.
+    expect(vi.getTimerCount()).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(harness.decoder.restart).not.toHaveBeenCalled();
+    expect(harness.onProblem).not.toHaveBeenCalled();
+    expect(harness.decoder.decodeCameraFrame).not.toHaveBeenCalled();
+
+    readiness.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(harness.decoder.decodeCameraFrame).toHaveBeenCalled();
+    expect(harness.decoder.restart).not.toHaveBeenCalled();
+    expect(harness.onProblem).not.toHaveBeenCalled();
+    harness.controller.cancel();
+  });
+
+  it("replaces the decoder and reports when readiness ultimately fails", async () => {
+    const harness = createHarness();
+    harness.decoder.ready.mockRejectedValueOnce(new Error("took-too-long"));
+    await harness.controller.start();
+    const epoch = harness.controller.epoch;
+
+    await vi.advanceTimersToNextTimerAsync();
+
+    expect(harness.decoder.decodeCameraFrame).not.toHaveBeenCalled();
+    expect(harness.controller.epoch).toBe(epoch + 1);
+    expect(harness.decoder.restart).toHaveBeenCalledOnce();
+    expect(harness.onProblem).toHaveBeenCalledExactlyOnceWith("reader-stopped");
+    harness.controller.cancel();
+  });
+
+  it("reports nothing when the camera is cancelled while awaiting readiness", async () => {
+    const harness = createHarness();
+    const readiness = deferred<void>();
+    harness.decoder.ready.mockReturnValue(readiness.promise);
+    await harness.controller.start();
+
+    await vi.advanceTimersToNextTimerAsync();
+    expect(harness.decoder.decodeCameraFrame).not.toHaveBeenCalled();
+
+    harness.controller.cancel();
+    readiness.reject(new Error("cancelled"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(harness.decoder.restart).not.toHaveBeenCalled();
+    expect(harness.onProblem).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("bounds a conformance probe that never settles and stops the stream", async () => {
+    const harness = createHarness();
+    harness.createBitmap.mockReset().mockReturnValueOnce(new Promise(() => undefined));
+
+    const starting = harness.controller.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await starting;
+
+    expect(harness.controller.active).toBe(false);
+    expect(harness.track.stop).toHaveBeenCalledOnce();
+    expect(harness.onProblem).toHaveBeenCalledExactlyOnceWith("camera-could-not-start");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("bounds a frame whose bitmap creation never settles", async () => {
+    const harness = createHarness();
+    await harness.controller.start();
+    harness.createBitmap.mockImplementationOnce(() => new Promise(() => undefined));
+    const epoch = harness.controller.epoch;
+
+    await vi.advanceTimersToNextTimerAsync();
+    expect(harness.decoder.decodeCameraFrame).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(harness.controller.epoch).toBe(epoch + 1);
+    expect(harness.decoder.restart).toHaveBeenCalledOnce();
+    expect(harness.onProblem).toHaveBeenCalledExactlyOnceWith("reader-stopped");
+    harness.controller.cancel();
+  });
+
+  it("closes a frame bitmap delivered after the capture deadline", async () => {
+    const harness = createHarness();
+    await harness.controller.start();
+    const late = deferred<BitmapDouble>();
+    harness.createBitmap.mockReturnValueOnce(late.promise);
+
+    await vi.advanceTimersToNextTimerAsync();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(harness.onProblem).toHaveBeenCalledExactlyOnceWith("reader-stopped");
+    harness.controller.cancel();
+
+    const bitmap = bitmapDouble();
+    late.resolve(bitmap);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(bitmap.close).toHaveBeenCalledOnce();
+    expect(harness.decoder.decodeCameraFrame).not.toHaveBeenCalled();
   });
 
   it("rejects oversized live dimensions and stops the stream before decoding", async () => {

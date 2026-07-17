@@ -359,6 +359,28 @@ describe("Cloudflare live release verifier", () => {
     ).rejects.toThrow("verification fails closed");
   });
 
+  it("forbids reporting headers in committed _headers expectations", () => {
+    for (const name of ["NEL", "Report-To", "reporting-endpoints"]) {
+      expect(() => parseHeaderRules(`/*\n  ${name}: cf-nel\n`)).toThrow(
+        `reporting header ${name} is forbidden in _headers at line 2`,
+      );
+    }
+  });
+
+  it("rejects live reporting headers even when committed expectations declare them", async () => {
+    const value = '{"report_to":"cf-nel","max_age":604800}';
+    await expect(
+      verifyProbeResponse({
+        probe: {
+          pathname: "/",
+          expectedStatus: 200,
+          expectedHeaders: new Map([["nel", value]]),
+        },
+        response: new Response("ok\n", { status: 200, headers: { NEL: value } }),
+      }),
+    ).rejects.toThrow("opt out of Network Error Logging");
+  });
+
   it("fails the live run when Cloudflare injects reporting headers on a probe", async () => {
     const { dist, contract, bodies } = await fixture();
     await expect(

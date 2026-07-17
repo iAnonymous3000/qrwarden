@@ -44,8 +44,16 @@ const SHELL = new TextEncoder().encode("verified shell\n");
 const REVISION = createHash("sha256").update(SHELL).digest("hex");
 const INTEGRITY = `sha384-${createHash("sha384").update(SHELL).digest("base64")}`;
 
+interface HarnessClient {
+  readonly id: string;
+  readonly type: "window";
+  readonly url?: string;
+  postMessage(message: Readonly<Record<string, string>>): void;
+}
+
 async function loadWorker(
   keys: () => Promise<readonly Request[]>,
+  extraClients: readonly HarnessClient[] = [],
 ): Promise<WorkerHarness> {
   vi.resetModules();
   const handlers = new Map<string, WorkerHandler>();
@@ -54,6 +62,7 @@ async function loadWorker(
   const client = {
     id: "client-a",
     type: "window" as const,
+    url: "https://qrwarden.test/",
     postMessage(message: Readonly<Record<string, string>>): void {
       clientMessages.push(message);
       if (message.type === "PREPARE_UPDATE" && messageHandler !== null) {
@@ -84,7 +93,7 @@ async function loadWorker(
     location: { origin: "https://qrwarden.test" },
     registration: { active: null, installing: null, waiting: null },
     clients: {
-      matchAll: vi.fn(() => Promise.resolve([client])),
+      matchAll: vi.fn(() => Promise.resolve([client, ...extraClients])),
       claim: vi.fn(() => Promise.resolve()),
     },
     skipWaiting,
@@ -188,6 +197,37 @@ describe("service-worker state contract", () => {
     }));
     expect(completedLifetime).toHaveLength(0);
     expect(harness.cache.keys).toHaveBeenCalledOnce();
+  });
+
+  it("commits activation without waiting on a same-origin non-shell window", async () => {
+    const strayMessages: Readonly<Record<string, string>>[] = [];
+    const stray: HarnessClient = {
+      // A window parked off the shell path (mistyped URL, security.txt) runs
+      // no coordinator and can never answer PREPARE_UPDATE; it must not hold
+      // the readiness quorum hostage.
+      id: "stray-404",
+      type: "window",
+      url: "https://qrwarden.test/nonexistent-404",
+      postMessage(message: Readonly<Record<string, string>>): void {
+        strayMessages.push(message);
+      },
+    };
+    const harness = await loadWorker(
+      () => Promise.resolve([new Request("https://qrwarden.test/")]),
+      [stray],
+    );
+    const install = harness.handlers.get("install");
+    const message = harness.handlers.get("message");
+    expect(install).toBeDefined();
+    expect(message).toBeDefined();
+
+    await Promise.all(invokeWithLifetime(install!, {}));
+    await Promise.all(invokeWithLifetime(message!, {
+      data: { type: "BEGIN_UPDATE_COORDINATION" },
+    }));
+
+    expect(harness.skipWaiting).toHaveBeenCalledOnce();
+    expect(strayMessages).toHaveLength(0);
   });
 
   it("resets a successful commit to idle after preserving client notification", async () => {

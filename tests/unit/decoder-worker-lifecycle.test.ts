@@ -48,7 +48,7 @@ async function loadWorker(): Promise<WorkerHarness> {
   vi.resetModules();
   workerMocks.prepareZXingModule.mockResolvedValue(undefined);
   workerMocks.inspectImageHeader.mockResolvedValue({});
-  workerMocks.validateStaticImageStructure.mockResolvedValue(undefined);
+  workerMocks.validateStaticImageStructure.mockResolvedValue({});
 
   const handlers = new Map<string, WorkerHandler>();
   const messages: DecoderResponse[] = [];

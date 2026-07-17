@@ -289,6 +289,24 @@ function nonce128(): string {
   return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
+// Only documents at the app shell URL run the coordinator that can answer
+// PREPARE_UPDATE and REPORT_LOADED_RELEASE; a same-origin window parked on
+// any other path (a 404 document, a security.txt tab) holds no report state
+// and would silently block every activation for as long as it stays open.
+// An unparseable client URL stays in the quorum: fail closed.
+function participatesInCoordination(client: WindowClient): boolean {
+  try {
+    const url = new URL(client.url);
+    return (
+      url.origin === self.location.origin &&
+      url.pathname === "/" &&
+      (url.search === "" || url.search === SHARE_TARGET_PENDING_SEARCH)
+    );
+  } catch {
+    return true;
+  }
+}
+
 async function windowClients(): Promise<readonly WindowClient[]> {
   const clients = await self.clients.matchAll({
     type: "window",
@@ -296,6 +314,7 @@ async function windowClients(): Promise<readonly WindowClient[]> {
   });
   return clients
     .filter((client): client is WindowClient => client.type === "window")
+    .filter((client) => participatesInCoordination(client))
     .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
 }
 
@@ -560,25 +579,54 @@ const SHARE_TARGET_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const SHARE_TARGET_CLIENT_ATTEMPTS = 20;
 const SHARE_TARGET_CLIENT_RETRY_MS = 250;
 const SHARE_TARGET_PENDING_TTL_MS = 120_000;
+const SHARE_TARGET_MAX_PARKED = 4;
 
-interface PendingShare {
-  readonly file: File;
+type ShareRejectionReason =
+  | "multiple-files"
+  | "too-large"
+  | "unsupported-type"
+  | "unreadable";
+
+type SharePayload =
+  | { readonly kind: "image"; readonly file: File }
+  | { readonly kind: "rejected"; readonly reason: ShareRejectionReason };
+
+interface ParkedShare {
+  readonly payload: SharePayload;
   readonly expires: number;
 }
 
-// A share whose resulting client cannot be identified waits here for the
-// redirected document to pull it. The slot is worker-lifetime-bound like the
-// in-flight delivery it backs; the deadline keeps an unclaimed share from
-// outliving the navigation that produced it.
-let pendingShare: PendingShare | null = null;
+// Shares whose resulting client cannot be identified wait here, oldest first,
+// for redirected documents to pull them. Rejections park through the same
+// bounded queue so an invalid share still reaches the user as an error
+// instead of vanishing. Redirected documents pull in navigation order, so
+// FIFO keeps overlapping shares paired with their own documents instead of
+// letting the newest share overwrite an older parked one. The deadline keeps
+// an unclaimed share from outliving the navigation that produced it.
+const pendingShares: ParkedShare[] = [];
 
-function takePendingShare(): File | null {
-  const parked = pendingShare;
-  pendingShare = null;
-  if (parked === null || Date.now() >= parked.expires) {
-    return null;
+function parkShare(payload: SharePayload): void {
+  while (pendingShares.length > 0 && Date.now() >= pendingShares[0]!.expires) {
+    pendingShares.shift();
   }
-  return parked.file;
+  if (pendingShares.length >= SHARE_TARGET_MAX_PARKED) {
+    // Fail closed: refusing the newest share beats overwriting an older one.
+    return;
+  }
+  pendingShares.push({
+    payload,
+    expires: Date.now() + SHARE_TARGET_PENDING_TTL_MS,
+  });
+}
+
+function takePendingShare(): SharePayload | null {
+  while (pendingShares.length > 0) {
+    const parked = pendingShares.shift()!;
+    if (Date.now() < parked.expires) {
+      return parked.payload;
+    }
+  }
+  return null;
 }
 
 interface PendingPull {
@@ -587,18 +635,82 @@ interface PendingPull {
 }
 
 // The redirected document posts PULL_SHARED_IMAGE exactly once, and nothing
-// orders that message after the share's multipart parse. A pull that arrives
-// before the share is parked waits here so the in-flight delivery can still
-// complete the rendezvous instead of silently dropping the share.
-let pendingPull: PendingPull | null = null;
+// orders that message after the share's multipart parse. Pulls that arrive
+// before their share is parked wait here, oldest first, so every in-flight
+// delivery can still complete its rendezvous instead of silently dropping
+// the share.
+const pendingPulls: PendingPull[] = [];
+
+function parkPull(source: PendingPull["source"]): void {
+  while (pendingPulls.length > 0 && Date.now() >= pendingPulls[0]!.expires) {
+    pendingPulls.shift();
+  }
+  if (pendingPulls.length >= SHARE_TARGET_MAX_PARKED) {
+    return;
+  }
+  pendingPulls.push({
+    source,
+    expires: Date.now() + SHARE_TARGET_PENDING_TTL_MS,
+  });
+}
 
 function takePendingPull(): PendingPull["source"] | null {
-  const waiting = pendingPull;
-  pendingPull = null;
-  if (waiting === null || Date.now() >= waiting.expires) {
-    return null;
+  while (pendingPulls.length > 0) {
+    const waiting = pendingPulls.shift()!;
+    if (Date.now() < waiting.expires) {
+      return waiting.source;
+    }
   }
-  return waiting.source;
+  return null;
+}
+
+// Counts share POSTs whose delivery has not settled. A pull may only park
+// while a rendezvous is still possible; once every in-flight share settles
+// with nothing parked, a waiting pull can never be answered and is dropped
+// so a later, unrelated share cannot be misdelivered to a stale document.
+let sharesInFlight = 0;
+
+function postSharePayload(
+  target: { postMessage(message: unknown): void },
+  payload: SharePayload,
+): void {
+  try {
+    if (payload.kind === "image") {
+      target.postMessage({
+        type: "SHARED_IMAGE",
+        release: RELEASE_ID,
+        file: payload.file,
+      });
+    } else {
+      target.postMessage({
+        type: "SHARE_REJECTED",
+        release: RELEASE_ID,
+        reason: payload.reason,
+      });
+    }
+  } catch {
+    // A vanished document forfeits its share; the sender can re-share.
+  }
+}
+
+// The manifest declares a single files entry, but Web Share Target appends
+// every accepted file under that entry's name, so multi-image shares arrive
+// here and are rejected explicitly for this single-image analyzer.
+function classifySharedFiles(files: readonly File[]): SharePayload {
+  if (files.length > 1) {
+    return { kind: "rejected", reason: "multiple-files" };
+  }
+  const file = files[0];
+  if (file === undefined || file.size === 0) {
+    return { kind: "rejected", reason: "unreadable" };
+  }
+  if (file.size > SHARE_TARGET_MAX_BYTES) {
+    return { kind: "rejected", reason: "too-large" };
+  }
+  if (file.type !== "" && !SHARE_TARGET_TYPES.has(file.type)) {
+    return { kind: "rejected", reason: "unsupported-type" };
+  }
+  return { kind: "image", file };
 }
 
 /**
@@ -631,37 +743,45 @@ async function resultingShareClient(event: FetchEvent): Promise<Client | null> {
  * Hands a shared image to the redirected document as an in-memory message.
  * Nothing is written to caches or storage: the share is parked in worker
  * memory behind a short deadline and dropped if no document claims it. The
- * resulting-client push and the marker-driven pull consume the same slot,
- * so each share is delivered at most once. Validation here only bounds
- * transport; the image intake pipeline re-validates type and size like any
- * chosen file.
+ * resulting-client push and the marker-driven pull consume the same bounded
+ * queue, so each share is delivered at most once and overlapping shares
+ * resolve in arrival order. An invalid share travels the same rendezvous as
+ * an explicit rejection so the user sees an error instead of silence.
+ * Validation here only bounds transport; the image intake pipeline
+ * re-validates type and size like any chosen file.
  */
 async function deliverSharedImage(event: FetchEvent): Promise<void> {
-  let file: File | null = null;
+  sharesInFlight += 1;
   try {
-    const data = await event.request.formData();
-    const entry = data.get("image");
-    if (
-      entry instanceof File &&
-      entry.size > 0 &&
-      entry.size <= SHARE_TARGET_MAX_BYTES &&
-      (entry.type === "" || SHARE_TARGET_TYPES.has(entry.type))
-    ) {
-      file = entry;
+    let payload: SharePayload;
+    try {
+      const data = await event.request.formData();
+      payload = classifySharedFiles(
+        data
+          .getAll("image")
+          .filter((entry): entry is File => entry instanceof File),
+      );
+    } catch {
+      payload = { kind: "rejected", reason: "unreadable" };
     }
-  } catch {
-    return;
-  }
-  if (file === null) {
-    return;
-  }
-  pendingShare = { file, expires: Date.now() + SHARE_TARGET_PENDING_TTL_MS };
-  // The resulting client stays authoritative; a parked pull is the fallback
-  // for engines that report no client id for the redirected document.
-  const client = (await resultingShareClient(event)) ?? takePendingPull();
-  if (client !== null && pendingShare?.file === file) {
-    pendingShare = null;
-    client.postMessage({ type: "SHARED_IMAGE", release: RELEASE_ID, file });
+    // The resulting client stays authoritative; a parked pull is the fallback
+    // for engines that report no client id for the redirected document. The
+    // payload stays local to this delivery, so a concurrent share can never
+    // replace it or suppress its push.
+    const client = (await resultingShareClient(event)) ?? takePendingPull();
+    if (client !== null) {
+      postSharePayload(client, payload);
+      return;
+    }
+    parkShare(payload);
+  } finally {
+    sharesInFlight -= 1;
+    if (sharesInFlight === 0 && pendingShares.length === 0) {
+      // Every delivery settled with nothing parked: a still-waiting pull can
+      // never rendezvous, and keeping it alive would hand the next unrelated
+      // share to a stale document.
+      pendingPulls.length = 0;
+    }
   }
 }
 
@@ -754,21 +874,18 @@ self.addEventListener("message", (event) => {
   }
 
   if (data.type === "PULL_SHARED_IMAGE" && event.source !== null) {
-    const file = takePendingShare();
-    if (file === null) {
+    const payload = takePendingShare();
+    if (payload === null) {
       // The share POST may still be parsing its multipart body; park the
-      // puller so delivery completes once the share is parked.
-      pendingPull = {
-        source: event.source,
-        expires: Date.now() + SHARE_TARGET_PENDING_TTL_MS,
-      };
+      // puller so delivery completes once the share settles. With no share
+      // parked and none in flight the pull is definitively unanswerable and
+      // is dropped, never left to claim a later, unrelated share.
+      if (sharesInFlight > 0) {
+        parkPull(event.source);
+      }
       return;
     }
-    event.source.postMessage({
-      type: "SHARED_IMAGE",
-      release: RELEASE_ID,
-      file,
-    });
+    postSharePayload(event.source, payload);
     return;
   }
 

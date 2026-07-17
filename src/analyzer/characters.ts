@@ -25,7 +25,7 @@ export function isForbiddenCharacter(value: string): boolean {
     point === 0x061c ||
     point === 0x200e ||
     point === 0x200f ||
-    (point >= 0x202a && point <= 0x202e) ||
+    (point >= 0x2028 && point <= 0x202e) ||
     (point >= 0x2066 && point <= 0x2069) ||
     (point >= 0x200b && point <= 0x200d) ||
     point === 0x2060 ||

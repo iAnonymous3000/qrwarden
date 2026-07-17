@@ -110,6 +110,11 @@ export async function withRasterizedFile<T>(
     canvas = new OffscreenCanvas(size.width, size.height);
     const context = contextFor(canvas);
     context.drawImage(bitmap, 0, 0, size.width, size.height);
+    // drawImage is the bitmap's last use; closing it here keeps the
+    // full-resolution pixels from staying live alongside the canvas and
+    // ImageData for the whole decode.
+    bitmap.close();
+    bitmap = null;
     imageData = context.getImageData(0, 0, size.width, size.height);
     consuming = true;
     return await consume(imageData, canvas, size);

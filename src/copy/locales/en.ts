@@ -1,4 +1,5 @@
 import type { AnalysisSignalCode, PayloadKind } from "../../analyzer/types";
+import type { SelectionPosition } from "../../app/selectionPreview";
 
 export interface SignalGlossaryCopy {
   readonly title: string;
@@ -141,13 +142,16 @@ export const EN_COPY = Object.freeze({
     "Open Share, choose Add to Home Screen, leave Open as Web App turned on when it is shown, then open QRWarden from its Home Screen icon while online. Wait for Ready offline before using it offline.",
   installMacHeading: "Safari on Mac",
   installMac:
-    "Choose File > Add to Dock, open QRWarden from the Dock while online, and wait for Ready offline.",
+    "On macOS Sonoma or later, choose File > Add to Dock, open QRWarden from the Dock while online, and wait for Ready offline. Safari on earlier macOS versions cannot install web apps; QRWarden still works in this tab.",
   installTestedHeading: "Install QRWarden",
   installTested:
     "Use your browser's Install QRWarden option, open the installed app while online, and wait for Ready offline.",
   installUnavailableHeading: "Guidance unavailable",
   installUnavailable:
     "Install guidance is not available for this browser. You can still use QRWarden in this tab and prepare it for offline use.",
+  installInstalledHeading: "Already installed",
+  installInstalled:
+    "You are using the installed QRWarden app on this device. No install steps are needed.",
   pasteHint: "You can also paste or drop an image anywhere on this page.",
   signalNeedsReview: "Needs review",
   signalContext: "Context",
@@ -202,6 +206,19 @@ export const EN_COPY = Object.freeze({
   selectionUnavailable: "Unavailable",
   unsupportedCodeChip: "Unsupported code",
   positionUnavailable: "position unavailable",
+  // The selection view's bounded relative-position tokens; English is the
+  // identity mapping and a missing token fails the locale build.
+  positionLabels: Object.freeze<Record<SelectionPosition, string>>({
+    "center": "center",
+    "left": "left",
+    "right": "right",
+    "top": "top",
+    "bottom": "bottom",
+    "top left": "top left",
+    "top right": "top right",
+    "bottom left": "bottom left",
+    "bottom right": "bottom right",
+  }),
   selectionOptionLabel: (index: number, position: string, kind: string): string =>
     `Code ${index}, ${position}, ${kind}`,
   actualDestination: "Actual destination",
@@ -333,6 +350,35 @@ export const EN_COPY = Object.freeze({
     "URI scheme": "URI scheme",
     "Unicode host": "Unicode host",
   }),
+  // Exact analyzer-synthesized field VALUES mapped to localized display
+  // strings; English is the identity mapping. Verbatim decoded content never
+  // consults this table, and unlisted synthesized values (for example IANA
+  // registry category names) fall back to the emitted English text marked
+  // lang="en".
+  fieldValues: Object.freeze({
+    "Present": "Present",
+    "Not present": "Not present",
+    "Not available": "Not available",
+    "Unavailable": "Unavailable",
+    "Empty": "Empty",
+    "Not specified": "Not specified",
+    "OTP account": "OTP account",
+    "OTP migration": "OTP migration",
+    "DPP bootstrap": "DPP bootstrap",
+    "vCard contact": "vCard contact",
+    "Calendar entry": "Calendar entry",
+    "Email details (inspect only)": "Email details (inspect only)",
+    "Message details (inspect only)": "Message details (inspect only)",
+    "Payment request (inspect only)": "Payment request (inspect only)",
+    "Custom application link (inspect only)": "Custom application link (inspect only)",
+    "Localhost": "Localhost",
+    "Multicast DNS .local": "Multicast DNS .local",
+    "Home network home.arpa": "Home network home.arpa",
+  }),
+  // The analyzer's parametric port descriptor, rebuilt at render time from
+  // the digits it carries.
+  portValueEffective: (port: string): string => `${port} (effective)`,
+  portValueExplicit: (port: string): string => `${port} (explicit)`,
   // Exact analyzer signal titles mapped to localized titles, ordered like
   // the signal glossary. Signal details stay parametric English sentences
   // until the analyzer emits message identifiers.

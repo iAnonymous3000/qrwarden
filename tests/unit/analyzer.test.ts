@@ -7,6 +7,7 @@ import {
   type AnalysisReport,
   type AnalyzerInput,
 } from "../../src/analyzer";
+import { ReportFields } from "../../src/analyzer/limits";
 
 interface CorpusFixture {
   readonly id: string;
@@ -309,6 +310,99 @@ describe("ordered payload classification", () => {
     expect(field(literal, "n-0").value).toBe("=ZZok");
   });
 
+  it("accepts the standard terminal CRLF and declines extra trailing newlines", () => {
+    const compliant = analyzeText(
+      `${["BEGIN:VCARD", "FN:Alice", "END:VCARD"].join("\r\n")}\r\n`,
+    );
+    expect(compliant.kind).toBe("contact");
+    expect(field(compliant, "fn-0").value).toBe("Alice");
+
+    const doubled = analyzeText(
+      `${["BEGIN:VCARD", "FN:Alice", "END:VCARD"].join("\r\n")}\r\n\r\n`,
+    );
+    expect(doubled.kind).toBe("text");
+    expect(field(doubled, "text")).toMatchObject({
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
+  });
+
+  it("declines quoted-printable values with legacy charsets or soft line breaks", () => {
+    const utf8 = analyzeText(
+      [
+        "BEGIN:VCARD",
+        "FN;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:Ren=C3=A9",
+        "END:VCARD",
+      ].join("\r\n"),
+    );
+    expect(field(utf8, "fn-0").value).toBe("René");
+
+    const legacyCharset = analyzeText(
+      [
+        "BEGIN:VCARD",
+        "FN;CHARSET=ISO-8859-1;ENCODING=QUOTED-PRINTABLE:Ren=E9",
+        "END:VCARD",
+      ].join("\r\n"),
+    );
+    expect(legacyCharset.kind).toBe("text");
+    expect(field(legacyCharset, "text")).toMatchObject({
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
+
+    // A trailing "=" continues on the next physical line, which unfolding
+    // already split off; a spec-compliant importer would join them, so the
+    // summary must decline rather than show different fields.
+    const softBreak = analyzeText(
+      [
+        "BEGIN:VCARD",
+        "NOTE;ENCODING=QUOTED-PRINTABLE:ignore this=",
+        "TEL:+19005550100",
+        "END:VCARD",
+      ].join("\r\n"),
+    );
+    expect(softBreak.kind).toBe("text");
+    expect(field(softBreak, "text")).toMatchObject({
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
+  });
+
+  it("decodes percent-encoded mailto header field names", () => {
+    const encoded = analyzeText(
+      "mailto:alice@example.test?%62%63%63=carol@example.test&%62%6f%64%79=hidden",
+    );
+    expect(encoded.kind).toBe("email");
+    expect(field(encoded, "bcc").value).toBe("carol@example.test");
+    expect(field(encoded, "body").value).toBe("hidden");
+
+    const encodedTo = analyzeText("mailto:?%74%6f=evil@example.test");
+    expect(field(encodedTo, "recipient").value).toBe("evil@example.test");
+
+    // A mixed-encoding duplicate is still a duplicate, and an undecodable
+    // field name declines rather than hide a header from the summary.
+    expect(analyzeText("mailto:a@example.test?bcc=x&%62%63%63=y").kind).toBe("text");
+    expect(analyzeText("mailto:a@example.test?b%ZZcc=x").kind).toBe("text");
+  });
+
+  it("shows the complete RFC 5724 destination including phone-context", () => {
+    const context = analyzeText("sms:7042;phone-context=example.com?body=hi");
+    expect(context.kind).toBe("sms");
+    expect(field(context, "recipient").value).toBe("7042;phone-context=example.com");
+
+    const multi = analyzeText("sms:+15551234567;phone-context=+1,+15559876543");
+    expect(field(multi, "recipient").value).toBe(
+      "+15551234567;phone-context=+1,+15559876543",
+    );
+
+    const none = analyzeText("sms:?body=hi");
+    expect(none.kind).toBe("sms");
+    expect(none.displayFields.some((item) => item.id === "recipient")).toBe(false);
+  });
+
   it("shows prefilled message and mail bodies as inspectable fields", () => {
     const sms = analyzeText("sms:+15551234?body=Meet%20at%20noon");
     expect(sms.kind).toBe("sms");
@@ -377,6 +471,68 @@ describe("ordered payload classification", () => {
     });
   });
 
+  it("declines competing SMSTO colon and query bodies rather than pick one", () => {
+    const report = analyzeText("SMSTO:+15551234:innocuous?body=hostile");
+    expect(report.kind).toBe("text");
+    expect(report.actionPolicy).toBe("inspect-only");
+    expect(field(report, "text")).toMatchObject({
+      actionValue: "SMSTO:+15551234:innocuous?body=hostile",
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
+  });
+
+  it("declines duplicated Wi-Fi fields rather than show one value", () => {
+    const report = analyzeText("WIFI:T:WPA;S:LegitCafe;P:realpass;S:EvilAP;;");
+    expect(report.kind).toBe("text");
+    expect(report.actionPolicy).toBe("inspect-only");
+    expect(field(report, "text")).toMatchObject({
+      actionValue: "WIFI:T:WPA;S:LegitCafe;P:realpass;S:EvilAP;;",
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
+    expect(analyzeText("WIFI:T:WPA;S:Cafe;P:shown;P:hidden;;").kind).toBe("text");
+    expect(analyzeText("WIFI:S:Cafe;T:WPA;T:nopass;P:pw;;").kind).toBe("text");
+    expect(analyzeText("WIFI:T:WPA;S:Cafe;P:pw;H:false;H:true;;").kind).toBe("text");
+  });
+
+  it("escapes Unicode line separators in structured field values", () => {
+    const report = analyzeText("WIFI:T:WPA;S:Cafe\u2028Status: safe;P:pw;;");
+    expect(report.kind).toBe("wifi");
+    expect(field(report, "ssid").value).toBe("Cafe[U+2028]Status: safe");
+  });
+
+  it("declines calendar content outside the closed root object", () => {
+    const trailingProperty = [
+      "BEGIN:VCALENDAR",
+      "BEGIN:VEVENT",
+      "SUMMARY:Team lunch",
+      "END:VEVENT",
+      "END:VCALENDAR",
+      "SUMMARY:Spoofed trailing event",
+    ].join("\n");
+    expect(analyzeText(trailingProperty).kind).toBe("text");
+
+    const secondObject = [
+      "BEGIN:VCALENDAR",
+      "BEGIN:VEVENT",
+      "SUMMARY:Team lunch",
+      "END:VEVENT",
+      "END:VCALENDAR",
+      "BEGIN:VEVENT",
+      "SUMMARY:Spoofed second object",
+      "END:VEVENT",
+    ].join("\n");
+    expect(analyzeText(secondObject).kind).toBe("text");
+
+    const terminalNewline = analyzeText(
+      `${["BEGIN:VEVENT", "SUMMARY:Meeting", "END:VEVENT"].join("\r\n")}\r\n`,
+    );
+    expect(terminalNewline.kind).toBe("calendar");
+  });
+
   it.each(["WIFI:S:", "otpauth:", "otpauth-migration:", "DPP:"])(
     "keeps an over-limit %s payload masked when structured parsing declines it",
     (prefix) => {
@@ -433,6 +589,17 @@ describe("decoder trust boundary and report bounds", () => {
     const text = field(report, "text");
     expect(Array.from(text.value)).toHaveLength(ANALYZER_LIMITS.fieldScalars);
     expect(text.truncated).toBe(true);
+  });
+
+  it("escapes and bounds a report replacement value like the display value", () => {
+    const fields = new ReportFields();
+    fields.add("x", "X", "short", {
+      reportValue: `tail\u2028${"r".repeat(ANALYZER_LIMITS.fieldScalars + 5)}`,
+    });
+    const bounded = fields.value[0]!;
+    expect(bounded.reportValue).toContain("[U+2028]");
+    expect(Array.from(bounded.reportValue!)).toHaveLength(ANALYZER_LIMITS.fieldScalars);
+    expect(bounded.truncated).toBe(true);
   });
 
   it("keeps the exact action value separate from escaped and truncated display text", () => {

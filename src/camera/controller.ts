@@ -9,6 +9,7 @@ const FRAME_INTERVAL_MS = 1000 / 6;
 const ATTEMPT_TIMEOUT_MS = 5_000;
 const USER_MEDIA_TIMEOUT_MS = 30_000;
 const METADATA_TIMEOUT_MS = 10_000;
+const PROBE_TIMEOUT_MS = 5_000;
 const MAX_INPUT_AXIS = 8_192;
 const MAX_INPUT_PIXELS = 25_000_000;
 const MAX_CAPTURE_AXIS = 2_048;
@@ -53,6 +54,12 @@ export type CameraDecodeResponse<Result> =
     };
 
 export interface CameraFrameDecoder<Result> {
+  /**
+   * Settles once the underlying reader can accept frames. Awaited outside the
+   * per-frame deadline so a slow startup is bounded only by the decoder's own
+   * startup budget; rejection means that budget expired or the reader died.
+   */
+  ready(): Promise<void>;
   decodeCameraFrame(
     bitmap: ImageBitmap,
     request: { readonly epoch: number; readonly width: number; readonly height: number },
@@ -537,7 +544,14 @@ export class CameraController<Result> {
         ) {
           throw new DOMException("Stale camera playback", "AbortError");
         }
-        await this.#captureConformanceProbe();
+        // createImageBitmap has no abort support, so bound the wait; a stalled
+        // probe otherwise leaves the camera live forever with startup frozen.
+        // The probe closes its own bitmap if one arrives after the deadline.
+        await withCancellableTimeout(
+          () => this.#captureConformanceProbe(),
+          PROBE_TIMEOUT_MS,
+          startupAbort.signal,
+        );
         if (
           startupAbort.signal.aborted ||
           epoch !== this.#epoch ||
@@ -736,8 +750,30 @@ export class CameraController<Result> {
     this.#frameAbort = frameAbort;
     this.#inFlight = true;
     try {
+      // Worker startup (a first visit downloads and compiles the WASM reader)
+      // is governed by the decoder's own startup deadline. Await it before
+      // arming the per-frame deadline so a slow start is not misread as a
+      // stopped reader; readiness failure still lands in the catch below.
+      await this.#decoder.ready();
+      if (epoch !== this.#epoch || this.#stream === null || this.#suspended) {
+        return;
+      }
       context.drawImage(this.#video, 0, 0, width, height);
-      bitmap = await createImageBitmap(this.#captureCanvas);
+      // createImageBitmap has no abort support; bound the wait so a stalled
+      // capture fails like a stuck decode instead of freezing the scan loop
+      // with the camera live, and close a bitmap delivered after the deadline.
+      bitmap = await withCancellableTimeout(
+        async (signal) => {
+          const captured = await createImageBitmap(this.#captureCanvas);
+          if (signal.aborted) {
+            captured.close();
+            throw abortReason(signal);
+          }
+          return captured;
+        },
+        ATTEMPT_TIMEOUT_MS,
+        frameAbort.signal,
+      );
       context.clearRect(0, 0, width, height);
       const ownedBitmap = bitmap;
       const response = await withCancellableTimeout(

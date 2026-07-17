@@ -170,6 +170,11 @@ describe("bytesECI-owned decoding", () => {
       text: "あ",
       encoding: "shift_jis",
     });
+    expect(decodeCapturedPayload(withEci(20, Uint8Array.from([0x8a, 0x5c])))).toMatchObject({
+      kind: "text",
+      text: "浬",
+      encoding: "shift_jis",
+    });
     expect(decodeCapturedPayload(withEci(3, Uint8Array.from([0x80, 0x9f])))).toMatchObject({
       kind: "text",
       text: "\u0080\u009f",
@@ -191,9 +196,49 @@ describe("bytesECI-owned decoding", () => {
     expect(
       decodeCapturedPayload(result({ bytesECI: encoder.encode("]Q2\\000026x"), hasECI: true })),
     ).toMatchObject({ kind: "binary", reason: "eci-payload-mismatch" });
-    expect(decodeCapturedPayload(result({ bytes: Uint8Array.of(0xff), bytesECI: Uint8Array.of(0x5d, 0x51, 0x31, 0xff) }))).toMatchObject({
+  });
+
+  it("fails closed on Shift JIS bytes that other scanners render differently", () => {
+    // JIS X 0201 renders 0x5C as yen and 0x7E as overline; the WHATWG
+    // shift_jis decoder renders backslash and tilde, so single-byte
+    // occurrences cannot be decoded faithfully.
+    expect(decodeCapturedPayload(withEci(20, Uint8Array.of(0x5c)))).toMatchObject({
       kind: "binary",
-      reason: "invalid-utf8",
+      reason: "ambiguous-eci-text",
+    });
+    expect(decodeCapturedPayload(withEci(20, Uint8Array.of(0x7e)))).toMatchObject({
+      kind: "binary",
+      reason: "ambiguous-eci-text",
+    });
+    const url = encoder.encode("https://example.com/");
+    expect(
+      decodeCapturedPayload(withEci(20, Uint8Array.from([...url, 0x5c, 0x31, 0x30, 0x30]))),
+    ).toMatchObject({ kind: "binary", reason: "ambiguous-eci-text" });
+  });
+
+  it("falls back to the spec-default ISO-8859-1 when no-ECI bytes are not UTF-8", () => {
+    // ISO/IEC 18004:2015 section 7.4.5: byte mode without an ECI defaults to
+    // ECI 000003 (ISO/IEC 8859-1).
+    expect(decodeCapturedPayload(result({ bytes: Uint8Array.of(0xff), bytesECI: Uint8Array.of(0x5d, 0x51, 0x31, 0xff) }))).toMatchObject({
+      kind: "text",
+      text: "ÿ",
+      encoding: "iso-8859-1",
+      eci: null,
+    });
+    const latin1 = Uint8Array.of(0x63, 0x61, 0x66, 0xe9);
+    expect(decodeCapturedPayload(result({ bytes: latin1, bytesECI: Uint8Array.from([...encoder.encode("]Q1"), ...latin1]) }))).toMatchObject({
+      kind: "text",
+      text: "café",
+      encoding: "iso-8859-1",
+      eci: null,
+    });
+    // Bytes that are valid UTF-8 keep the primary UTF-8 reading.
+    const utf8 = encoder.encode("é");
+    expect(decodeCapturedPayload(result({ bytes: utf8, bytesECI: Uint8Array.from([...encoder.encode("]Q1"), ...utf8]) }))).toMatchObject({
+      kind: "text",
+      text: "é",
+      encoding: "utf-8",
+      eci: null,
     });
   });
 

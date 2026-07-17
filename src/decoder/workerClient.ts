@@ -136,6 +136,11 @@ export class DecoderWorkerClient {
       this.#resolveReady = resolve;
       this.#rejectReady = reject;
     });
+    // Disposal rejects readiness even when no caller has awaited it yet (the
+    // camera can be cancelled before its first frame arrives). Observe the
+    // rejection here so intentional teardown never surfaces as an unhandled
+    // rejection; start() and decode callers still receive the same failure.
+    void this.#ready.catch(() => {});
     this.#worker = workerFactory();
     this.#worker.addEventListener("message", this.#onMessage);
     this.#worker.addEventListener("error", this.#onWorkerError);

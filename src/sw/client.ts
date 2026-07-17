@@ -72,6 +72,25 @@ export function replayServiceWorkerStatus(
   queueMicrotask(() => publish(read()));
 }
 
+/**
+ * Asks the controlling worker for a parked share-target image. Returns true
+ * only when the pull was actually posted: a missing controller cannot serve
+ * the pull, and a redundant one throws from postMessage — in both cases the
+ * caller must keep the ?share-pending marker so a reload under the replacing
+ * worker can still claim the parked share, and startup must not abort.
+ */
+export function requestPendingShare(controller: ServiceWorker | null): boolean {
+  if (controller === null) {
+    return false;
+  }
+  try {
+    controller.postMessage({ type: "PULL_SHARED_IMAGE" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export interface ServiceWorkerClientOptions {
   readonly loadedRelease: string;
   readonly scriptURL: string | URL | QrwardenTrustedScriptURL;
@@ -368,6 +387,12 @@ export class ServiceWorkerClient {
         this.#options.dropReport();
         return this.#applyGateResult(false, "update-failed");
       }
+      // A marker that disagrees with the live worker state can never be
+      // satisfied by this document; leaving it in sessionStorage would re-fail
+      // every later gate, locking the tab for its whole session. Drop it so
+      // the next lifecycle regate or manual reload re-evaluates from live
+      // worker state, while this gate still fails closed.
+      removeUpdateMarker();
       this.#options.dropReport();
       return this.#applyGateResult(false, "update-failed");
     }
@@ -394,7 +419,14 @@ export class ServiceWorkerClient {
     }
 
     this.#options.dropReport();
-    this.#guardedReload(this.#options.loadedRelease);
+    // The reloaded document is served by the controlling worker (or the
+    // active worker when uncontrolled), so that release — not this dying
+    // page's — is what the post-reload gate must accept.
+    const servedRelease = controller?.releaseId ?? active?.releaseId;
+    if (servedRelease === undefined) {
+      return this.#applyGateResult(false, "update-failed");
+    }
+    this.#guardedReload(servedRelease);
     return this.#applyGateResult(false, "update-failed");
   }
 
@@ -409,6 +441,23 @@ export class ServiceWorkerClient {
     }
     try {
       await this.#registration.update();
+      // update() resolves while a new worker may still be installing; bridge
+      // the installing-to-waiting gap so the check observes the parked worker
+      // instead of missing the update until the next lifecycle event.
+      const installing = this.#registration.installing;
+      if (installing !== null) {
+        const state = await waitForState(
+          installing,
+          ["installed", "activated", "redundant"],
+          30_000,
+        );
+        if (state === "redundant") {
+          return;
+        }
+      }
+      if (!this.#options.isIdle()) {
+        return;
+      }
       const waitingQuery = await queryWorker(this.#registration.waiting);
       if (waitingQuery.kind === "unavailable") {
         return;

@@ -4,6 +4,7 @@ import { analyzeDecodeResult, analyzeText } from "../../src/analyzer";
 import {
   ENGLISH_EVIDENCE_LANG,
   translateFieldLabel,
+  translateFieldValue,
   translateSignalTitle,
 } from "../../src/copy/evidence";
 import { EN_COPY } from "../../src/copy/locales/en";
@@ -115,6 +116,30 @@ describe("analyzer evidence translation", () => {
     expect([...titles].sort()).toEqual(Object.keys(EN_SIGNAL_TITLES).sort());
   });
 
+  it("covers every synthesized field value the analyzer emits today", () => {
+    // Fields whose values are entirely analyzer-synthesized English and must
+    // therefore have entries in both fieldValues tables. destination-category
+    // is excluded: its IANA registry names deliberately stay English and are
+    // marked lang="en" by translateFieldValue's fail-closed fallback.
+    const synthesizedIds = new Set(["fragment", "otp-type", "dpp-type", "summary"]);
+    const enValues: Readonly<Record<string, string>> = EN_COPY.fieldValues;
+    const esValues: Readonly<Record<string, string>> = ES_COPY.fieldValues;
+    for (const report of fixtureReports()) {
+      for (const field of report.displayFields) {
+        if (field.id === "port" && field.kind === "port") {
+          // The parametric port descriptor must keep the exact shape the
+          // locale formatters rebuild at render time.
+          expect(field.value).toMatch(/^\d+ \((?:effective|explicit)\)$/u);
+          continue;
+        }
+        if (!synthesizedIds.has(field.id)) continue;
+        expect(enValues[field.value], `en: ${field.value}`).toBeDefined();
+        expect(esValues[field.value], `es: ${field.value}`).toBeDefined();
+      }
+    }
+    expect(Object.keys(esValues)).toEqual(Object.keys(enValues));
+  });
+
   it("keeps the signal-title tables aligned with the glossary titles", () => {
     const glossaryTitles = Object.values(EN_COPY.signalGlossary)
       .map((entry) => entry.title)
@@ -137,7 +162,108 @@ describe("analyzer evidence translation", () => {
       text: "Unencrypted HTTP",
       lang: undefined,
     });
+    expect(
+      translateFieldValue({
+        id: "fragment",
+        label: "Fragment",
+        kind: "presence",
+        value: "Present",
+      }),
+    ).toEqual({ text: "Present", lang: undefined });
     expect(ENGLISH_EVIDENCE_LANG).toBeUndefined();
+  });
+
+  it("translates synthesized field values for Spanish and never rewrites verbatim content", async () => {
+    vi.resetModules();
+    vi.stubGlobal("navigator", { languages: ["es-ES"], language: "es-ES" });
+    const evidence = await import("../../src/copy/evidence");
+    // Fully synthesized values translate through the table.
+    expect(
+      evidence.translateFieldValue({
+        id: "fragment",
+        label: "Fragment",
+        kind: "presence",
+        value: "Present",
+      }),
+    ).toEqual({ text: "Presente", lang: undefined });
+    expect(
+      evidence.translateFieldValue({
+        id: "summary",
+        label: "Action",
+        kind: "text",
+        value: "Email details (inspect only)",
+      }),
+    ).toEqual({ text: "Datos de correo (solo inspección)", lang: undefined });
+    // The parametric port descriptor rebuilds from the locale formatters.
+    expect(
+      evidence.translateFieldValue({
+        id: "port",
+        label: "Port",
+        kind: "port",
+        value: "8080 (explicit)",
+      }),
+    ).toEqual({ text: "8080 (explícito)", lang: undefined });
+    expect(
+      evidence.translateFieldValue({
+        id: "port",
+        label: "Port",
+        kind: "port",
+        value: "443 (effective)",
+      }),
+    ).toEqual({ text: "443 (efectivo)", lang: undefined });
+    // Unknown synthesized values (IANA registry names) stay English marked.
+    expect(
+      evidence.translateFieldValue({
+        id: "destination-category",
+        label: "Destination category",
+        kind: "text",
+        value: "Loopback",
+      }),
+    ).toEqual({ text: "Loopback", lang: "en" });
+    // Mixed fields translate only their exact synthesized fallback string.
+    expect(
+      evidence.translateFieldValue({
+        id: "registrable-domain",
+        label: "Registrable domain",
+        kind: "domain",
+        value: "Not available",
+      }),
+    ).toEqual({ text: "No disponible", lang: undefined });
+    expect(
+      evidence.translateFieldValue({
+        id: "registrable-domain",
+        label: "Registrable domain",
+        kind: "domain",
+        value: "example.com",
+      }),
+    ).toEqual({ text: "example.com", lang: undefined });
+    // Verbatim decoded content passes through untouched even when it happens
+    // to equal a table key.
+    expect(
+      evidence.translateFieldValue({
+        id: "ssid",
+        label: "Network name (SSID)",
+        kind: "text",
+        value: "Present",
+      }),
+    ).toEqual({ text: "Present", lang: undefined });
+    expect(
+      evidence.translateFieldValue({
+        id: "content",
+        label: "Decoded content",
+        kind: "text",
+        value: "Empty",
+      }),
+    ).toEqual({ text: "Empty", lang: undefined });
+    // The empty-payload report's synthesized value still translates.
+    expect(
+      evidence.translateFieldValue({
+        id: "content",
+        label: "QR content",
+        kind: "text",
+        value: "Empty",
+      }),
+    ).toEqual({ text: "Vacío", lang: undefined });
   });
 
   it("translates known evidence for Spanish and marks fallbacks lang=en", async () => {

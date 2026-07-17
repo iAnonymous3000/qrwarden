@@ -2,10 +2,10 @@ import type { CopyDictionary } from "./en";
 
 /**
  * Spanish copy. Typed against the English dictionary so a missing, renamed,
- * or re-typed key fails the build. Analyzer field labels and signal titles
- * translate through the fieldLabels and signalTitles tables below; signal
- * DETAIL sentences are parametric and intentionally remain English, marked
- * lang="en" wherever they render.
+ * or re-typed key fails the build. Analyzer field labels, signal titles, and
+ * synthesized field values translate through the fieldLabels, signalTitles,
+ * and fieldValues tables below; signal DETAIL sentences are parametric and
+ * intentionally remain English, marked lang="en" wherever they render.
  */
 export const ES_COPY: CopyDictionary = Object.freeze({
   brand: "QRWarden",
@@ -142,13 +142,16 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "Abre Compartir, elige Añadir a pantalla de inicio, deja activado Abrir como app web cuando aparezca y luego abre QRWarden desde su icono de la pantalla de inicio con conexión. Espera a ver Listo sin conexión antes de usarlo sin internet.",
   installMacHeading: "Safari en Mac",
   installMac:
-    "Elige Archivo > Añadir al Dock, abre QRWarden desde el Dock con conexión y espera a ver Listo sin conexión.",
+    "En macOS Sonoma o posterior, elige Archivo > Añadir al Dock, abre QRWarden desde el Dock con conexión y espera a ver Listo sin conexión. Safari en versiones anteriores de macOS no puede instalar aplicaciones web; QRWarden funciona igualmente en esta pestaña.",
   installTestedHeading: "Instalar QRWarden",
   installTested:
     "Usa la opción Instalar QRWarden de tu navegador, abre la aplicación instalada con conexión y espera a ver Listo sin conexión.",
   installUnavailableHeading: "Guía no disponible",
   installUnavailable:
     "No hay guía de instalación disponible para este navegador. Aun así puedes usar QRWarden en esta pestaña y prepararlo para el uso sin conexión.",
+  installInstalledHeading: "Ya instalado",
+  installInstalled:
+    "Estás usando la aplicación QRWarden instalada en este dispositivo. No se necesitan pasos de instalación.",
   pasteHint: "También puedes pegar o soltar una imagen en cualquier parte de esta página.",
   signalNeedsReview: "Requiere revisión",
   signalContext: "Contexto",
@@ -201,6 +204,17 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   selectionUnavailable: "No disponible",
   unsupportedCodeChip: "Código no compatible",
   positionUnavailable: "posición no disponible",
+  positionLabels: Object.freeze({
+    "center": "centro",
+    "left": "izquierda",
+    "right": "derecha",
+    "top": "arriba",
+    "bottom": "abajo",
+    "top left": "arriba a la izquierda",
+    "top right": "arriba a la derecha",
+    "bottom left": "abajo a la izquierda",
+    "bottom right": "abajo a la derecha",
+  }),
   selectionOptionLabel: (index: number, position: string, kind: string): string =>
     `Código ${index}, ${position}, ${kind}`,
   actualDestination: "Destino real",
@@ -331,6 +345,29 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "URI scheme": "Esquema de URI",
     "Unicode host": "Host Unicode",
   }),
+  fieldValues: Object.freeze({
+    "Present": "Presente",
+    "Not present": "No presente",
+    "Not available": "No disponible",
+    "Unavailable": "No disponible",
+    "Empty": "Vacío",
+    "Not specified": "No especificado",
+    "OTP account": "Cuenta OTP",
+    "OTP migration": "Migración OTP",
+    "DPP bootstrap": "Arranque DPP",
+    "vCard contact": "Contacto vCard",
+    "Calendar entry": "Entrada de calendario",
+    "Email details (inspect only)": "Datos de correo (solo inspección)",
+    "Message details (inspect only)": "Datos de mensaje (solo inspección)",
+    "Payment request (inspect only)": "Solicitud de pago (solo inspección)",
+    "Custom application link (inspect only)":
+      "Enlace de aplicación personalizado (solo inspección)",
+    "Localhost": "Localhost",
+    "Multicast DNS .local": "DNS multicast .local",
+    "Home network home.arpa": "Red doméstica home.arpa",
+  }),
+  portValueEffective: (port: string): string => `${port} (efectivo)`,
+  portValueExplicit: (port: string): string => `${port} (explícito)`,
   signalTitles: Object.freeze({
     "Internationalized domain name": "Nombre de dominio internacionalizado",
     "Trailing-dot host": "Host con punto final",

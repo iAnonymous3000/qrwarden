@@ -31,6 +31,8 @@ export interface ImageHeader {
   readonly width: number;
   readonly height: number;
   readonly orientation: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+  /** WebP only: an EXIF chunk is declared but sits past the bounded header read. */
+  readonly orientationUnresolved?: true;
 }
 
 function fail(code: ImageHeaderErrorCode): never {
@@ -344,9 +346,12 @@ function parseWebpHeader(
 
   // The EXIF chunk legally sits after the image data, which can extend past
   // the bounded header read. A declared EXIF chunk the buffer cannot reach
-  // keeps the identity orientation instead of rejecting the image.
+  // keeps the identity orientation and is flagged so the whole-file
+  // structure walk resolves the true orientation.
   const exifOutOfReach = (): ImageHeader => {
-    if (!complete && primary !== null) return build();
+    if (!complete && primary !== null) {
+      return { ...build(), orientationUnresolved: true };
+    }
     incomplete(complete);
   };
 
@@ -452,7 +457,48 @@ async function readAt(file: Blob, offset: number, length: number): Promise<Uint8
   return bytes;
 }
 
-async function validatePngStructure(file: Blob, header: ImageHeader): Promise<void> {
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let value = 0; value < 256; value += 1) {
+    let crc = value;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (0xed_b8_83_20 & -(crc & 1));
+    }
+    table[value] = crc >>> 0;
+  }
+  return table;
+})();
+
+const CRC_READ_BYTES = 65_536;
+
+/** Streams the chunk's type and data through CRC-32 in constant-memory reads. */
+async function assertChunkCrc(
+  file: Blob,
+  offset: number,
+  length: number,
+  checkDeadline: () => void,
+): Promise<void> {
+  let crc = 0xff_ff_ff_ff;
+  let position = offset + 4;
+  const end = offset + 8 + length;
+  while (position < end) {
+    checkDeadline();
+    const bytes = await readAt(file, position, Math.min(CRC_READ_BYTES, end - position));
+    for (const byte of bytes) {
+      crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ byte) & 0xff]!;
+    }
+    position += bytes.byteLength;
+  }
+  if (((crc ^ 0xff_ff_ff_ff) >>> 0) !== u32be(await readAt(file, end, 4), 0)) {
+    fail("malformed-structure");
+  }
+}
+
+async function validatePngStructure(
+  file: Blob,
+  header: ImageHeader,
+  checkDeadline: () => void,
+): Promise<void> {
   const signature = await readAt(file, 0, 8);
   if (!equalPrefix(signature, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
     fail("malformed-structure");
@@ -466,6 +512,7 @@ async function validatePngStructure(file: Blob, header: ImageHeader): Promise<vo
   let colorType: number | null = null;
 
   while (offset < file.size) {
+    checkDeadline();
     const chunkHeader = await readAt(file, offset, 8);
     const length = u32be(chunkHeader, 0);
     const type = ascii(chunkHeader, 4, 4);
@@ -482,6 +529,7 @@ async function validatePngStructure(file: Blob, header: ImageHeader): Promise<vo
     if (/^[A-Z]/.test(type) && !["IHDR", "PLTE", "IDAT", "IEND"].includes(type)) {
       fail("malformed-structure");
     }
+    await assertChunkCrc(file, offset, length, checkDeadline);
 
     if (type === "IHDR") {
       const ihdr = await readAt(file, offset + 8, 13);
@@ -518,7 +566,15 @@ async function validatePngStructure(file: Blob, header: ImageHeader): Promise<vo
   fail("malformed-structure");
 }
 
-async function validateWebpStructure(file: Blob, header: ImageHeader): Promise<void> {
+// libwebp copies EXIF payloads out of 64 KiB-bounded JPEG APP1 segments, so
+// a deferred-orientation chunk larger than that fails closed.
+const MAX_DEFERRED_EXIF_BYTES = 65_536;
+
+async function validateWebpStructure(
+  file: Blob,
+  header: ImageHeader,
+  checkDeadline: () => void,
+): Promise<ImageHeader> {
   const riff = await readAt(file, 0, 12);
   if (
     ascii(riff, 0, 4) !== "RIFF" ||
@@ -533,8 +589,10 @@ async function validateWebpStructure(file: Blob, header: ImageHeader): Promise<v
   let sawExtended = false;
   let sawPrimary = false;
   let sawAlpha = false;
+  let deferredOrientation: number | null = null;
 
   while (offset < file.size) {
+    checkDeadline();
     const chunkHeader = await readAt(file, offset, 8);
     const type = ascii(chunkHeader, 0, 4);
     const length = u32le(chunkHeader, 4);
@@ -568,6 +626,12 @@ async function validateWebpStructure(file: Blob, header: ImageHeader): Promise<v
         fail("malformed-structure");
       }
       sawPrimary = true;
+    } else if (type === "EXIF" && header.orientationUnresolved === true) {
+      if (deferredOrientation !== null || length > MAX_DEFERRED_EXIF_BYTES) {
+        fail("malformed-structure");
+      }
+      deferredOrientation =
+        parseWebpExifOrientation(await readAt(file, offset + 8, length)) ?? 1;
     }
 
     if ((length & 1) !== 0) {
@@ -579,18 +643,39 @@ async function validateWebpStructure(file: Blob, header: ImageHeader): Promise<v
   }
 
   if (!sawPrimary || offset !== file.size) fail("malformed-structure");
+  if (header.orientationUnresolved !== true) return header;
+  // The bounded header read saw a declared EXIF chunk it could not reach, so
+  // the complete file must carry one.
+  if (deferredOrientation === null) fail("malformed-structure");
+  return Object.freeze({
+    format: header.format,
+    mime: header.mime,
+    width: header.width,
+    height: header.height,
+    orientation: deferredOrientation as ImageHeader["orientation"],
+  });
 }
 
 /**
- * Walks complete PNG/WebP structures with constant-size reads. JPEG structure
- * beyond SOS is delegated to the browser decoder after its bounded header pass.
+ * Walks complete PNG/WebP structures with constant-memory reads, verifying
+ * PNG chunk CRCs and resolving any WebP EXIF orientation the bounded header
+ * read could not reach. JPEG structure beyond SOS is delegated to the
+ * browser decoder after its bounded header pass. The walk yields to the
+ * caller's cooperative deadline between reads and resolves to the header
+ * with any deferred orientation settled.
  */
 export async function validateStaticImageStructure(
   file: Blob,
   header: ImageHeader,
-): Promise<void> {
-  if (header.format === "png") await validatePngStructure(file, header);
-  if (header.format === "webp") await validateWebpStructure(file, header);
+  checkDeadline: () => void = () => undefined,
+): Promise<ImageHeader> {
+  if (header.format === "png") {
+    await validatePngStructure(file, header, checkDeadline);
+  }
+  if (header.format === "webp") {
+    return validateWebpStructure(file, header, checkDeadline);
+  }
+  return header;
 }
 
 export function orientationCorrectedDimensions(header: ImageHeader): {

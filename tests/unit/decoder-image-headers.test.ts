@@ -21,8 +21,20 @@ const le32 = (value: number) => [
 ];
 const chars = (value: string) => Array.from(value, (character) => character.charCodeAt(0));
 
+function crc32(bytes: number[]) {
+  let crc = 0xff_ff_ff_ff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (0xed_b8_83_20 & -(crc & 1));
+    }
+  }
+  return be32((crc ^ 0xff_ff_ff_ff) >>> 0);
+}
+
 function pngChunk(type: string, data: number[]) {
-  return [...be32(data.length), ...chars(type), ...data, 0, 0, 0, 0];
+  const body = [...chars(type), ...data];
+  return [...be32(data.length), ...body, ...crc32(body)];
 }
 
 function png(width = 1, height = 1, extra: number[] = []) {
@@ -78,11 +90,11 @@ describe("bounded image headers", () => {
     const pngBytes = png();
     const pngBlob = new Blob([pngBytes], { type: "image/png" });
     const pngHeader = await inspectImageHeader(pngBlob);
-    await expect(validateStaticImageStructure(pngBlob, pngHeader)).resolves.toBeUndefined();
+    await expect(validateStaticImageStructure(pngBlob, pngHeader)).resolves.toBe(pngHeader);
     const webpBytes = webp();
     const webpBlob = new Blob([webpBytes], { type: "image/webp" });
     const webpHeader = await inspectImageHeader(webpBlob);
-    await expect(validateStaticImageStructure(webpBlob, webpHeader)).resolves.toBeUndefined();
+    await expect(validateStaticImageStructure(webpBlob, webpHeader)).resolves.toBe(webpHeader);
     await expect(inspectImageHeader(new Blob([new Uint8Array(25_000_001)]))).rejects.toThrowError("file-too-large");
   });
 });

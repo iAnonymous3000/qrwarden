@@ -44,6 +44,15 @@ test("renders the Spanish locale end to end for a review flow", async ({ page })
     hostRow.getByRole("button", { name: "Copiar host de destino" }),
   ).toBeVisible();
 
+  // Analyzer-synthesized field values translate too, while unknown registry
+  // category names stay English and carry lang="en".
+  const portRow = page.locator(".field-row").filter({ hasText: "Puerto" });
+  await expect(portRow.locator(".field-value")).toHaveText("8080 (explícito)");
+  const categoryRow = page
+    .locator(".field-row")
+    .filter({ hasText: "Categoría del destino" });
+  await expect(categoryRow.locator('.field-value[lang="en"]')).toHaveText("Loopback");
+
   await page.getByRole("button", { name: ES_COPY.continueToLink }).click();
   const dialog = page.getByRole("dialog", { name: ES_COPY.confirmHeading });
   await expect(dialog).toBeVisible({ timeout: 10_000 });
@@ -61,9 +70,25 @@ test("renders the Spanish locale end to end for a review flow", async ({ page })
   const installHeading = page.locator(".install-card h2");
   await expect(installHeading).toBeVisible();
   expect([
+    ES_COPY.installInstalledHeading,
     ES_COPY.installIphoneHeading,
     ES_COPY.installMacHeading,
     ES_COPY.installTestedHeading,
     ES_COPY.installUnavailableHeading,
   ]).toContain(await installHeading.textContent());
+});
+
+test("keeps the Spanish header inside a 401px viewport", async ({ page }) => {
+  // The Spanish nav's minimum content width previously overflowed viewports
+  // between 401 and 406 CSS pixels because header wrapping began at 400px.
+  await page.setViewportSize({ width: 401, height: 800 });
+  await gotoControlled(page);
+  await expect(
+    page.getByRole("heading", { name: ES_COPY.primaryMessage }),
+  ).toBeVisible();
+  const overflow = await page.evaluate(() => {
+    const root = document.scrollingElement;
+    return root === null ? -1 : root.scrollWidth - root.clientWidth;
+  });
+  expect(overflow).toBe(0);
 });

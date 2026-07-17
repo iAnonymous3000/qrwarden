@@ -87,6 +87,37 @@ describe("decoder worker client startup deadline", () => {
     expect(worker.terminate).toHaveBeenCalledOnce();
   });
 
+  it.each(["cancelled", "reader-stopped"] as const)(
+    "disposes an unstarted client with %s without an unhandled rejection",
+    async (code) => {
+      const rejections: unknown[] = [];
+      const capture = (reason: unknown): void => {
+        rejections.push(reason);
+      };
+      const previous = process.listeners("unhandledRejection");
+      process.removeAllListeners("unhandledRejection");
+      process.on("unhandledRejection", capture);
+      try {
+        const worker = new FakeDecoderWorker();
+        const client = new DecoderWorkerClient(() => worker as unknown as Worker);
+        // Dispose before any caller attaches to readiness, mirroring a camera
+        // view cancelled (or a permission denial) before the first frame.
+        client.dispose(code);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(rejections).toEqual([]);
+        expect(worker.terminate).toHaveBeenCalledOnce();
+        await expect(client.start()).rejects.toMatchObject({ code });
+      } finally {
+        process.off("unhandledRejection", capture);
+        for (const listener of previous) {
+          process.on("unhandledRejection", listener);
+        }
+      }
+    },
+  );
+
   it("keeps the fatal-init rejection ahead of the deadline", async () => {
     vi.useFakeTimers();
     const worker = new FakeDecoderWorker();

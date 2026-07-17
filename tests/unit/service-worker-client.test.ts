@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DecoderWorkerClient, STARTUP_TIMEOUT_MS } from "../../src/decoder";
 import {
   replayServiceWorkerStatus,
+  requestPendingShare,
   ServiceWorkerClient,
   type OfflineState,
   type WorkerState,
@@ -151,6 +152,7 @@ function installHarness(worker: FakeWorker | null): Harness {
 }
 
 function createClient(overrides: Partial<{
+  readonly loadedRelease: string;
   readonly isIdle: () => boolean;
   readonly onLockChange: (locked: boolean) => void;
   readonly onState: (state: OfflineState) => void;
@@ -159,7 +161,7 @@ function createClient(overrides: Partial<{
   readonly reload: () => void;
 }> = {}): ServiceWorkerClient {
   return new ServiceWorkerClient({
-    loadedRelease: RELEASE,
+    loadedRelease: overrides.loadedRelease ?? RELEASE,
     scriptURL: "/sw.js",
     isIdle: overrides.isIdle ?? (() => true),
     onLockChange: overrides.onLockChange ?? (() => undefined),
@@ -330,6 +332,56 @@ describe("service-worker release gate races", () => {
     expect(reload).not.toHaveBeenCalled();
     expect(locks.at(-1)).toBe(true);
     expect(states.at(-1)).toBe("update-failed");
+  });
+
+  it("recovers a release mismatch by expecting the serving worker's release", async () => {
+    const worker = new FakeWorker(waitingState());
+    const harness = installHarness(worker);
+    const reload = vi.fn();
+    const dropReport = vi.fn();
+    const client = createClient({ reload, dropReport });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: false,
+      offlineState: "update-failed",
+    });
+    expect(dropReport).toHaveBeenCalled();
+    expect(reload).toHaveBeenCalledOnce();
+    // The marker must name the release the reloaded document will actually
+    // run — the controlling worker's — not the dying page's.
+    expect(harness.storage.get("qrwarden-update-check")).toBe(
+      waitingState().releaseId,
+    );
+
+    // The reloaded document runs the worker's release and must be accepted.
+    const reloaded = createClient({ loadedRelease: waitingState().releaseId });
+    await expect(reloaded.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "ready",
+    });
+    expect(harness.storage.has("qrwarden-update-check")).toBe(false);
+  });
+
+  it("clears a poisoned reload marker so the tab session can recover", async () => {
+    const worker = new FakeWorker(readyState());
+    const harness = installHarness(worker);
+    harness.storage.set("qrwarden-update-check", `v0.0.9+${"3".repeat(40)}`);
+    const reload = vi.fn();
+    const states: OfflineState[] = [];
+    const client = createClient({
+      onState: (state) => states.push(state),
+      reload,
+    });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: false,
+      offlineState: "update-failed",
+    });
+    expect(reload).not.toHaveBeenCalled();
+    expect(harness.storage.has("qrwarden-update-check")).toBe(false);
+
+    harness.windowHandlers.get("pageshow")?.({ persisted: true });
+    await vi.waitFor(() => expect(states.at(-1)).toBe("ready"));
   });
 
   it("keeps a timed-out query locked and retries instead of treating it as a mismatch", async () => {
@@ -768,6 +820,78 @@ describe("service-worker release gate races", () => {
     harness.serviceWorkers.controller = active;
     installing.transition("activated");
     await vi.waitFor(() => expect(states).toContain("ready"));
+  });
+});
+
+describe("idle update checks", () => {
+  it("bridges an update that is still installing when the check runs", async () => {
+    const active = new FakeWorker(readyState());
+    const harness = installHarness(active);
+    const installing = new FakeWorker(null);
+    installing.state = "installing";
+    const waiting = new FakeWorker(waitingState());
+    harness.registration.update.mockImplementation(() => {
+      harness.registration.installing = installing;
+      return Promise.resolve();
+    });
+    const states: OfflineState[] = [];
+    const client = createClient({ onState: (state) => states.push(state) });
+    await client.gate();
+
+    const check = client.checkForUpdateWhenIdle();
+    await vi.waitFor(() => expect(installing.stateListenerAdds).toBe(1));
+    harness.registration.installing = null;
+    harness.registration.waiting = waiting;
+    installing.transition("installed");
+    await check;
+
+    expect(states.at(-1)).toBe("update-ready");
+  });
+
+  it("abandons an idle check whose new worker becomes redundant", async () => {
+    const active = new FakeWorker(readyState());
+    const harness = installHarness(active);
+    const installing = new FakeWorker(null);
+    installing.state = "installing";
+    harness.registration.update.mockImplementation(() => {
+      harness.registration.installing = installing;
+      return Promise.resolve();
+    });
+    const states: OfflineState[] = [];
+    const client = createClient({ onState: (state) => states.push(state) });
+    await client.gate();
+
+    const check = client.checkForUpdateWhenIdle();
+    await vi.waitFor(() => expect(installing.stateListenerAdds).toBe(1));
+    harness.registration.installing = null;
+    installing.transition("redundant");
+    await check;
+
+    expect(states.at(-1)).toBe("ready");
+    expect(active.messages).not.toContainEqual(
+      expect.objectContaining({ type: "CLEANUP_STALE_CACHES" }),
+    );
+  });
+});
+
+describe("pending share marker pull", () => {
+  it("reports a posted pull only for a live controller", () => {
+    expect(requestPendingShare(null)).toBe(false);
+
+    const controller = new FakeWorker(null);
+    expect(requestPendingShare(controller as unknown as ServiceWorker)).toBe(
+      true,
+    );
+    expect(controller.messages).toContainEqual({ type: "PULL_SHARED_IMAGE" });
+  });
+
+  it("survives a redundant controller rejecting the pull", () => {
+    const controller = new FakeWorker(null);
+    controller.throwsOnPost = true;
+
+    expect(requestPendingShare(controller as unknown as ServiceWorker)).toBe(
+      false,
+    );
   });
 });
 

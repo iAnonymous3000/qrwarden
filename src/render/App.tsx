@@ -21,6 +21,13 @@ import {
 import { ReportStore, type ActiveReport } from "../app/reportState";
 import { isRuntimeIdle } from "../app/runtimeIdle";
 import {
+  bufferShareIntake,
+  canConsumeShare,
+  shareRejectionProblem,
+  type ShareIntakeEntry,
+  type ShareRejectionReason,
+} from "../app/shareIntake";
+import {
   retainSelectionPreview,
   selectionPositionLabel,
   type OwnedSelectionPreview,
@@ -33,6 +40,7 @@ import { COPY } from "../copy";
 import {
   ENGLISH_EVIDENCE_LANG,
   translateFieldLabel,
+  translateFieldValue,
   translateSignalTitle,
 } from "../copy/evidence";
 import { APP_LOCALE } from "../copy/locale";
@@ -67,6 +75,7 @@ export interface AppStatusDetail {
   readonly offlineState?: OfflineState;
   readonly locked?: boolean;
   readonly sharedImage?: File;
+  readonly shareRejected?: ShareRejectionReason;
 }
 
 export interface AppProps {
@@ -372,6 +381,11 @@ function FieldValue({
   valueId: string;
 }) {
   const presentation = presentFieldValue(field, revealRequested, locked);
+  // Masked dots stay as-is; unmasked values translate the analyzer's
+  // synthesized English descriptors and mark any retained English lang="en".
+  const value = presentation.masked
+    ? { text: presentation.value, lang: undefined }
+    : translateFieldValue(field);
   if (field.collapsed && !presentation.masked && !field.sensitive) {
     if (locked) {
       return (
@@ -390,15 +404,15 @@ function FieldValue({
             {COPY.hideField(fieldLabelForSentence(label))}
           </span>
         </summary>
-        <bdi dir="auto" class="field-value field-value-long">
-          {presentation.value}
+        <bdi dir="auto" class="field-value field-value-long" lang={value.lang}>
+          {value.text}
         </bdi>
       </details>
     );
   }
   return (
-    <bdi id={valueId} dir="auto" class="field-value">
-      {presentation.value}
+    <bdi id={valueId} dir="auto" class="field-value" lang={value.lang}>
+      {value.text}
     </bdi>
   );
 }
@@ -509,7 +523,7 @@ export function App(props: AppProps) {
     props.themeController.followsSystem,
   );
   const [braveIos, setBraveIos] = useState(false);
-  const pendingShareRef = useRef<File | null>(null);
+  const pendingShareRef = useRef<readonly ShareIntakeEntry[]>([]);
   const [shareRevision, setShareRevision] = useState(0);
 
   useEffect(
@@ -664,7 +678,10 @@ export function App(props: AppProps) {
     imageController.choose(files);
   };
 
+  // A buffered share is pending work: an update must not reload this
+  // document (discarding the in-memory file) while one waits to be consumed.
   props.bridge.isIdle = () =>
+    pendingShareRef.current.length === 0 &&
     isRuntimeIdle({
       viewKind: viewRef.current.kind,
       hasActiveReport: reports.active !== null,
@@ -711,7 +728,17 @@ export function App(props: AppProps) {
         }
       }
       if (detail.sharedImage !== undefined) {
-        pendingShareRef.current = detail.sharedImage;
+        pendingShareRef.current = bufferShareIntake(pendingShareRef.current, {
+          kind: "image",
+          file: detail.sharedImage,
+        });
+        setShareRevision((current) => current + 1);
+      }
+      if (detail.shareRejected !== undefined) {
+        pendingShareRef.current = bufferShareIntake(pendingShareRef.current, {
+          kind: "rejected",
+          reason: detail.shareRejected,
+        });
         setShareRevision((current) => current + 1);
       }
     };
@@ -732,12 +759,34 @@ export function App(props: AppProps) {
   );
 
   useEffect(() => {
-    if (locked || view.kind !== "home") return;
-    const file = pendingShareRef.current;
-    if (file === null) return;
-    pendingShareRef.current = null;
-    chooseImages([file]);
+    if (!canConsumeShare(locked, view.kind, document.visibilityState)) return;
+    const [entry, ...rest] = pendingShareRef.current;
+    if (entry === undefined) return;
+    pendingShareRef.current = rest;
+    if (entry.kind === "image") {
+      chooseImages([entry.file]);
+      return;
+    }
+    transitionView({
+      kind: "error",
+      problem: shareRejectionProblem(entry.reason),
+    });
   }, [locked, shareRevision, view.kind]);
+
+  useEffect(() => {
+    // A share buffered while hidden waits for the document to be shown; the
+    // consumption gate above refuses hidden documents, so re-arm it here.
+    const onVisible = (): void => {
+      if (
+        document.visibilityState === "visible" &&
+        pendingShareRef.current.length > 0
+      ) {
+        setShareRevision((current) => current + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   useEffect(() => {
     if (locked || view.kind !== "home") return;
@@ -1264,11 +1313,13 @@ export function App(props: AppProps) {
                 const positionLabel =
                   position === undefined
                     ? COPY.positionUnavailable
-                    : selectionPositionLabel(
-                        position,
-                        view.preview.width,
-                        view.preview.height,
-                      );
+                    : COPY.positionLabels[
+                        selectionPositionLabel(
+                          position,
+                          view.preview.width,
+                          view.preview.height,
+                        )
+                      ];
                 const label = COPY.selectionOptionLabel(index + 1, positionLabel, payloadKind);
                 if (entryReport === null) {
                   return (
@@ -1609,7 +1660,12 @@ export function App(props: AppProps) {
         ) : null}
 
         {view.kind === "about" ? (() => {
-          const guidance = detectInstallGuidance(navigator.userAgent);
+          // The installed-app window shares the browser tab's user agent, so
+          // installed state comes from the display mode instead of sniffing.
+          const alreadyInstalled =
+            window.matchMedia?.("(display-mode: standalone)").matches === true ||
+            (navigator as Navigator & { standalone?: boolean }).standalone === true;
+          const guidance = detectInstallGuidance(navigator.userAgent, alreadyInstalled);
           return (
             <article class="prose-card" aria-busy={locked}>
               <p class="eyebrow">{COPY.aboutEyebrow}</p>

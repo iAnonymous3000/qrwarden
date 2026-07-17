@@ -56,12 +56,17 @@ async function decodeImage(
   assertBefore(deadline);
   const header = await inspectImageHeader(file);
   assertBefore(deadline);
-  await validateStaticImageStructure(file, header);
+  // The structure walk streams the whole file, so it shares the worker's
+  // cooperative deadline; it also resolves any WebP EXIF orientation the
+  // bounded header read could not reach.
+  const resolved = await validateStaticImageStructure(file, header, () =>
+    assertBefore(deadline),
+  );
   assertBefore(deadline);
 
   const first = await withRasterizedFile(
     file,
-    header,
+    resolved,
     PASS_1_MAX_EDGE,
     PASS_1_MAX_EDGE * PASS_1_MAX_EDGE,
     async (imageData, canvas) => {
@@ -81,7 +86,7 @@ async function decodeImage(
   assertBefore(deadline);
   return withRasterizedFile(
     file,
-    header,
+    resolved,
     PASS_2_MAX_EDGE,
     PASS_2_MAX_PIXELS,
     async (imageData, canvas) => {

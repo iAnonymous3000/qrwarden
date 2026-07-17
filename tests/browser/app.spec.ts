@@ -398,6 +398,10 @@ test("keeps information views in-memory and exposes privacy limits", async ({
 });
 
 test("guides denied camera users and offers image recovery directly", async ({ page }) => {
+  // A denied permission disposes the still-initializing decoder client; that
+  // must never surface as an uncaught error or unhandled rejection.
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
@@ -428,6 +432,7 @@ test("guides denied camera users and offers image recovery directly", async ({ p
   await expect(
     page.getByRole("heading", { name: "Review before opening." }),
   ).toBeVisible({ timeout: 15_000 });
+  expect(pageErrors).toEqual([]);
 });
 
 test("offers a real camera restart after background suspension", async ({

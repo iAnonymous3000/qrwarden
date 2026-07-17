@@ -71,8 +71,22 @@ function parseDelimitedFields(value: string): ParsedField[] | null {
   return result;
 }
 
-function findField(fields: readonly ParsedField[], key: string): string | undefined {
-  return fields.find((field) => field.key === key)?.value;
+/**
+ * Value of the single occurrence of `key`; undefined when absent and null
+ * when the key repeats: scanners disagree on which duplicate a handler app
+ * would use, so a faithful summary must decline rather than show one value.
+ */
+function findField(
+  fields: readonly ParsedField[],
+  key: string,
+): string | undefined | null {
+  let found: string | undefined;
+  for (const field of fields) {
+    if (field.key !== key) continue;
+    if (found !== undefined) return null;
+    found = field.value;
+  }
+  return found;
 }
 
 function inertReport(kind: PayloadKind, fields: ReportFields): AnalysisReport {
@@ -94,20 +108,26 @@ function parseWifi(text: string): AnalysisReport | null {
   const parsed = parseDelimitedFields(text.slice(5));
   if (parsed === null) return null;
   const ssid = findField(parsed, "S");
-  const security = findField(parsed, "T") ?? "Not specified";
+  const securityValue = findField(parsed, "T");
+  const password = findField(parsed, "P");
+  const hidden = findField(parsed, "H");
+  if (ssid === null || securityValue === null || password === null || hidden === null) {
+    return null;
+  }
+  const security = securityValue ?? "Not specified";
   if (ssid === undefined || !structuredValueFits(ssid) || !structuredValueFits(security)) {
     return null;
   }
-  const password = findField(parsed, "P");
   if (password !== undefined && !structuredValueFits(password)) return null;
 
   const fields = new ReportFields();
-  fields.add("ssid", "Network name (SSID)", ssid);
+  // The SSID is identifying personal context, so the copied report keeps only
+  // its label while the on-screen row still shows the value.
+  fields.add("ssid", "Network name (SSID)", ssid, { reportRedacted: true });
   fields.add("security", "Security type", security);
   if (password !== undefined) {
     fields.add("password", "Password", password, { sensitive: true, masked: true });
   }
-  const hidden = findField(parsed, "H");
   if (hidden !== undefined) fields.add("hidden", "Hidden network", hidden);
   return inertReport("wifi", fields);
 }
@@ -145,6 +165,10 @@ function parseDpp(text: string): AnalysisReport | null {
 
 function unfoldLines(text: string): string[] | null {
   const physical = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  // RFC 6350 and RFC 5545 end the final content line with CRLF; drop exactly
+  // that one terminator so END:VCARD stays the last logical line. Anything
+  // beyond a single trailing newline still fails closed.
+  if (physical.length > 1 && physical.at(-1) === "") physical.pop();
   const logical: string[] = [];
   let continuationDepth = 0;
   for (const line of physical) {
@@ -170,8 +194,10 @@ function decodeBackslashValue(value: string): string | null {
 
 /**
  * Bounded quoted-printable decoding: "=XX" hex pairs (either case) become
- * bytes and a trailing "=" is a soft line break, while invalid escapes stay
- * literal. The decoded bytes read as UTF-8 with replacement characters.
+ * bytes while invalid escapes stay literal. A trailing "=" is a soft line
+ * break whose continuation line unfolding already split off, so the value is
+ * unrecoverable here and the decode declines. The decoded bytes read as
+ * UTF-8 with replacement characters.
  */
 function decodeQuotedPrintable(value: string): string | null {
   if (utf8Length(value) > ANALYZER_LIMITS.expandedBytes) return null;
@@ -190,7 +216,8 @@ function decodeQuotedPrintable(value: string): string | null {
       bytes.push(Number.parseInt(escape, 16));
       index += 3;
     } else {
-      if (index !== value.length - 1) bytes.push(0x3d);
+      if (index === value.length - 1) return null;
+      bytes.push(0x3d);
       index += 1;
     }
   }
@@ -228,7 +255,15 @@ function parseCardLines(text: string): AnalysisReport | null {
     const key = property.split(";", 1)[0]?.toUpperCase() ?? "";
     const label = CONTACT_LABELS[key];
     if (label === undefined || /(?:^|;)ENCODING=(?:B|BASE64)(?:;|$)/i.test(property)) continue;
-    const raw = /(?:^|;)ENCODING=QUOTED-PRINTABLE(?:;|$)/i.test(property)
+    const quotedPrintable = /(?:^|;)ENCODING=QUOTED-PRINTABLE(?:;|$)/i.test(property);
+    if (quotedPrintable) {
+      // A declared legacy charset changes how the quoted-printable bytes
+      // read; this decoder speaks only UTF-8, so decline rather than show
+      // text a conforming importer would read differently.
+      const charset = /(?:^|;)CHARSET="?([^;"]*)"?(?:;|$)/i.exec(property)?.[1];
+      if (charset !== undefined && !/^(?:utf-8|us-ascii)$/i.test(charset)) return null;
+    }
+    const raw = quotedPrintable
       ? decodeQuotedPrintable(line.slice(colon + 1))
       : line.slice(colon + 1);
     if (raw === null) return null;
@@ -281,12 +316,16 @@ function parseCalendar(text: string): AnalysisReport | null {
     return null;
   }
   const openComponents: string[] = [];
+  let rootClosed = false;
   const fields = new ReportFields();
   let shown = 0;
   let expandedTotal = 0;
   for (const line of lines) {
     const upper = line.toUpperCase();
     if (upper.startsWith("BEGIN:")) {
+      // A second object after the closed root would merge two calendars
+      // into one summary; fail closed instead.
+      if (rootClosed) return null;
       openComponents.push(upper.slice(6));
       if (openComponents.length > ANALYZER_LIMITS.nesting) return null;
       continue;
@@ -294,8 +333,12 @@ function parseCalendar(text: string): AnalysisReport | null {
     if (upper.startsWith("END:")) {
       // Every END must close the component the matching BEGIN opened.
       if (openComponents.pop() !== upper.slice(4)) return null;
+      if (openComponents.length === 0) rootClosed = true;
       continue;
     }
+    // A content line outside every component belongs to no iCalendar object
+    // (RFC 5545 section 3.4), so fail closed rather than display it.
+    if (openComponents.length === 0 && line !== "") return null;
     const colon = unquotedColonIndex(line);
     if (colon <= 0) continue;
     const key = line.slice(0, colon).split(";", 1)[0]?.toUpperCase() ?? "";
@@ -328,9 +371,10 @@ function boundedPercentDecode(value: string): string | null {
 
 /**
  * Decodes the value of `name`. Returns undefined when the parameter is absent
- * and null when a present value fails bounded decoding, or when the name
- * repeats: platforms disagree on which duplicate a handler app would use, so
- * a faithful summary must decline rather than show only one of them.
+ * and null when a present value or a field name fails bounded decoding, or
+ * when the name repeats: platforms disagree on which duplicate a handler app
+ * would use, so a faithful summary must decline rather than show only one of
+ * them.
  */
 function queryParameter(query: string, name: string): string | undefined | null {
   const pairs = query.split("&");
@@ -338,7 +382,12 @@ function queryParameter(query: string, name: string): string | undefined | null 
   let found: string | undefined;
   for (const pair of pairs) {
     const equals = pair.indexOf("=");
-    if (equals <= 0 || pair.slice(0, equals).toLowerCase() !== name) continue;
+    if (equals <= 0) continue;
+    // RFC 6068 percent-encodes header field names as well as values, so the
+    // key must decode before the comparison catches encoded bcc or body.
+    const key = boundedPercentDecode(pair.slice(0, equals));
+    if (key === null) return null;
+    if (key.toLowerCase() !== name) continue;
     if (found !== undefined) return null;
     const decoded = boundedPercentDecode(pair.slice(equals + 1));
     if (decoded === null || !structuredValueFits(decoded)) return null;
@@ -394,8 +443,10 @@ function parseApplicationUri(text: string): AnalysisReport | null {
   if (["sms", "smsto", "mms", "mmsto"].includes(scheme)) {
     const target = rest.split("?", 1)[0] ?? "";
     const colon = target.indexOf(":");
+    // RFC 5724 destinations may carry ;phone-context and comma-separated
+    // extra recipients; show the complete telephone-subscriber list.
     const recipient = boundedPercentDecode(
-      (colon === -1 ? target : target.slice(0, colon)).split(";", 1)[0] ?? "",
+      colon === -1 ? target : target.slice(0, colon),
     );
     if (recipient === null || !structuredValueFits(recipient)) return null;
     // The SMSTO:number:message convention prefills the text after a second
@@ -406,8 +457,14 @@ function parseApplicationUri(text: string): AnalysisReport | null {
     if (colonBody !== undefined && !structuredValueFits(colonBody)) return null;
     const queryBody = queryParameter(query, "body");
     if (queryBody === null) return null;
+    // The colon-form and query-form bodies compete; handler apps disagree on
+    // which text they prefill, so a faithful summary must decline rather
+    // than show only one of them.
+    if (colonBody !== undefined && queryBody !== undefined) return null;
     const body = queryBody ?? colonBody;
-    fields.add("recipient", "Message recipient", recipient, { reportRedacted: true });
+    if (recipient !== "") {
+      fields.add("recipient", "Message recipient", recipient, { reportRedacted: true });
+    }
     if (body !== undefined) {
       fields.add("body", "Message body", body, {
         collapsed: true,

@@ -57,4 +57,27 @@ describe("real ECI symbols across supported symbologies", () => {
       });
     },
   );
+
+  it("fails closed on a written Shift JIS symbol carrying the ambiguous yen byte", async () => {
+    // The bundled writer encodes the yen sign as 0x5C, which the WHATWG
+    // shift_jis decoder renders as a backslash; a JIS X 0201-faithful scanner
+    // renders yen, so the payload cannot be decoded faithfully.
+    const written = await writeBarcode("https://example.com/¥100", {
+      format: "QRCode",
+      options: "eci=20",
+    });
+    expect(written.error).toBe("");
+    expect(written.image).not.toBeNull();
+
+    const results = await readBarcodes(written.image!, makeReaderOptions());
+    expect(results).toHaveLength(1);
+    const captured = capturePublicResult(results[0]!);
+    expect(captured.hasECI).toBe(true);
+    expect(captured.bytes.at(-4)).toBe(0x5c);
+
+    expect(decodeCapturedPayload(captured)).toMatchObject({
+      kind: "binary",
+      reason: "ambiguous-eci-text",
+    });
+  });
 });

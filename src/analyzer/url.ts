@@ -6,7 +6,7 @@ import {
 } from "./characters";
 import { classifyIp, classifyLocalHostname } from "./ip";
 import { toAsciiDomain, toUnicodeDomain } from "./idna";
-import { ReportFields } from "./limits";
+import { ANALYZER_LIMITS, ReportFields } from "./limits";
 import { matchLinkShortener } from "./linkShorteners";
 import { registrableDomain } from "./publicSuffix";
 import { createReport, signal } from "./report";
@@ -123,19 +123,42 @@ function materialBrowserRewrite(
 
 interface NameSummary {
   readonly names: string;
+  readonly reportNames: string;
   readonly count: number;
   readonly omitted: number;
 }
 
-function summarizeNames(parameters: URLSearchParams): NameSummary {
+function summarizeNames(parameters: URLSearchParams, raw: string): NameSummary {
   const names: string[] = [];
   let count = 0;
   for (const [name] of parameters) {
-    if (names.length < 64) names.push(name);
+    if (names.length < ANALYZER_LIMITS.urlNames) names.push(name);
     count += 1;
   }
+  // A pair without "=" is all payload: the parser surfaces the whole token
+  // as a name, so the copied report treats it as a hidden value instead.
+  const listed: string[] = [];
+  let valueless = 0;
+  for (const pair of raw.split("&")) {
+    if (pair === "") continue;
+    if (!pair.includes("=")) {
+      valueless += 1;
+      continue;
+    }
+    for (const [name] of new URLSearchParams(pair)) {
+      if (listed.length < ANALYZER_LIMITS.urlNames) listed.push(name);
+    }
+  }
+  const valuelessNote =
+    valueless === 0
+      ? ""
+      : `(${valueless} valueless ${valueless === 1 ? "entry" : "entries"} hidden)`;
+  const reportNames = [listed.join(", "), valuelessNote]
+    .filter((part) => part !== "")
+    .join(" ");
   return {
     names: names.length === 0 ? "None" : names.join(", "),
+    reportNames: reportNames === "" ? "None" : reportNames,
     count,
     omitted: Math.max(0, count - names.length),
   };
@@ -270,14 +293,26 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
       : `${raw.port} (explicit)`,
     { kind: "port" },
   );
-  fields.add("path", "Path", parsed.pathname, { kind: "path", collapsed: true });
+  // Path segments routinely carry capability tokens such as password-reset
+  // and share links, so the copied report keeps only the segment count.
+  const pathSegments = parsed.pathname.split("/").filter((part) => part !== "").length;
+  const reportPath =
+    pathSegments === 0
+      ? parsed.pathname
+      : `/(${pathSegments} ${pathSegments === 1 ? "segment" : "segments"} hidden)`;
+  fields.add("path", "Path", parsed.pathname, {
+    kind: "path",
+    collapsed: true,
+    reportValue: reportPath,
+  });
 
-  const query = summarizeNames(parsed.searchParams);
+  const query = summarizeNames(parsed.searchParams, parsed.search.slice(1));
   fields.add("query-names", "Query names", query.names, {
     kind: "names",
     collapsed: true,
     count: query.count,
     omittedCount: query.omitted,
+    reportValue: query.reportNames,
   });
 
   if (parsed.hash === "") {
@@ -285,12 +320,13 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
   } else {
     const fragmentText = parsed.hash.slice(1);
     if (fragmentText.includes("=") || fragmentText.includes("&")) {
-      const fragment = summarizeNames(new URLSearchParams(fragmentText));
+      const fragment = summarizeNames(new URLSearchParams(fragmentText), fragmentText);
       fields.add("fragment-names", "Fragment names", fragment.names, {
         kind: "names",
         collapsed: true,
         count: fragment.count,
         omittedCount: fragment.omitted,
+        reportValue: fragment.reportNames,
       });
     } else {
       fields.add("fragment", "Fragment", "Present", {
@@ -301,11 +337,11 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
   }
   fields.add("original", "Original QR content", original, {
     collapsed: true,
-    // The copied report keeps the structure but never the query or fragment
-    // values, which routinely carry tokens and other secrets.
+    // The copied report keeps the structure but never the path, query, or
+    // fragment values, which routinely carry tokens and other secrets.
     reportValue:
       parsed.origin +
-      parsed.pathname +
+      reportPath +
       (parsed.search === "" ? "" : "?(query values hidden)") +
       (parsed.hash === "" ? "" : "#(fragment hidden)"),
   });

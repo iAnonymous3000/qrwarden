@@ -9,8 +9,10 @@ import { DecoderWorkerClient } from "./decoder";
 import { App, type AppStatusDetail, type RuntimeBridge } from "./render/App";
 import "./render/styles.css";
 import { createBrowserThemeController } from "./render/theme";
+import { shareRejectionReason } from "./app/shareIntake";
 import {
   replayServiceWorkerStatus,
+  requestPendingShare,
   ServiceWorkerClient,
   type OfflineState,
 } from "./sw/client";
@@ -51,9 +53,16 @@ let serviceWorker: ServiceWorkerClient | null = null;
 // redirected document. The listener is installed before the first render so
 // browser-buffered messages cannot be dropped; App owns consumption gating.
 navigator.serviceWorker?.addEventListener("message", (event) => {
-  const data = event.data as { readonly type?: string; readonly file?: unknown };
+  const data = event.data as {
+    readonly type?: string;
+    readonly file?: unknown;
+    readonly reason?: unknown;
+  };
   if (data?.type === "SHARED_IMAGE" && data.file instanceof File) {
     emit({ sharedImage: data.file });
+  }
+  if (data?.type === "SHARE_REJECTED") {
+    emit({ shareRejected: shareRejectionReason(data.reason) });
   }
 });
 // addEventListener alone never enables the client message queue; without this
@@ -63,15 +72,17 @@ navigator.serviceWorker?.startMessages();
 // A share whose redirected document the worker could not identify waits in
 // worker memory behind the static ?share-pending marker. The marker carries
 // no share data: it only tells this document to pull the parked share, which
-// the worker hands to the requesting client alone. The marker is then
-// removed so it never persists in history or re-triggers on reload.
+// the worker hands to the requesting client alone. The marker is removed
+// only once the pull was actually posted, so it neither persists in history
+// nor re-triggers after a delivered share — while a failed pull (missing or
+// redundant controller) keeps the marker for a reload to retry within the
+// worker's parking deadline, without aborting startup.
 const startupUrl = new URL(window.location.href);
 if (startupUrl.searchParams.has("share-pending")) {
-  navigator.serviceWorker?.controller?.postMessage({
-    type: "PULL_SHARED_IMAGE",
-  });
-  startupUrl.searchParams.delete("share-pending");
-  history.replaceState(history.state, "", startupUrl);
+  if (requestPendingShare(navigator.serviceWorker?.controller ?? null)) {
+    startupUrl.searchParams.delete("share-pending");
+    history.replaceState(history.state, "", startupUrl);
+  }
 }
 
 const smokeDecoder = async (): Promise<boolean> => {

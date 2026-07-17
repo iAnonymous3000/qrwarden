@@ -79,12 +79,27 @@ function centroid(position: Quadrilateral): { readonly x: number; readonly y: nu
   };
 }
 
-/** Returns one bounded, stable relative-position label for accessible selection. */
+/**
+ * The closed set of relative positions; the copy dictionaries localize each
+ * token, so widening this union without a table entry fails the build.
+ */
+export type SelectionPosition =
+  | "center"
+  | "left"
+  | "right"
+  | "top"
+  | "bottom"
+  | "top left"
+  | "top right"
+  | "bottom left"
+  | "bottom right";
+
+/** Returns one bounded, stable relative-position token for accessible selection. */
 export function selectionPositionLabel(
   position: Quadrilateral,
   width: number,
   height: number,
-): string {
+): SelectionPosition {
   const center = centroid(position);
   const horizontal = center.x < width / 3 ? "left" : center.x > (width * 2) / 3 ? "right" : "center";
   const vertical = center.y < height / 3 ? "top" : center.y > (height * 2) / 3 ? "bottom" : "middle";

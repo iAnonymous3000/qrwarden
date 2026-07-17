@@ -31,6 +31,7 @@ export interface FrozenBytes {
 export type BinaryReason =
   | "invalid-utf8"
   | "invalid-eci-text"
+  | "ambiguous-eci-text"
   | "unsupported-eci"
   | "mixed-eci"
   | "malformed-eci"

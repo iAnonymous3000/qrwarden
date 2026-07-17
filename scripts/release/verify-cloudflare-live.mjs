@@ -90,6 +90,9 @@ export function parseHeaderRules(source) {
     if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u.test(name) || value.length === 0) {
       throw new Error(`invalid _headers field at line ${index + 1}`);
     }
+    if (REPORTING_HEADER_NAMES.includes(name.toLowerCase())) {
+      throw new Error(`reporting header ${name} is forbidden in _headers at line ${index + 1}`);
+    }
     current.headers.push([name.toLowerCase(), normalizeHeaderValue(value)]);
   }
   if (rules.length === 0) throw new Error("_headers must contain at least one rule");
@@ -327,7 +330,7 @@ export async function verifyProbeResponse({ probe, response }) {
     }
   }
   for (const name of REPORTING_HEADER_NAMES) {
-    if (response.headers.has(name) && probe.expectedHeaders?.has(name) !== true) {
+    if (response.headers.has(name)) {
       throw new Error(
         `${probe.pathname} returned reporting header ${name}; opt out of Network Error Logging in the Cloudflare dashboard — verification fails closed until live responses stop advertising reporting endpoints`,
       );

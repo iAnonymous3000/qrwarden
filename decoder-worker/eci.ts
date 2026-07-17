@@ -160,6 +160,28 @@ function decodeFatal(bytes: Uint8Array, encoding: "utf-8" | "shift_jis"): string
   return new TextDecoder(encoding, { fatal: true }).decode(bytes);
 }
 
+/**
+ * JIS X 0201 renders 0x5C as yen and 0x7E as overline while the WHATWG
+ * shift_jis decoder (the only one browsers ship) renders backslash and
+ * tilde, so the same bytes carry different URL-meaningful text on other
+ * scanners. A Shift JIS payload holding either byte in single-byte position
+ * cannot be decoded faithfully and fails closed to binary. Both bytes stay
+ * legal as the trail byte of a double-byte character, which the scan skips.
+ */
+function hasAmbiguousShiftJisSingleByte(bytes: Uint8Array): boolean {
+  let index = 0;
+  while (index < bytes.byteLength) {
+    const byte = bytes[index]!;
+    if ((byte >= 0x81 && byte <= 0x9f) || (byte >= 0xe0 && byte <= 0xfc)) {
+      index += 2;
+      continue;
+    }
+    if (byte === ASCII_BACKSLASH || byte === 0x7e) return true;
+    index += 1;
+  }
+  return false;
+}
+
 function textResult(
   text: string,
   encoding: TextEncoding,
@@ -197,7 +219,11 @@ export function decodeCapturedPayload(result: CapturedReaderResult): TextDecodin
     try {
       return textResult(decodeFatal(rawBytes, "utf-8"), "utf-8", null);
     } catch {
-      return binary("invalid-utf8");
+      // ISO/IEC 18004:2015 section 7.4.5: byte mode without an ECI defaults
+      // to ECI 000003 (ISO/IEC 8859-1). UTF-8 stays the primary reading
+      // because most writers emit it without an ECI; the spec-default
+      // fallback maps every byte, so it cannot fail.
+      return textResult(decodeIso88591(rawBytes), "iso-8859-1", null);
     }
   }
 
@@ -219,6 +245,10 @@ export function decodeCapturedPayload(result: CapturedReaderResult): TextDecodin
     encoding,
     source: "bytesECI",
   };
+
+  if (assignment === 20 && hasAmbiguousShiftJisSingleByte(parsed.payload)) {
+    return binary("ambiguous-eci-text");
+  }
 
   try {
     if (assignment === 3) {

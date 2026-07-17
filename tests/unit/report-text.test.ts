@@ -40,9 +40,13 @@ describe("report text rendering", () => {
       expect(text).not.toContain(value);
     }
     expect(text).toContain(COPY.reportHiddenValue);
+    // The SSID identifies a household or venue, so the copied report keeps
+    // only its label while the on-screen row still shows the value.
+    expect(text).not.toContain("Private Test");
+    expect(text).toContain(`- Network name (SSID): ${COPY.reportHiddenValue}`);
   });
 
-  it("keeps URL structure but hides query and fragment values", () => {
+  it("keeps URL structure but hides path, query, and fragment values", () => {
     const report = analyzeText("https://example.com/cb?access_token=secret123#state=abc");
     const text = reportAsText({
       report,
@@ -53,9 +57,61 @@ describe("report text rendering", () => {
     expect(text).not.toContain("secret123");
     expect(text).not.toContain("abc");
     expect(text).toContain("example.com");
-    expect(text).toContain("/cb");
+    // Path segments routinely carry capability tokens, so the copied report
+    // keeps only the segment count while the on-screen row shows the path.
+    expect(text).not.toContain("/cb");
+    expect(report.displayFields.find((item) => item.id === "path")?.value).toBe("/cb");
+    expect(text).toContain("- Path: /(1 segment hidden)");
     expect(text).toContain("access_token");
-    expect(text).toContain("https://example.com/cb?(query values hidden)#(fragment hidden)");
+    expect(text).toContain(
+      "https://example.com/(1 segment hidden)?(query values hidden)#(fragment hidden)",
+    );
+  });
+
+  it("hides valueless query and fragment tokens from the copied report", () => {
+    const report = analyzeText(
+      "https://example.com/?TOKENVALUE12345&user=alice#a=1&SECRETFRAG",
+    );
+    const text = reportAsText({
+      report,
+      kindLabel: "Web link",
+      statusHeading: COPY.reviewHeading,
+    });
+
+    // A pair without "=" is all payload, so only the on-screen review shows it.
+    expect(report.displayFields.find((item) => item.id === "query-names")?.value).toBe(
+      "TOKENVALUE12345, user",
+    );
+    expect(text).not.toContain("TOKENVALUE12345");
+    expect(text).not.toContain("SECRETFRAG");
+    expect(text).toContain("- Query names: user (1 valueless entry hidden)");
+    expect(text).toContain("- Fragment names: a (1 valueless entry hidden)");
+  });
+
+  it("notes names omitted from display in the copied report", () => {
+    const query = Array.from({ length: 70 }, (_, index) => `name${index}=x`).join("&");
+    const report = analyzeText(`https://example.com/?${query}`);
+    const text = reportAsText({
+      report,
+      kindLabel: "Web link",
+      statusHeading: COPY.noReviewHeading,
+    });
+
+    expect(text).toContain(`  ${COPY.omittedFromDisplay(6, 70)}`);
+  });
+
+  it("escapes Unicode line separators so report lines cannot be forged", () => {
+    const report = analyzeText(
+      "https://example.com/?foo\u2029Status:%20safe=1",
+    );
+    const text = reportAsText({
+      report,
+      kindLabel: "Web link",
+      statusHeading: COPY.reviewHeading,
+    });
+
+    expect(text).not.toContain("\u2029");
+    expect(text).toContain("[U+2029]");
   });
 
   it("hides contact and calendar personal values while keeping labels", () => {
@@ -181,5 +237,30 @@ describe("report text rendering", () => {
     expect(text).toContain(ES_COPY.limitationNoVisit);
     expect(text).not.toContain("Analysis uses only the content");
     expect(text).toContain(`Analizador: ${report.analyzerVersion}`);
+  });
+
+  it("localizes synthesized field values in the Spanish copied report", async () => {
+    vi.resetModules();
+    vi.stubGlobal("navigator", { languages: ["es-ES"], language: "es-ES" });
+    const { analyzeText: analyzeEs } = await import("../../src/analyzer");
+    const { ES_COPY } = await import("../../src/copy/locales/es");
+    const { reportAsText: reportAsTextEs } = await import(
+      "../../src/render/reportText"
+    );
+
+    const report = analyzeEs("http://127.0.0.1:8080/panel?token=abc#frag");
+    const text = reportAsTextEs({
+      report,
+      kindLabel: ES_COPY.kindLabels["web-url"],
+      statusHeading: ES_COPY.reviewHeading,
+    });
+
+    // Synthesized values localize exactly as on screen.
+    expect(text).toContain("- Puerto: 8080 (explícito)");
+    expect(text).toContain("- Fragmento: Presente");
+    // IANA registry names stay English per the language-of-parts policy.
+    expect(text).toContain("- Categoría del destino: Loopback");
+    // Verbatim evidence passes through unchanged.
+    expect(text).toContain("- Host de destino: 127.0.0.1");
   });
 });

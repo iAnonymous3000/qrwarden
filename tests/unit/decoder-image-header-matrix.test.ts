@@ -24,8 +24,11 @@ const le32 = (value: number) => [
   (value >>> 24) & 0xff,
 ];
 
-function pngChunk(type: string, data: readonly number[]): number[] {
-  return [...be32(data.length), ...chars(type), ...data, 0, 0, 0, 0];
+function pngChunk(type: string, data: readonly number[], crcDelta = 0): number[] {
+  const body = [...chars(type), ...data];
+  const crc = crc32(body);
+  crc[3] = (crc[3]! + crcDelta) & 0xff;
+  return [...be32(data.length), ...body, ...crc];
 }
 
 function pngIhdr(
@@ -160,6 +163,15 @@ function webpWithExif(orientation: number, prefixed: boolean): Uint8Array {
     webpChunk("VP8X", vp8xData(3, 2, 0x08)),
     webpChunk("VP8L", vp8lData(3, 2)),
     webpChunk("EXIF", payload),
+  ]);
+}
+
+/** The VP8L payload padding pushes the EXIF chunk past a 64-byte prefix. */
+function webpWithDeferredExif(orientation: number): Uint8Array {
+  return webpFromChunks([
+    webpChunk("VP8X", vp8xData(3, 2, 0x08)),
+    webpChunk("VP8L", [...vp8lData(3, 2), ...Array.from({ length: 4096 }, () => 0)]),
+    webpChunk("EXIF", tiffOrientation(orientation, true)),
   ]);
 }
 
@@ -345,7 +357,7 @@ describe("declared EXIF orientation for PNG and WebP containers", () => {
       );
       await expect(
         validateStaticImageStructure(blobFrom(bytes), header),
-      ).resolves.toBeUndefined();
+      ).resolves.toBe(header);
     },
   );
 
@@ -370,7 +382,7 @@ describe("declared EXIF orientation for PNG and WebP containers", () => {
     expect(orientationCorrectedDimensions(header)).toEqual({ width: 2, height: 3 });
     await expect(
       validateStaticImageStructure(blobFrom(bytes), header),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(header);
   });
 
   it("fails closed when the VP8X EXIF flag has no EXIF chunk", () => {
@@ -393,20 +405,70 @@ describe("declared EXIF orientation for PNG and WebP containers", () => {
   it("keeps identity orientation when the declared EXIF chunk sits past the bounded header read", () => {
     // Spec chunk ordering places EXIF after the image data, so a large photo's
     // EXIF chunk can lie beyond the bounded prefix. The image must still parse.
-    const bytes = webpFromChunks([
-      webpChunk("VP8X", vp8xData(3, 2, 0x08)),
-      webpChunk("VP8L", [...vp8lData(3, 2), ...Array.from({ length: 4096 }, () => 0)]),
-      webpChunk("EXIF", tiffOrientation(6, true)),
-    ]);
+    const bytes = webpWithDeferredExif(6);
     const header = parseImageHeaderBytes(bytes.slice(0, 64), bytes.length);
-    expect(header).toMatchObject({ format: "webp", width: 3, height: 2, orientation: 1 });
+    expect(header).toMatchObject({
+      format: "webp",
+      width: 3,
+      height: 2,
+      orientation: 1,
+      orientationUnresolved: true,
+    });
   });
 
   it("keeps identity orientation when the EXIF payload is cut off by the bounded read", () => {
     const bytes = webpWithExif(6, false);
     const truncated = bytes.slice(0, bytes.length - 4);
     const header = parseImageHeaderBytes(truncated, bytes.length);
-    expect(header).toMatchObject({ format: "webp", width: 3, height: 2, orientation: 1 });
+    expect(header).toMatchObject({
+      format: "webp",
+      width: 3,
+      height: 2,
+      orientation: 1,
+      orientationUnresolved: true,
+    });
+  });
+
+  it("resolves the deferred EXIF orientation during the whole-file structure walk", async () => {
+    const bytes = webpWithDeferredExif(6);
+    const header = parseImageHeaderBytes(bytes.slice(0, 64), bytes.length);
+    const resolved = await validateStaticImageStructure(blobFrom(bytes), header);
+    expect(resolved).toMatchObject({ format: "webp", width: 3, height: 2, orientation: 6 });
+    expect(resolved.orientationUnresolved).toBeUndefined();
+    expect(orientationCorrectedDimensions(resolved)).toEqual({ width: 2, height: 3 });
+  });
+
+  it("fails closed when the complete file never delivers the deferred EXIF chunk", async () => {
+    const flagged = webpWithDeferredExif(6);
+    const header = parseImageHeaderBytes(flagged.slice(0, 64), flagged.length);
+    const withoutExif = webpFromChunks([
+      webpChunk("VP8X", vp8xData(3, 2, 0x08)),
+      webpChunk("VP8L", [...vp8lData(3, 2), ...Array.from({ length: 4096 }, () => 0)]),
+    ]);
+    await expect(
+      validateStaticImageStructure(blobFrom(withoutExif), header),
+    ).rejects.toMatchObject({ code: "malformed-structure" });
+  });
+
+  it("fails closed on duplicate or oversized deferred EXIF chunks", async () => {
+    const duplicated = webpFromChunks([
+      webpChunk("VP8X", vp8xData(3, 2, 0x08)),
+      webpChunk("VP8L", [...vp8lData(3, 2), ...Array.from({ length: 4096 }, () => 0)]),
+      webpChunk("EXIF", tiffOrientation(6, true)),
+      webpChunk("EXIF", tiffOrientation(6, true)),
+    ]);
+    const oversized = webpFromChunks([
+      webpChunk("VP8X", vp8xData(3, 2, 0x08)),
+      webpChunk("VP8L", [...vp8lData(3, 2), ...Array.from({ length: 4096 }, () => 0)]),
+      webpChunk("EXIF", Array.from({ length: 65_537 }, () => 0)),
+    ]);
+    for (const bytes of [duplicated, oversized]) {
+      const header = parseImageHeaderBytes(bytes.slice(0, 64), bytes.length);
+      expect(header).toMatchObject({ orientationUnresolved: true });
+      await expect(
+        validateStaticImageStructure(blobFrom(bytes), header),
+      ).rejects.toMatchObject({ code: "malformed-structure" });
+    }
   });
 });
 
@@ -470,6 +532,27 @@ describe("orientation-tolerant browser dimension check", () => {
     await expect(rasterize(pngWithExif(3), 3, 2)).resolves.toBe("consumed");
     await expect(rasterize(pngWithExif(3), 2, 3)).rejects.toBeInstanceOf(RasterError);
   });
+
+  it("closes the source bitmap before the raster is consumed", async () => {
+    const bytes = pngWithExif(3);
+    const header = parseImageHeaderBytes(bytes, bytes.length);
+    vi.stubGlobal("OffscreenCanvas", FakeOffscreenCanvas);
+    let closed = 0;
+    vi.stubGlobal("createImageBitmap", async () => ({
+      width: 3,
+      height: 2,
+      close: () => {
+        closed += 1;
+      },
+    }));
+    await expect(
+      withRasterizedFile(blobFrom(bytes), header, 2_048, 2_048 * 2_048, async () => {
+        expect(closed).toBe(1);
+        return "consumed";
+      }),
+    ).resolves.toBe("consumed");
+    expect(closed).toBe(1);
+  });
 });
 
 describe("complete static image structure matrix", () => {
@@ -532,6 +615,53 @@ describe("complete static image structure matrix", () => {
     await expect(validateStaticImageStructure(blobFrom(bytes), header)).rejects.toMatchObject({
       code: "malformed-structure",
     });
+  });
+
+  it.each([["IHDR"], ["IDAT"], ["IEND"]])(
+    "rejects a corrupted %s chunk CRC",
+    async (target) => {
+      const delta = (type: string) => (type === target ? 1 : 0);
+      const bytes = pngFromChunks([
+        pngChunk(
+          "IHDR",
+          [...be32(1), ...be32(1), 8, 6, 0, 0, 0],
+          delta("IHDR"),
+        ),
+        pngChunk("IDAT", [0], delta("IDAT")),
+        pngChunk("IEND", [], delta("IEND")),
+      ]);
+      const header = parseImageHeaderBytes(bytes, bytes.length);
+      await expect(validateStaticImageStructure(blobFrom(bytes), header)).rejects.toMatchObject({
+        code: "malformed-structure",
+      });
+    },
+  );
+
+  it("accepts a pristine PNG whose chunk CRCs all verify", async () => {
+    const bytes = png();
+    const header = parseImageHeaderBytes(bytes, bytes.length);
+    await expect(validateStaticImageStructure(blobFrom(bytes), header)).resolves.toBe(header);
+  });
+
+  it("aborts the structure walk when the cooperative deadline trips", async () => {
+    class WalkDeadlineError extends Error {}
+    const pngBytes = png();
+    const pngHeader = parseImageHeaderBytes(pngBytes, pngBytes.length);
+    let remaining = 2;
+    await expect(
+      validateStaticImageStructure(blobFrom(pngBytes), pngHeader, () => {
+        remaining -= 1;
+        if (remaining < 0) throw new WalkDeadlineError();
+      }),
+    ).rejects.toBeInstanceOf(WalkDeadlineError);
+
+    const webpBytes = webp();
+    const webpHeader = parseImageHeaderBytes(webpBytes, webpBytes.length);
+    await expect(
+      validateStaticImageStructure(blobFrom(webpBytes), webpHeader, () => {
+        throw new WalkDeadlineError();
+      }),
+    ).rejects.toBeInstanceOf(WalkDeadlineError);
   });
 
   it("rejects duplicate WebP primary chunks and ALPH with VP8L", async () => {

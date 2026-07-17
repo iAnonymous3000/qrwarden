@@ -114,6 +114,14 @@ export class CameraDecoderAdapter
     this.#client = new DecoderWorkerClient(workerFactory);
   }
 
+  // Worker startup is bounded by the client's own startup deadline, which
+  // rejects fail-closed if the WASM reader never becomes ready; the camera
+  // controller awaits this outside its per-frame deadline so a slow first
+  // fetch is not misread as a stopped reader.
+  ready(): Promise<void> {
+    return this.#client.start();
+  }
+
   async decodeCameraFrame(
     bitmap: ImageBitmap,
     request: { readonly epoch: number; readonly width: number; readonly height: number },
