@@ -30,8 +30,12 @@ function browserLanguages(): readonly (string | undefined)[] {
     }
   ).navigator;
   if (navigatorLike === undefined) return [];
-  if (Array.isArray(navigatorLike.languages) && navigatorLike.languages.length > 0) {
-    return navigatorLike.languages;
+  const languages: unknown = navigatorLike.languages;
+  if (Array.isArray(languages)) {
+    const spoken = languages.filter(
+      (entry): entry is string => typeof entry === "string",
+    );
+    if (spoken.length > 0) return spoken;
   }
   return [navigatorLike.language];
 }

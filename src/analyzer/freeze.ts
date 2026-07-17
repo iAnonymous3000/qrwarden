@@ -8,7 +8,7 @@ export function deepFreeze<T>(value: T): Readonly<T> {
     return value;
   }
 
-  for (const key of Reflect.ownKeys(value as object)) {
+  for (const key of Reflect.ownKeys(value)) {
     const child = (value as Record<PropertyKey, unknown>)[key];
     deepFreeze(child);
   }

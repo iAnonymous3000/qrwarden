@@ -11,7 +11,7 @@ import { ES_COPY } from "../../src/copy/locales/es";
 
 const SOURCE_SHA256: Readonly<Record<string, string>> = {
   "index.ts": "e5a010ff1f36bef2fd5706ce201994e9496199cfbac96f410f598a0798a58a8c",
-  "locale.ts": "8c3cd89b27b1a98041d170c8425318292d9b98dca8087e29de0a6f71d10b2ed0",
+  "locale.ts": "25d5b29e629a58c0fe772b5ff97830fd68f0064b2fbeb79b0326ff170539055e",
   "locales/en.ts": "5a0e4d9b71ec6ad849e9d5d9b4a4b616faf6c405d952281cdec6dd6a8907238c",
   "locales/es.ts": "b78c438c024cd4825d6f09e4b0dc3f528253f33f1bddee23ccc7780f38c75856",
 };

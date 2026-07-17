@@ -92,7 +92,7 @@ function decodeRanges(
   label: string,
 ): DecodedRanges {
   if (packed.encoding !== "delta-uleb128-v1") {
-    throw new Error(`${label} has unsupported encoding ${packed.encoding}`);
+    throw new Error(`${label} has unsupported encoding ${JSON.stringify(packed.encoding)}`);
   }
   if (packed.valueColumns !== expectedColumns) {
     throw new Error(
@@ -139,7 +139,7 @@ function decodeSequences(
   label: string,
 ): readonly (readonly number[])[] {
   if (packed.encoding !== "length-uleb128-v1") {
-    throw new Error(`${label} has unsupported encoding ${packed.encoding}`);
+    throw new Error(`${label} has unsupported encoding ${JSON.stringify(packed.encoding)}`);
   }
   const reader = new PackedReader(packed.base64, label);
   const sequences: (readonly number[])[] = [EMPTY_SEQUENCE];
@@ -173,7 +173,7 @@ function decodeTuples(
   label: string,
 ): Uint32Array {
   if (packed.encoding !== "uleb128-tuples-v1") {
-    throw new Error(`${label} has unsupported encoding ${packed.encoding}`);
+    throw new Error(`${label} has unsupported encoding ${JSON.stringify(packed.encoding)}`);
   }
   if (packed.valueColumns !== expectedColumns) {
     throw new Error(
@@ -394,7 +394,7 @@ function scriptSets(): readonly (readonly ScriptCode[])[] {
   );
   scriptSetsCache = Object.freeze(
     numericSets.map((set, setIndex) => {
-      if (setIndex === 0) return Object.freeze([]) as readonly ScriptCode[];
+      if (setIndex === 0) return Object.freeze([]);
       return Object.freeze(
         set.map((scriptIndex) => {
           const script = UNICODE_SNAPSHOT.scriptNames[scriptIndex];

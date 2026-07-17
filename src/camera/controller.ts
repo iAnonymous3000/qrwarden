@@ -98,9 +98,8 @@ interface ExtendedSettings extends MediaTrackSettings {
 
 function capabilitiesFor(track: MediaStreamTrack): ExtendedCapabilities {
   try {
-    const getCapabilities = track.getCapabilities;
-    return typeof getCapabilities === "function"
-      ? getCapabilities.call(track) as ExtendedCapabilities
+    return typeof track.getCapabilities === "function"
+      ? track.getCapabilities()
       : {};
   } catch {
     return {};
@@ -109,9 +108,8 @@ function capabilitiesFor(track: MediaStreamTrack): ExtendedCapabilities {
 
 function settingsFor(track: MediaStreamTrack): ExtendedSettings {
   try {
-    const getSettings = track.getSettings;
-    return typeof getSettings === "function"
-      ? getSettings.call(track) as ExtendedSettings
+    return typeof track.getSettings === "function"
+      ? track.getSettings()
       : {};
   } catch {
     return {};

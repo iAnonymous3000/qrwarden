@@ -364,10 +364,10 @@ async function collectReadiness(
   return false;
 }
 
-async function abortTransaction(
+function abortTransaction(
   clients: readonly WindowClient[],
   type: "RELEASE_UPDATE_PREPARE" | "ACTIVATION_FAILED",
-): Promise<void> {
+): void {
   const nonce = transactionNonce;
   if (nonce !== null) {
     postTo(clients, { type, nonce, release: RELEASE_ID });
@@ -453,7 +453,7 @@ async function coordinateActivation(): Promise<void> {
   transactionState = "preparing";
   let prepared = await windowClients();
   if (!(await collectReadiness(prepared, nonce))) {
-    await abortTransaction(prepared, "RELEASE_UPDATE_PREPARE");
+    abortTransaction(prepared, "RELEASE_UPDATE_PREPARE");
     return;
   }
 
@@ -464,7 +464,7 @@ async function coordinateActivation(): Promise<void> {
   }
   cacheVerification = cacheVerified ? "verified" : "failed";
   if (!cacheVerified) {
-    await abortTransaction(prepared, "ACTIVATION_FAILED");
+    abortTransaction(prepared, "ACTIVATION_FAILED");
     return;
   }
 
@@ -472,14 +472,14 @@ async function coordinateActivation(): Promise<void> {
   const finalClients = await windowClients();
   if (!sameClientSet(prepared, finalClients)) {
     if (!(await collectReadiness(finalClients, nonce))) {
-      await abortTransaction(finalClients, "RELEASE_UPDATE_PREPARE");
+      abortTransaction(finalClients, "RELEASE_UPDATE_PREPARE");
       return;
     }
     prepared = finalClients;
   }
   const stableClients = await windowClients();
   if (!sameClientSet(prepared, stableClients)) {
-    await abortTransaction(stableClients, "RELEASE_UPDATE_PREPARE");
+    abortTransaction(stableClients, "RELEASE_UPDATE_PREPARE");
     return;
   }
 
@@ -494,7 +494,7 @@ async function coordinateActivation(): Promise<void> {
     },
   );
   if (!committed) {
-    await abortTransaction(stableClients, "ACTIVATION_FAILED");
+    abortTransaction(stableClients, "ACTIVATION_FAILED");
     return;
   }
   transactionState = "idle";

@@ -97,7 +97,8 @@ export type AnalyzerTextDecoding =
       readonly kind: "text";
       readonly text: string;
       readonly encoding: "utf-8" | "shift_jis" | "iso-8859-1";
-      readonly eci: unknown | null;
+      // Opaque to the analyzer: only presence is meaningful here.
+      readonly eci: NonNullable<unknown> | null;
     }
   | {
       readonly kind: "binary";
