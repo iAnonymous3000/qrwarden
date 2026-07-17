@@ -1,2 +1,8 @@
 blank_issues_enabled: false
-contact_links: []
+contact_links:
+  - name: Report a security vulnerability (privately)
+    url: https://github.com/iAnonymous3000/qrwarden/security/advisories/new
+    about: Never describe a suspected vulnerability in a public issue. Use GitHub private vulnerability reporting as documented in SECURITY.md.
+  - name: Self-hosting documentation
+    url: https://github.com/iAnonymous3000/qrwarden/blob/main/SELF_HOSTING.md
+    about: Build requirements, the artifact and header contract, and operator responsibilities for running your own instance.

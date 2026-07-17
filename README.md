@@ -1,6 +1,12 @@
 # QRWarden
 
+[![CI](https://github.com/iAnonymous3000/qrwarden/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/iAnonymous3000/qrwarden/actions/workflows/ci.yml)
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
+[![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)](SECURITY.md)
+
 QRWarden is a production-grade, local-first progressive web app for inspecting QR codes before acting on them. Scans stay in the browser, decoded content is not uploaded, and the app does not visit a destination while analyzing it. It is intentionally a pre-action QR inspector, not a barcode generator, scan history, or automation suite.
+
+![The QRWarden home view: scan with camera or choose an image, with the promise that scans stay in this browser](assets/readme-home.png)
 
 ## What it does
 
@@ -31,6 +37,8 @@ npm run dev
 
 The committed `.npmrc` makes plain npm installs skip lifecycle scripts. The explicit flags above enable scripts only for the exact reviewed `allowScripts` entries and fail closed on an unclassified hook.
 
+**Toolchain:** `engine-strict` is enabled, so any other Node or npm version fails the install. [CONTRIBUTING.md](CONTRIBUTING.md) shows the exact `nvm` and `fnm` commands for installing the pinned Node 24.18.0 and npm 11.16.0.
+
 Run the full local verification suite for every source or release change:
 
 ```sh
@@ -56,6 +64,9 @@ The production build verifies the reader WASM hash, emits fixed same-origin work
 
 ## Documentation
 
+- [Contributing](CONTRIBUTING.md)
+- [Support](SUPPORT.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
 - [Security policy](SECURITY.md)
 - [Privacy policy](PRIVACY.md)
 - [Threat model](THREAT_MODEL.md)
