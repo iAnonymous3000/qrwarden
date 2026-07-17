@@ -14,13 +14,15 @@ import { expect, type Page } from "@playwright/test";
  */
 export async function gotoControlled(page: Page): Promise<void> {
   await page.goto("/");
+  // A cold first install fetches and verifies the whole precache before the
+  // worker can claim the page; on starved runners that alone can pass 20s.
   await expect
     .poll(
       () =>
         page
           .evaluate(() => navigator.serviceWorker.controller !== null)
           .catch(() => false),
-      { timeout: 20_000 },
+      { timeout: 45_000 },
     )
     .toBe(true);
   await expect(page.locator('input[type="file"]').first()).toBeEnabled({

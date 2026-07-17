@@ -16,6 +16,10 @@ export default defineConfig({
   outputDir: "test-results",
   fullyParallel: false,
   forbidOnly: true,
+  // Every test starts from a fresh context and performs a real service-worker
+  // first install before its flow can begin, which can exceed the 30s default
+  // on 2-core CI runners and loaded development machines.
+  timeout: 60_000,
   // Linux Firefox can occasionally stall at the browser/context boundary. A
   // single clean-context retry keeps CI sensitive to persistent regressions.
   retries: process.env.CI ? 1 : 0,
