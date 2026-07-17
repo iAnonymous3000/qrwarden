@@ -14,6 +14,7 @@ const mediaTypes = new Map([
   [".json", "application/json; charset=utf-8"],
   [".png", "image/png"],
   [".pub", "text/plain; charset=utf-8"],
+  [".txt", "text/plain; charset=utf-8"],
   [".wasm", "application/wasm"],
   [".webmanifest", "application/manifest+json"],
 ]);

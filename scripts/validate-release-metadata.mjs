@@ -312,6 +312,7 @@ if (artifact) {
       "hashed-css",
       "png-icons",
       "release-public-key",
+      "security-txt",
       "platform-headers",
       "source-maps",
       "index-redirect"
@@ -481,7 +482,7 @@ if (cloudflare) {
       "DNSSEC",
       "Always Use HTTPS",
       "minimum TLS 1.2",
-      "HSTS max-age=31536000",
+      "HSTS max-age=31536000; includeSubDomains; preload",
       "persistent deny-by-default Access application for all preview deployments",
       "persistent deny-by-default Access application for QRWarden preview deployments",
       "no cache rule overriding signed Cache-Control",

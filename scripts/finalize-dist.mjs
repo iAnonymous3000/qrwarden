@@ -189,7 +189,7 @@ const headers = `/*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   X-DNS-Prefetch-Control: off
-  Strict-Transport-Security: max-age=31536000
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
   Permissions-Policy: ${permissions}
@@ -213,6 +213,10 @@ const headers = `/*
   Cache-Control: no-cache, must-revalidate
 
 /.well-known/qrwarden-release-key.pub
+  Cache-Control: no-cache, must-revalidate
+  Content-Type: text/plain; charset=utf-8
+
+/.well-known/security.txt
   Cache-Control: no-cache, must-revalidate
   Content-Type: text/plain; charset=utf-8
 

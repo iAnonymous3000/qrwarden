@@ -1,0 +1,7 @@
+# QRWarden vulnerability reporting (RFC 9116).
+# Use GitHub's private vulnerability reporting form. Do not put
+# vulnerability details in a public issue, discussion, or pull request.
+Contact: https://github.com/iAnonymous3000/qrwarden/security/advisories/new
+Expires: 2027-07-16T00:00:00.000Z
+Policy: https://github.com/iAnonymous3000/qrwarden/blob/main/SECURITY.md
+Preferred-Languages: en, es

@@ -119,6 +119,18 @@
       "precache": true
     },
     {
+      "id": "security-txt",
+      "kind": "dist",
+      "sourcePattern": "^\\.well-known/security\\.txt$",
+      "canonicalUrlRule": "preserve-path",
+      "expectedStatus": 200,
+      "mediaType": "text/plain; charset=utf-8",
+      "cacheClass": "revalidate",
+      "cspClass": "none",
+      "releaseMarker": true,
+      "precache": false
+    },
+    {
       "id": "platform-headers",
       "kind": "dist-control",
       "sourcePattern": "^_headers$",

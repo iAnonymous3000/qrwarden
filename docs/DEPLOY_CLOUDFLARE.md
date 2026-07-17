@@ -21,7 +21,7 @@ The initial public deployment must be described as a signed beta or release rehe
 
 1. Add the canonical zone to Cloudflare and complete nameserver activation.
 2. Enable DNSSEC and verify the parent DS record before relying on the release-key TXT record.
-3. Enable Always Use HTTPS, require a minimum of TLS 1.2, and preserve the signed `Strict-Transport-Security: max-age=31536000` response header.
+3. Enable Always Use HTTPS, require a minimum of TLS 1.2, and preserve the signed `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` response header. The `includeSubDomains; preload` directives commit the entire registrable canonical domain, including every subdomain, to HTTPS; confirm that commitment is acceptable for the zone before the first deployment, because preload-list inclusion is slow to reverse.
 4. Disable every feature listed in `release/cloudflare-baseline.json`, including Workers Builds and Git integration, Workers Logs and observability, Web Analytics, Zaraz, Rocket Loader, email obfuscation, and content or script injection.
 5. Create no KV, R2, D1, Durable Object, Queue, service binding, runtime secret, server entry point, or application route handler.
 6. Create no Cache Rule that overrides the signed `Cache-Control` values and no Transform Rule that mutates a signed body or required header.
