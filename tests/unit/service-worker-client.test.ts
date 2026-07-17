@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { DecoderWorkerClient, STARTUP_TIMEOUT_MS } from "../../src/decoder";
 import {
   replayServiceWorkerStatus,
   ServiceWorkerClient,
@@ -563,6 +564,49 @@ describe("service-worker release gate races", () => {
     worker.response = readyState(true);
     await vi.advanceTimersByTimeAsync(2_000);
     expect(harness.storage.has("qrwarden-update-check")).toBe(false);
+  });
+
+  it("settles the gate and unlocks when the decoder worker never becomes ready", async () => {
+    vi.useFakeTimers();
+    const worker = new FakeWorker(readyState());
+    installHarness(worker);
+    class SilentDecoderWorker extends EventTarget {
+      readonly postMessage = vi.fn();
+      readonly terminate = vi.fn();
+    }
+    // Mirrors the main.tsx smoke wiring: a decoder worker that starts but
+    // never posts "ready" must not leave gate() pending with controls locked.
+    const decoderSmoke = async (): Promise<boolean> => {
+      const decoder = new DecoderWorkerClient(
+        () => new SilentDecoderWorker() as unknown as Worker,
+      );
+      try {
+        await decoder.start();
+        await decoder.smoke(0);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        decoder.dispose("cancelled");
+      }
+    };
+    const locks: boolean[] = [];
+    const states: OfflineState[] = [];
+    const client = createClient({
+      onLockChange: (locked) => locks.push(locked),
+      onState: (state) => states.push(state),
+      decoderSmoke,
+    });
+
+    const gate = client.gate();
+    await vi.advanceTimersByTimeAsync(STARTUP_TIMEOUT_MS);
+
+    await expect(gate).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "incomplete",
+    });
+    expect(locks.at(-1)).toBe(false);
+    expect(states.at(-1)).toBe("incomplete");
   });
 
   it("keeps the reload marker when post-reload decoder validation fails", async () => {

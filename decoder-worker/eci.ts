@@ -18,10 +18,22 @@ const ECI_ENCODINGS: Readonly<Record<SupportedEci, TextEncoding>> = Object.freez
   26: "utf-8",
 });
 
-const ODD_TO_EVEN_PREFIX: Readonly<Record<string, string>> = Object.freeze({
+/**
+ * The reader reports the base AIM identifier on the public result (see
+ * symbolProfiles.ts) but prefixes bytesECI with its ECI-modified form: QR
+ * shifts its odd modifier to the next even value, while Data Matrix and
+ * Aztec shift their modifiers by three.
+ */
+const ECI_SHIFTED_PREFIX: Readonly<Record<string, string>> = Object.freeze({
   "]Q1": "]Q2",
   "]Q3": "]Q4",
   "]Q5": "]Q6",
+  "]d1": "]d4",
+  "]d2": "]d5",
+  "]d3": "]d6",
+  "]z0": "]z3",
+  "]z1": "]z4",
+  "]z2": "]z5",
 });
 
 function binary(reason: BinaryReason): TextDecoding {
@@ -72,12 +84,12 @@ export function parseBytesEci(
   rawBytes: Uint8Array,
   bytesECI: Uint8Array,
 ): EciParse {
-  const evenIdentifier = ODD_TO_EVEN_PREFIX[publicIdentifier];
-  if (evenIdentifier === undefined) {
+  const shiftedIdentifier = ECI_SHIFTED_PREFIX[publicIdentifier];
+  if (shiftedIdentifier === undefined) {
     return { kind: "error", reason: "malformed-eci" };
   }
 
-  const expectedPrefix = asciiBytes(evenIdentifier);
+  const expectedPrefix = asciiBytes(shiftedIdentifier);
   if (!startsWith(bytesECI, expectedPrefix)) {
     return { kind: "error", reason: "malformed-eci" };
   }

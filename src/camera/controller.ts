@@ -329,6 +329,7 @@ export class CameraController<Result> {
   #epoch = 0;
   #timer: number | null = null;
   #inFlight = false;
+  #decodeJob: Promise<CameraDecodeResponse<Result>> | null = null;
   #startupAbort: AbortController | null = null;
   #frameAbort: AbortController | null = null;
   #pendingFrame: DetectionFrame | null = null;
@@ -481,6 +482,7 @@ export class CameraController<Result> {
     }
     this.#suspended = true;
     this.#advanceEpoch();
+    this.#decodeJob = null;
     this.#decoder.terminate();
     this.#teardownStream();
     if (hidden) {
@@ -491,6 +493,7 @@ export class CameraController<Result> {
   cancel(): void {
     this.#suspended = true;
     this.#advanceEpoch();
+    this.#decodeJob = null;
     this.#decoder.terminate();
     this.#teardownStream();
   }
@@ -705,6 +708,14 @@ export class CameraController<Result> {
       this.#onProblem("camera-could-not-start");
       return;
     }
+    if (this.#decodeJob !== null) {
+      // A decode abandoned by an earlier epoch still occupies the worker's
+      // single in-flight slot. Submitting another job would trip its
+      // single-flight guard and read as a stopped reader; skip this frame and
+      // let the decoder's own job deadline bound the wait.
+      this.#schedule(FRAME_INTERVAL_MS);
+      return;
+    }
 
     const scale = Math.min(1, MAX_CAPTURE_AXIS / Math.max(inputWidth, inputHeight));
     const width = Math.max(1, Math.floor(inputWidth * scale));
@@ -720,6 +731,7 @@ export class CameraController<Result> {
     context.imageSmoothingQuality = "high";
 
     let bitmap: ImageBitmap | null = null;
+    let submitted: Promise<CameraDecodeResponse<Result>> | null = null;
     const frameAbort = new AbortController();
     this.#frameAbort = frameAbort;
     this.#inFlight = true;
@@ -731,12 +743,17 @@ export class CameraController<Result> {
       const response = await withCancellableTimeout(
         () => {
           const decoding = this.#decoder.decodeCameraFrame(ownedBitmap, { epoch, width, height });
+          submitted = decoding;
+          this.#decodeJob = decoding;
           bitmap = null;
           return decoding;
         },
         ATTEMPT_TIMEOUT_MS,
         frameAbort.signal,
       );
+      if (this.#decodeJob === submitted) {
+        this.#decodeJob = null;
+      }
       if (epoch !== this.#epoch || response.epoch !== epoch) {
         if (response.kind === "detections") {
           response.preview?.close();
@@ -748,8 +765,15 @@ export class CameraController<Result> {
       bitmap?.close();
       context.clearRect(0, 0, width, height);
       this.#pendingFrame = null;
+      if (submitted !== null) {
+        // The worker may still hold this job even though the frame settled;
+        // watch it so later frames wait for the slot to free and any late
+        // payload is released instead of leaking.
+        this.#reapAbandonedDecode(submitted);
+      }
       if (epoch === this.#epoch) {
         this.#advanceEpoch();
+        this.#decodeJob = null;
         try {
           this.#decoder.restart();
         } catch {
@@ -825,6 +849,23 @@ export class CameraController<Result> {
       preview: isSelection ? response.preview : null,
       epoch: acceptedEpoch,
     });
+  }
+
+  // A decode abandoned by an abort or deadline may settle long after its
+  // frame. Free the busy-worker tracking when it does, and close any preview
+  // bitmap it delivers because no live frame will consume it.
+  #reapAbandonedDecode(job: Promise<CameraDecodeResponse<Result>>): void {
+    const release = (): void => {
+      if (this.#decodeJob === job) {
+        this.#decodeJob = null;
+      }
+    };
+    void job.then((response) => {
+      release();
+      if (response.kind === "detections") {
+        response.preview?.close();
+      }
+    }, release);
   }
 
   #advanceEpoch(): number {

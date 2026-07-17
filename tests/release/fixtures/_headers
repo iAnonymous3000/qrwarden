@@ -1,0 +1,44 @@
+/*
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  X-DNS-Prefetch-Control: off
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+  Permissions-Policy: camera=(self), clipboard-write=(self), autoplay=(self), accelerometer=(), ambient-light-sensor=(), attribution-reporting=(), battery=(), bluetooth=(), browsing-topics=(), captured-surface-control=(), clipboard-read=(), compute-pressure=(), cross-origin-isolated=(), deferred-fetch=(), deferred-fetch-minimal=(), digital-credentials-get=(), direct-sockets=(), display-capture=(), document-domain=(), encrypted-media=(), execution-while-not-rendered=(), execution-while-out-of-viewport=(), fullscreen=(), gamepad=(), geolocation=(), gyroscope=(), hid=(), identity-credentials-get=(), idle-detection=(), join-ad-interest-group=(), language-detector=(), local-fonts=(), local-network=(), local-network-access=(), loopback-network=(), magnetometer=(), microphone=(), midi=(), on-device-speech-recognition=(), otp-credentials=(), payment=(), picture-in-picture=(), private-aggregation=(), private-state-token-issuance=(), private-state-token-redemption=(), proofreader=(), publickey-credentials-create=(), publickey-credentials-get=(), rewriter=(), run-ad-auction=(), screen-wake-lock=(), serial=(), shared-storage=(), speaker-selection=(), storage-access=(), summarizer=(), sync-xhr=(), translator=(), unload=(), usb=(), web-printing=(), web-share=(), window-management=(), writer=(), xr-spatial-tracking=()
+  X-QRWarden-Release: v0.1.0+0000000000000000000000000000000000000000
+
+/
+  Content-Security-Policy: default-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-elem 'self'; style-src-attr 'none'; img-src 'self'; connect-src 'none'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types qrwarden-script-url;
+  Cache-Control: no-cache, must-revalidate
+
+/decoder-worker.js
+  Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'
+  Cache-Control: no-cache, must-revalidate
+  Content-Type: text/javascript; charset=utf-8
+
+/sw.js
+  Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'self'
+  Cache-Control: no-cache, must-revalidate
+  Content-Type: text/javascript; charset=utf-8
+
+/app.webmanifest
+  Cache-Control: no-cache, must-revalidate
+
+/.well-known/qrwarden-release-key.pub
+  Cache-Control: no-cache, must-revalidate
+  Content-Type: text/plain; charset=utf-8
+
+/.well-known/security.txt
+  Cache-Control: no-cache, must-revalidate
+  Content-Type: text/plain; charset=utf-8
+
+/icons/*
+  Cache-Control: no-cache, must-revalidate
+
+/assets/*.js
+  Content-Type: text/javascript; charset=utf-8
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

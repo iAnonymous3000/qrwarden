@@ -148,7 +148,9 @@ function malformedUrlReport(
 ): AnalysisReport {
   const fields = new ReportFields();
   const signals: AnalysisSignal[] = [];
-  fields.add("original", "QR content", original);
+  // Unparsable payloads have no structural form to export, so the copied
+  // report hides the value rather than leaking whatever the query carried.
+  fields.add("original", "QR content", original, { reportRedacted: true });
 
   const authorityControls =
     lexical === null ? forbiddenCharacters(original) : forbiddenCharacters(lexical.rawAuthority);
@@ -297,7 +299,16 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
       });
     }
   }
-  fields.add("original", "Original QR content", original, { collapsed: true });
+  fields.add("original", "Original QR content", original, {
+    collapsed: true,
+    // The copied report keeps the structure but never the query or fragment
+    // values, which routinely carry tokens and other secrets.
+    reportValue:
+      parsed.origin +
+      parsed.pathname +
+      (parsed.search === "" ? "" : "?(query values hidden)") +
+      (parsed.hash === "" ? "" : "#(fragment hidden)"),
+  });
 
   if (trailingDot) {
     signals.push(

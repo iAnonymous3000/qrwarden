@@ -9,7 +9,7 @@ export interface InstallGuidance {
 export function detectInstallGuidance(userAgent: string): InstallGuidance {
   if (/iPhone|iPad|iPod/u.test(userAgent) || /Macintosh.*Mobile/u.test(userAgent)) {
     return {
-      heading: "iPhone or iPad",
+      heading: COPY.installIphoneHeading,
       body: COPY.installIphone,
       kind: "ios",
     };
@@ -20,20 +20,20 @@ export function detectInstallGuidance(userAgent: string): InstallGuidance {
     !/Chrome|Chromium|CriOS|Edg|OPR/u.test(userAgent)
   ) {
     return {
-      heading: "Safari on Mac",
+      heading: COPY.installMacHeading,
       body: COPY.installMac,
       kind: "mac-safari",
     };
   }
   if (/Android|Chrome|Chromium|CriOS|Edg(?:A|iOS)?\//u.test(userAgent)) {
     return {
-      heading: "Install QRWarden",
+      heading: COPY.installTestedHeading,
       body: COPY.installTested,
       kind: "tested-browser",
     };
   }
   return {
-    heading: "Guidance unavailable",
+    heading: COPY.installUnavailableHeading,
     body: COPY.installUnavailable,
     kind: "unavailable",
   };

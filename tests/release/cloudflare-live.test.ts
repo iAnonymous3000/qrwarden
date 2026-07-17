@@ -1,6 +1,7 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -14,6 +15,11 @@ import {
 } from "../../scripts/release/verify-cloudflare-live.mjs";
 
 const release = "v0.1.0+0123456789abcdef0123456789abcdef01234567";
+const generatedHeadersFixture = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "fixtures",
+  "_headers",
+);
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -54,6 +60,9 @@ async function fixture(): Promise<{
 
 /app.webmanifest
   Cache-Control: no-cache, must-revalidate
+
+/assets/*.js
+  Content-Type: text/javascript; charset=utf-8
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
@@ -298,7 +307,73 @@ describe("Cloudflare live release verifier", () => {
     expect(() => parseHeaderRules("/assets/*/nested\n  X-Test: one\n")).toThrow(
       "unsupported _headers route",
     );
+    expect(() => parseHeaderRules("/assets/*.js/nested\n  X-Test: one\n")).toThrow(
+      "unsupported _headers route",
+    );
+    expect(() => parseHeaderRules("/assets/**\n  X-Test: one\n")).toThrow(
+      "unsupported _headers route",
+    );
+    expect(() => parseHeaderRules("/assets/app-*.js\n  X-Test: one\n")).toThrow(
+      "unsupported _headers route",
+    );
     const rules = parseHeaderRules("/*\n  X-Test: one\n/asset\n  X-Test: two\n");
     expect(() => expectedHeadersForPath(rules, "/asset")).toThrow("multiple _headers values");
+  });
+
+  it("parses the generated _headers and matches the /assets/*.js suffix route", async () => {
+    const rules = parseHeaderRules(await readFile(generatedHeadersFixture, "utf8"));
+    expect(rules.map(({ pattern }: { pattern: string }) => pattern)).toContain("/assets/*.js");
+    const hashedScript = expectedHeadersForPath(rules, "/assets/app-abc123.js");
+    expect(hashedScript.get("content-type")).toBe("text/javascript; charset=utf-8");
+    expect(hashedScript.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    const hashedStylesheet = expectedHeadersForPath(rules, "/assets/style-abc123.css");
+    expect(hashedStylesheet.has("content-type")).toBe(false);
+    expect(hashedStylesheet.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    const outsideAssets = expectedHeadersForPath(rules, "/other/x.js");
+    expect(outsideAssets.has("content-type")).toBe(false);
+    expect(outsideAssets.has("cache-control")).toBe(false);
+  });
+
+  it("fails closed on NEL, Report-To, and Reporting-Endpoints in any casing", async () => {
+    const reportingHeaderSets: Record<string, string>[] = [
+      { NEL: '{"report_to":"cf-nel","max_age":604800}' },
+      { "report-to": '{"group":"cf-nel","endpoints":[{"url":"https://a.nel.cloudflare.com/report"}]}' },
+      { "Reporting-Endpoints": 'cf-nel="https://a.nel.cloudflare.com/report"' },
+    ];
+    for (const headers of reportingHeaderSets) {
+      await expect(
+        verifyProbeResponse({
+          probe: { pathname: "/", expectedStatus: 200 },
+          response: new Response("ok\n", { status: 200, headers }),
+        }),
+      ).rejects.toThrow("opt out of Network Error Logging in the Cloudflare dashboard");
+    }
+    await expect(
+      verifyProbeResponse({
+        probe: { pathname: "/missing", expectedStatus: 404 },
+        response: new Response("Not found\n", {
+          status: 404,
+          headers: { "Report-To": '{"endpoints":[{"url":"https://a.nel.cloudflare.com/report"}]}' },
+        }),
+      }),
+    ).rejects.toThrow("verification fails closed");
+  });
+
+  it("fails the live run when Cloudflare injects reporting headers on a probe", async () => {
+    const { dist, contract, bodies } = await fixture();
+    await expect(
+      verifyCloudflareLive({
+        origin: "https://qrwarden.example",
+        distDirectory: dist,
+        contractFile: contract,
+        expectedRelease: release,
+        fetchImplementation: (input: URL | RequestInfo) => {
+          const url = new URL(input.toString());
+          const response = responseFor(url.pathname, bodies);
+          response.headers.set("NEL", '{"report_to":"cf-nel","max_age":604800}');
+          return Promise.resolve(response);
+        },
+      }),
+    ).rejects.toThrow("opt out of Network Error Logging");
   });
 });

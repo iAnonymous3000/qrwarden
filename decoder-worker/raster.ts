@@ -70,10 +70,16 @@ function contextFor(canvas: OffscreenCanvas): OffscreenCanvasRenderingContext2D 
 }
 
 function assertBrowserDimensions(bitmap: ImageBitmap, header: ImageHeader): void {
-  const expected = orientationCorrectedDimensions(header);
+  const oriented = orientationCorrectedDimensions(header);
+  // Engines disagree on applying declared PNG/WebP EXIF orientation, so a
+  // transposing orientation accepts the oriented or the encoded dimensions.
+  const transposed = header.orientation >= 5 && header.orientation <= 8;
+  const matchesOriented =
+    bitmap.width === oriented.width && bitmap.height === oriented.height;
+  const matchesEncoded =
+    bitmap.width === header.width && bitmap.height === header.height;
   if (
-    bitmap.width !== expected.width ||
-    bitmap.height !== expected.height ||
+    (!matchesOriented && !(transposed && matchesEncoded)) ||
     bitmap.width > MAX_ENCODED_AXIS ||
     bitmap.height > MAX_ENCODED_AXIS ||
     bitmap.width * bitmap.height > MAX_ENCODED_PIXELS

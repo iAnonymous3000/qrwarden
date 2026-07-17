@@ -60,7 +60,7 @@ function binaryReport(bytes: AnalyzerFrozenBytes): AnalysisReport {
       bytes.byteLength > 256
         ? `${preview}… (${bytes.byteLength} bytes total)`
         : preview || "Empty",
-      { kind: "hex", collapsed: true },
+      { kind: "hex", collapsed: true, reportRedacted: true },
     );
   }
   return createReport({ kind: "binary", fields: fields.value });
@@ -76,13 +76,16 @@ function inertReaderText(
     "Structured format",
     kind === "gs1" ? "GS1" : "ISO/IEC 15434",
   );
-  fields.add("content", "Decoded content", text, { collapsed: true });
+  fields.add("content", "Decoded content", text, {
+    collapsed: true,
+    reportRedacted: true,
+  });
   return createReport({ kind, fields: fields.value });
 }
 
 function textReport(text: string): AnalysisReport {
   const fields = new ReportFields();
-  fields.add("text", "Text", text, { collapsed: true });
+  fields.add("text", "Text", text, { collapsed: true, reportRedacted: true });
   return createReport({ kind: "text", fields: fields.value });
 }
 
@@ -133,6 +136,12 @@ function ensureExactStructuredSource(
       ...(field.omittedCount === undefined
         ? {}
         : { omittedCount: field.omittedCount }),
+      ...(field.reportValue === undefined
+        ? {}
+        : { reportValue: field.reportValue }),
+      ...(field.reportRedacted === undefined
+        ? {}
+        : { reportRedacted: field.reportRedacted }),
     });
   }
 

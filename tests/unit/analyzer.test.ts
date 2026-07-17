@@ -256,6 +256,127 @@ describe("ordered payload classification", () => {
     });
   });
 
+  it.each([
+    "sms:%?body=topsecret",
+    "tel:%",
+    "mailto:%",
+    "geo:%",
+    "MECARD:N;",
+    "BEGIN:VCARD\nTEL:+15551234567",
+    "BEGIN:VEVENT\nSUMMARY:Meeting\nEND:VTODO",
+  ])("masks %s when a sensitive-prefix parse declines it", (text) => {
+    const report = analyzeText(text);
+    expect(report.kind).toBe("text");
+    expect(report.actionPolicy).toBe("inspect-only");
+    expect(field(report, "text")).toMatchObject({
+      actionValue: text,
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
+  });
+
+  it("keeps ordinary text near a sensitive prefix unmasked", () => {
+    const report = analyzeText("smsomething entirely ordinary");
+    expect(report.kind).toBe("text");
+    expect(field(report, "text")).toMatchObject({ sensitive: false, masked: false });
+  });
+
+  it("splits vCard lines at the first colon outside double quotes", () => {
+    const report = analyzeText(
+      ["BEGIN:VCARD", 'TEL;X-LBL="ext:12":+15551234567', "END:VCARD"].join("\r\n"),
+    );
+    expect(report.kind).toBe("contact");
+    expect(field(report, "tel-0").value).toBe("+15551234567");
+  });
+
+  it("strips an RFC 6350 group prefix before the property lookup", () => {
+    const report = analyzeText(
+      ["BEGIN:VCARD", "item1.EMAIL:alice@example.test", "END:VCARD"].join("\r\n"),
+    );
+    expect(report.kind).toBe("contact");
+    expect(field(report, "email-0").value).toBe("alice@example.test");
+  });
+
+  it("decodes quoted-printable vCard values and keeps invalid escapes literal", () => {
+    const decoded = analyzeText(
+      ["BEGIN:VCARD", "N;ENCODING=QUOTED-PRINTABLE:=4A=6f=68=6E", "END:VCARD"].join("\r\n"),
+    );
+    expect(field(decoded, "n-0").value).toBe("John");
+    const literal = analyzeText(
+      ["BEGIN:VCARD", "N;ENCODING=QUOTED-PRINTABLE:=ZZok", "END:VCARD"].join("\r\n"),
+    );
+    expect(field(literal, "n-0").value).toBe("=ZZok");
+  });
+
+  it("shows prefilled message and mail bodies as inspectable fields", () => {
+    const sms = analyzeText("sms:+15551234?body=Meet%20at%20noon");
+    expect(sms.kind).toBe("sms");
+    expect(field(sms, "body")).toMatchObject({
+      value: "Meet at noon",
+      collapsed: true,
+      reportRedacted: true,
+    });
+    const mail = analyzeText(
+      "mailto:alice@example.test?subject=Hello%20there&body=See%20attached",
+    );
+    expect(mail.kind).toBe("email");
+    expect(field(mail, "subject").value).toBe("Hello there");
+    expect(field(mail, "body")).toMatchObject({
+      value: "See attached",
+      collapsed: true,
+      reportRedacted: true,
+    });
+  });
+
+  it("surfaces the SMSTO colon-form prefilled message", () => {
+    const sms = analyzeText("SMSTO:+15551234:Meet at noon");
+    expect(sms.kind).toBe("sms");
+    expect(field(sms, "recipient").value).toBe("+15551234");
+    expect(field(sms, "body")).toMatchObject({
+      value: "Meet at noon",
+      collapsed: true,
+      reportRedacted: true,
+    });
+  });
+
+  it("shows mailto to, cc, and bcc addresses instead of an empty recipient", () => {
+    const mail = analyzeText(
+      "mailto:?to=alice@example.test&cc=bob@example.test&bcc=carol@example.test",
+    );
+    expect(mail.kind).toBe("email");
+    expect(field(mail, "recipient").value).toBe("alice@example.test");
+    expect(field(mail, "cc")).toMatchObject({
+      value: "bob@example.test",
+      reportRedacted: true,
+    });
+    expect(field(mail, "bcc")).toMatchObject({
+      value: "carol@example.test",
+      reportRedacted: true,
+    });
+
+    const combined = analyzeText("mailto:alice@example.test?to=bob@example.test");
+    expect(field(combined, "recipient").value).toBe(
+      "alice@example.test, bob@example.test",
+    );
+
+    const none = analyzeText("mailto:?subject=Hi");
+    expect(none.kind).toBe("email");
+    expect(none.displayFields.some((item) => item.id === "recipient")).toBe(false);
+  });
+
+  it("declines to summarize a duplicated parameter rather than show one value", () => {
+    const report = analyzeText("sms:+15551234?body=innocuous&body=hostile");
+    expect(report.kind).toBe("text");
+    expect(report.actionPolicy).toBe("inspect-only");
+    expect(field(report, "text")).toMatchObject({
+      actionValue: "sms:+15551234?body=innocuous&body=hostile",
+      sensitive: true,
+      masked: true,
+      collapsed: true,
+    });
+  });
+
   it.each(["WIFI:S:", "otpauth:", "otpauth-migration:", "DPP:"])(
     "keeps an over-limit %s payload masked when structured parsing declines it",
     (prefix) => {

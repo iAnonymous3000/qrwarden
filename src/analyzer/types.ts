@@ -37,7 +37,9 @@ export type DisplayFieldKind =
  * `actionValue` retains the exact analyzed field value for an explicit brokered
  * action and must never be substituted into markup or another active sink.
  * `sensitive` and `masked` are display instructions; they never grant an action
- * capability.
+ * capability. `reportValue` replaces the value in the copied plain-text report
+ * only, and `reportRedacted` hides the value from that report entirely; neither
+ * changes the on-screen display.
  */
 export interface DisplayField {
   readonly id: string;
@@ -51,6 +53,8 @@ export interface DisplayField {
   readonly truncated: boolean;
   readonly count?: number;
   readonly omittedCount?: number;
+  readonly reportValue?: string;
+  readonly reportRedacted?: boolean;
 }
 
 export type AnalysisSignalCode =

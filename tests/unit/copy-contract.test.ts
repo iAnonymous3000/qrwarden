@@ -12,12 +12,13 @@ import { ES_COPY } from "../../src/copy/locales/es";
 const SOURCE_SHA256: Readonly<Record<string, string>> = {
   "index.ts": "e5a010ff1f36bef2fd5706ce201994e9496199cfbac96f410f598a0798a58a8c",
   "locale.ts": "25d5b29e629a58c0fe772b5ff97830fd68f0064b2fbeb79b0326ff170539055e",
-  "locales/en.ts": "5a0e4d9b71ec6ad849e9d5d9b4a4b616faf6c405d952281cdec6dd6a8907238c",
-  "locales/es.ts": "b78c438c024cd4825d6f09e4b0dc3f528253f33f1bddee23ccc7780f38c75856",
+  "evidence.ts": "2d309c6c709d8d57f0c96b2c69ae8b2157361f8829836a25f13470775b020009",
+  "locales/en.ts": "4410712e620354220f638a99ac8f9fff284d05f3f4029f3ece0123826a3c9411",
+  "locales/es.ts": "65d7247a495fc21d540168a184666a0f53cb57406bc7b1b6c3b3ce4d536c50d9",
 };
 const RUNTIME_CONTRACT_SHA256 =
-  "063dacabfc3e020049bcaea84dec1855b91c3107cb773f652012ececa8684627";
-const COPY_KEY_COUNT = 191;
+  "83963dd0a530f091a338289a9a4b2f3b6452b94ac188a1f9024119ac9f151e9d";
+const COPY_KEY_COUNT = 218;
 
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
@@ -94,6 +95,12 @@ describe("reviewed copy contract", () => {
       Object.keys(EN_COPY.signalGlossary),
     );
     expect(Object.keys(ES_COPY.kindLabels)).toEqual(Object.keys(EN_COPY.kindLabels));
+    expect(Object.keys(ES_COPY.fieldLabels)).toEqual(
+      Object.keys(EN_COPY.fieldLabels),
+    );
+    expect(Object.keys(ES_COPY.signalTitles)).toEqual(
+      Object.keys(EN_COPY.signalTitles),
+    );
   });
 
   it("snapshots every source byte, runtime export, key, and rendered string", async () => {

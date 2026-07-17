@@ -97,15 +97,10 @@ function incomplete(completeFileInBuffer: boolean): never {
   fail(completeFileInBuffer ? "malformed-header" : "metadata-too-large");
 }
 
-function parseTiffOrientation(segment: Uint8Array): number | null {
-  if (
-    segment.byteLength < 14 ||
-    !equalPrefix(segment, [0x45, 0x78, 0x69, 0x66, 0x00, 0x00])
-  ) {
-    return null;
-  }
+const EXIF_TIFF_PREFIX = [0x45, 0x78, 0x69, 0x66, 0x00, 0x00] as const;
 
-  const tiff = 6;
+function parseTiffOrientation(segment: Uint8Array, tiff: number): number | null {
+  if (tiff + 8 > segment.byteLength) fail("malformed-header");
   const byteOrder = ascii(segment, tiff, 2);
   if (byteOrder !== "II" && byteOrder !== "MM") fail("malformed-header");
   const little = byteOrder === "II";
@@ -140,6 +135,19 @@ function parseTiffOrientation(segment: Uint8Array): number | null {
     if (orientation < 1 || orientation > 8) fail("malformed-header");
   }
   return orientation;
+}
+
+/** APP1 payloads that are not EXIF (for example XMP) parse as null. */
+function parseExifSegmentOrientation(segment: Uint8Array): number | null {
+  if (segment.byteLength < 14 || !equalPrefix(segment, EXIF_TIFF_PREFIX)) {
+    return null;
+  }
+  return parseTiffOrientation(segment, 6);
+}
+
+/** WebP EXIF payloads occur both raw and "Exif\0\0"-prefixed in the wild. */
+function parseWebpExifOrientation(payload: Uint8Array): number | null {
+  return parseTiffOrientation(payload, equalPrefix(payload, EXIF_TIFF_PREFIX) ? 6 : 0);
 }
 
 const JPEG_SOF_MARKERS = new Set([
@@ -182,7 +190,7 @@ function parseJpegHeader(bytes: Uint8Array, complete: boolean): ImageHeader {
     if (segmentEnd > bytes.byteLength) incomplete(complete);
 
     if (marker === 0xe1) {
-      const parsed = parseTiffOrientation(bytes.subarray(dataStart, segmentEnd));
+      const parsed = parseExifSegmentOrientation(bytes.subarray(dataStart, segmentEnd));
       if (parsed !== null) {
         if (orientation !== null) fail("malformed-header");
         orientation = parsed;
@@ -246,6 +254,7 @@ function parsePngHeader(
   const { width, height } = validatePngIhdr(bytes.subarray(16, 29));
 
   let offset = 8;
+  let orientation: number | null = null;
   while (offset < bytes.byteLength) {
     if (offset + 8 > bytes.byteLength) incomplete(complete);
     const length = u32be(bytes, offset);
@@ -254,13 +263,19 @@ function parsePngHeader(
       fail("malformed-header");
     }
     if (type === "acTL") fail("animated-image");
+    if (type === "eXIf") {
+      const dataStart = offset + 8;
+      if (dataStart + length > bytes.byteLength) incomplete(complete);
+      if (orientation !== null) fail("malformed-header");
+      orientation = parseTiffOrientation(bytes.subarray(dataStart, dataStart + length), 0) ?? 1;
+    }
     if (type === "IDAT") {
       return {
         format: "png",
         mime: "image/png",
         width,
         height,
-        orientation: 1,
+        orientation: (orientation ?? 1) as ImageHeader["orientation"],
       };
     }
     const next = offset + 12 + length;
@@ -316,9 +331,27 @@ function parseWebpHeader(
   if (u32le(bytes, 4) + 8 !== totalSize) fail("malformed-header");
 
   let offset = 12;
-  let canvas: { width: number; height: number } | null = null;
+  let canvas: { width: number; height: number; flags: number } | null = null;
+  let primary: { width: number; height: number } | null = null;
+  let orientation: number | null = null;
+  const build = (): ImageHeader => ({
+    format: "webp",
+    mime: "image/webp",
+    width: canvas?.width ?? primary!.width,
+    height: canvas?.height ?? primary!.height,
+    orientation: (orientation ?? 1) as ImageHeader["orientation"],
+  });
+
+  // The EXIF chunk legally sits after the image data, which can extend past
+  // the bounded header read. A declared EXIF chunk the buffer cannot reach
+  // keeps the identity orientation instead of rejecting the image.
+  const exifOutOfReach = (): ImageHeader => {
+    if (!complete && primary !== null) return build();
+    incomplete(complete);
+  };
+
   while (offset < bytes.byteLength) {
-    if (offset + 8 > bytes.byteLength) incomplete(complete);
+    if (offset + 8 > bytes.byteLength) return exifOutOfReach();
     const type = ascii(bytes, offset, 4);
     const length = u32le(bytes, offset + 4);
     if (!/^[\x20-\x7e]{4}$/.test(type) || length > totalSize - offset - 8) {
@@ -337,32 +370,36 @@ function parseWebpHeader(
       const needed = type === "VP8 " ? 10 : 5;
       if (length < needed) fail("malformed-header");
       if (dataStart + needed > bytes.byteLength) incomplete(complete);
-      const primary =
+      const parsed =
         type === "VP8 "
           ? parseVp8Dimensions(bytes.subarray(dataStart, dataStart + needed))
           : parseVp8lDimensions(bytes.subarray(dataStart, dataStart + needed));
       if (
         canvas !== null &&
-        (canvas.width !== primary.width || canvas.height !== primary.height)
+        (canvas.width !== parsed.width || canvas.height !== parsed.height)
       ) {
         fail("malformed-header");
       }
-      return {
-        format: "webp",
-        mime: "image/webp",
-        width: canvas?.width ?? primary.width,
-        height: canvas?.height ?? primary.height,
-        orientation: 1,
-      };
+      primary = parsed;
+      // Without a declared EXIF chunk the header ends at the primary image.
+      if (canvas === null || (canvas.flags & 0x08) === 0) return build();
     }
+
+    if (type === "EXIF" && canvas !== null && (canvas.flags & 0x08) !== 0) {
+      if (dataStart + length > bytes.byteLength) return exifOutOfReach();
+      if (orientation !== null) fail("malformed-header");
+      orientation = parseWebpExifOrientation(bytes.subarray(dataStart, dataStart + length)) ?? 1;
+    }
+
+    if (primary !== null && orientation !== null) return build();
 
     const paddedLength = length + (length & 1);
     const next = dataStart + paddedLength;
-    if (next > bytes.byteLength) incomplete(complete);
+    if (next > bytes.byteLength) return exifOutOfReach();
     offset = next;
   }
 
-  incomplete(complete);
+  return exifOutOfReach();
 }
 
 export function parseImageHeaderBytes(

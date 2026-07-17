@@ -18,6 +18,8 @@ export interface FieldOptions {
   readonly collapsed?: boolean;
   readonly count?: number;
   readonly omittedCount?: number;
+  readonly reportValue?: string;
+  readonly reportRedacted?: boolean;
 }
 
 export function scalarLength(value: string): number {
@@ -66,6 +68,12 @@ export class ReportFields {
       ...(options.omittedCount === undefined
         ? {}
         : { omittedCount: options.omittedCount }),
+      ...(options.reportValue === undefined
+        ? {}
+        : { reportValue: options.reportValue }),
+      ...(options.reportRedacted === undefined
+        ? {}
+        : { reportRedacted: options.reportRedacted }),
     });
   }
 

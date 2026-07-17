@@ -17,6 +17,13 @@ import {
 import type { DecodeSource } from "./types";
 
 export const DEFAULT_DECODE_TIMEOUT_MS = 5_000;
+/**
+ * Absolute deadline for the worker to post "ready" or "fatal". Generous
+ * because a first visit legitimately downloads the WASM reader over a slow
+ * connection; the deadline exists for a fetch that stalls without rejecting,
+ * which must release every awaiting caller instead of hanging the app.
+ */
+export const STARTUP_TIMEOUT_MS = 45_000;
 
 interface PendingJob {
   readonly jobId: number;
@@ -111,6 +118,7 @@ function adaptOutcome(
 export class DecoderWorkerClient {
   readonly #worker: Worker;
   readonly #timeoutMs: number;
+  readonly #startupTimer: ReturnType<typeof setTimeout>;
   readonly #ready: Promise<void>;
   #resolveReady!: () => void;
   #rejectReady!: (reason: unknown) => void;
@@ -132,6 +140,12 @@ export class DecoderWorkerClient {
     this.#worker.addEventListener("message", this.#onMessage);
     this.#worker.addEventListener("error", this.#onWorkerError);
     this.#worker.addEventListener("messageerror", this.#onWorkerError);
+    // A worker that starts but never posts "ready" or "fatal" would otherwise
+    // hang every caller awaiting readiness; expiry fails like a fatal init.
+    this.#startupTimer = setTimeout(() => {
+      this.#rejectReady(new DecoderFailure("took-too-long"));
+      this.dispose("reader-stopped");
+    }, STARTUP_TIMEOUT_MS);
   }
 
   start(): Promise<void> {
@@ -195,6 +209,7 @@ export class DecoderWorkerClient {
   dispose(code: "cancelled" | "reader-stopped" = "cancelled"): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    clearTimeout(this.#startupTimer);
     this.#worker.removeEventListener("message", this.#onMessage);
     this.#worker.removeEventListener("error", this.#onWorkerError);
     this.#worker.removeEventListener("messageerror", this.#onWorkerError);
@@ -283,6 +298,7 @@ export class DecoderWorkerClient {
     if (message?.type === "ready") {
       if (this.#isReady || this.#disposed) return;
       this.#isReady = true;
+      clearTimeout(this.#startupTimer);
       this.#resolveReady();
       return;
     }

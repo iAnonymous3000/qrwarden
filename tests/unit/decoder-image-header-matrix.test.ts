@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ImageHeaderError,
@@ -7,6 +7,7 @@ import {
   parseImageHeaderBytes,
   validateStaticImageStructure,
 } from "../../decoder-worker/imageHeaders";
+import { RasterError, withRasterizedFile } from "../../decoder-worker/raster";
 
 const chars = (value: string) => Array.from(value, (character) => character.charCodeAt(0));
 const be16 = (value: number) => [(value >>> 8) & 0xff, value & 0xff];
@@ -109,16 +110,57 @@ function jpegSegment(marker: number, data: readonly number[]): number[] {
   return [0xff, marker, ...be16(data.length + 2), ...data];
 }
 
-function exifOrientation(orientation: number, littleEndian: boolean): number[] {
+function tiffOrientation(orientation: number, littleEndian: boolean): number[] {
   return littleEndian
     ? [
-        ...chars("Exif"), 0, 0, ...chars("II"), 42, 0, 8, 0, 0, 0,
+        ...chars("II"), 42, 0, 8, 0, 0, 0,
         1, 0, 0x12, 0x01, 3, 0, 1, 0, 0, 0, orientation, 0, 0, 0, 0, 0, 0, 0,
       ]
     : [
-        ...chars("Exif"), 0, 0, ...chars("MM"), 0, 42, 0, 0, 0, 8,
+        ...chars("MM"), 0, 42, 0, 0, 0, 8,
         0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, orientation, 0, 0, 0, 0, 0, 0,
       ];
+}
+
+function exifOrientation(orientation: number, littleEndian: boolean): number[] {
+  return [...chars("Exif"), 0, 0, ...tiffOrientation(orientation, littleEndian)];
+}
+
+function crc32(bytes: readonly number[]): number[] {
+  let crc = 0xff_ff_ff_ff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (0xed_b8_83_20 & -(crc & 1));
+    }
+  }
+  return be32((crc ^ 0xff_ff_ff_ff) >>> 0);
+}
+
+function pngExifChunk(orientation: number): number[] {
+  const payload = tiffOrientation(orientation, true);
+  const body = [...chars("eXIf"), ...payload];
+  return [...be32(payload.length), ...body, ...crc32(body)];
+}
+
+function pngWithExif(orientation: number, width = 3, height = 2): Uint8Array {
+  return pngFromChunks([
+    pngIhdr(width, height),
+    pngExifChunk(orientation),
+    pngChunk("IDAT", [0]),
+    pngChunk("IEND", []),
+  ]);
+}
+
+function webpWithExif(orientation: number, prefixed: boolean): Uint8Array {
+  const payload = prefixed
+    ? exifOrientation(orientation, true)
+    : tiffOrientation(orientation, true);
+  return webpFromChunks([
+    webpChunk("VP8X", vp8xData(3, 2, 0x08)),
+    webpChunk("VP8L", vp8lData(3, 2)),
+    webpChunk("EXIF", payload),
+  ]);
 }
 
 function jpeg(
@@ -288,6 +330,145 @@ describe("encoded image header boundary matrix", () => {
     } as Blob;
     await expect(inspectImageHeader(empty)).rejects.toMatchObject({ code: "malformed-header" });
     await expect(inspectImageHeader(oversized)).rejects.toMatchObject({ code: "file-too-large" });
+  });
+});
+
+describe("declared EXIF orientation for PNG and WebP containers", () => {
+  it.each([3, 6, 8])(
+    "parses PNG eXIf orientation %d and passes the structure gate",
+    async (orientation) => {
+      const bytes = pngWithExif(orientation);
+      const header = parseImageHeaderBytes(bytes, bytes.length);
+      expect(header.orientation).toBe(orientation);
+      expect(orientationCorrectedDimensions(header)).toEqual(
+        orientation >= 5 ? { width: 2, height: 3 } : { width: 3, height: 2 },
+      );
+      await expect(
+        validateStaticImageStructure(blobFrom(bytes), header),
+      ).resolves.toBeUndefined();
+    },
+  );
+
+  it("rejects a duplicate PNG eXIf chunk", () => {
+    const bytes = pngFromChunks([
+      pngIhdr(3, 2),
+      pngExifChunk(6),
+      pngExifChunk(6),
+      pngChunk("IDAT", [0]),
+      pngChunk("IEND", []),
+    ]);
+    expectHeaderError(() => parseImageHeaderBytes(bytes, bytes.length), "malformed-header");
+  });
+
+  it.each([
+    ["raw TIFF", false],
+    ["Exif\\0\\0-prefixed", true],
+  ])("parses the flagged WebP EXIF chunk with a %s payload", async (_label, prefixed) => {
+    const bytes = webpWithExif(6, prefixed);
+    const header = parseImageHeaderBytes(bytes, bytes.length);
+    expect(header).toMatchObject({ format: "webp", width: 3, height: 2, orientation: 6 });
+    expect(orientationCorrectedDimensions(header)).toEqual({ width: 2, height: 3 });
+    await expect(
+      validateStaticImageStructure(blobFrom(bytes), header),
+    ).resolves.toBeUndefined();
+  });
+
+  it("fails closed when the VP8X EXIF flag has no EXIF chunk", () => {
+    const bytes = webpFromChunks([
+      webpChunk("VP8X", vp8xData(1, 1, 0x08)),
+      webpChunk("VP8L", vp8lData(1, 1)),
+    ]);
+    expectHeaderError(() => parseImageHeaderBytes(bytes, bytes.length), "malformed-header");
+  });
+
+  it("ignores an EXIF chunk that VP8X does not declare", () => {
+    const bytes = webpFromChunks([
+      webpChunk("VP8X", vp8xData(3, 2)),
+      webpChunk("VP8L", vp8lData(3, 2)),
+      webpChunk("EXIF", tiffOrientation(6, true)),
+    ]);
+    expect(parseImageHeaderBytes(bytes, bytes.length).orientation).toBe(1);
+  });
+
+  it("keeps identity orientation when the declared EXIF chunk sits past the bounded header read", () => {
+    // Spec chunk ordering places EXIF after the image data, so a large photo's
+    // EXIF chunk can lie beyond the bounded prefix. The image must still parse.
+    const bytes = webpFromChunks([
+      webpChunk("VP8X", vp8xData(3, 2, 0x08)),
+      webpChunk("VP8L", [...vp8lData(3, 2), ...Array.from({ length: 4096 }, () => 0)]),
+      webpChunk("EXIF", tiffOrientation(6, true)),
+    ]);
+    const header = parseImageHeaderBytes(bytes.slice(0, 64), bytes.length);
+    expect(header).toMatchObject({ format: "webp", width: 3, height: 2, orientation: 1 });
+  });
+
+  it("keeps identity orientation when the EXIF payload is cut off by the bounded read", () => {
+    const bytes = webpWithExif(6, false);
+    const truncated = bytes.slice(0, bytes.length - 4);
+    const header = parseImageHeaderBytes(truncated, bytes.length);
+    expect(header).toMatchObject({ format: "webp", width: 3, height: 2, orientation: 1 });
+  });
+});
+
+describe("orientation-tolerant browser dimension check", () => {
+  class FakeOffscreenCanvas {
+    width: number;
+    height: number;
+
+    constructor(width: number, height: number) {
+      this.width = width;
+      this.height = height;
+    }
+
+    getContext(): OffscreenCanvasRenderingContext2D {
+      return {
+        drawImage: () => undefined,
+        getImageData: () => ({} as ImageData),
+        imageSmoothingEnabled: false,
+        imageSmoothingQuality: "low",
+      } as unknown as OffscreenCanvasRenderingContext2D;
+    }
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function rasterize(
+    bytes: Uint8Array,
+    bitmapWidth: number,
+    bitmapHeight: number,
+  ): Promise<unknown> {
+    const header = parseImageHeaderBytes(bytes, bytes.length);
+    vi.stubGlobal("OffscreenCanvas", FakeOffscreenCanvas);
+    vi.stubGlobal("createImageBitmap", async () => ({
+      width: bitmapWidth,
+      height: bitmapHeight,
+      close: () => undefined,
+    }));
+    return withRasterizedFile(
+      blobFrom(bytes),
+      header,
+      2_048,
+      2_048 * 2_048,
+      async () => "consumed",
+    );
+  }
+
+  it("accepts oriented or encoded dimensions for transposing orientations", async () => {
+    await expect(rasterize(pngWithExif(6), 2, 3)).resolves.toBe("consumed");
+    await expect(rasterize(pngWithExif(6), 3, 2)).resolves.toBe("consumed");
+    await expect(rasterize(webpWithExif(6, false), 3, 2)).resolves.toBe("consumed");
+  });
+
+  it("still rejects genuinely wrong dimensions", async () => {
+    await expect(rasterize(pngWithExif(6), 3, 3)).rejects.toBeInstanceOf(RasterError);
+    await expect(rasterize(pngWithExif(6), 4, 6)).rejects.toBeInstanceOf(RasterError);
+  });
+
+  it("keeps the strict check for non-transposing orientations", async () => {
+    await expect(rasterize(pngWithExif(3), 3, 2)).resolves.toBe("consumed");
+    await expect(rasterize(pngWithExif(3), 2, 3)).rejects.toBeInstanceOf(RasterError);
   });
 });
 

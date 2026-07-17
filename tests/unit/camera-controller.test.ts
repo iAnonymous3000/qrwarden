@@ -276,6 +276,42 @@ async function beginMetadataWait(harness: Harness): Promise<{ readonly starting:
   return { starting };
 }
 
+async function beginSlowDecode(harness: Harness): Promise<{
+  readonly resolveDecode: (response: CameraDecodeResponse<string>) => void;
+  readonly epoch: number;
+}> {
+  const decode = deferred<CameraDecodeResponse<string>>();
+  let pending = false;
+  const settle = (): void => {
+    pending = false;
+  };
+  void decode.promise.then(settle, settle);
+  harness.decoder.decodeCameraFrame.mockImplementation(
+    async (
+      bitmap: ImageBitmap,
+      request: { readonly epoch: number; readonly width: number; readonly height: number },
+    ): Promise<CameraDecodeResponse<string>> => {
+      // Mirror DecoderWorkerClient's single-flight guard: a busy worker
+      // rejects a second job instead of queueing it.
+      if (pending) {
+        bitmap.close();
+        throw new Error("Only one decoder request may be in flight");
+      }
+      if (harness.decoder.decodeCameraFrame.mock.calls.length === 1) {
+        pending = true;
+        return decode.promise;
+      }
+      bitmap.close();
+      return { kind: "empty", ...request };
+    },
+  );
+  await harness.controller.start();
+  const epoch = harness.controller.epoch;
+  await vi.advanceTimersToNextTimerAsync();
+  expect(harness.decoder.decodeCameraFrame).toHaveBeenCalledOnce();
+  return { resolveDecode: decode.resolve, epoch };
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
 });
@@ -817,6 +853,118 @@ describe("CameraController timeout and constraints", () => {
 
     harness.controller.cancel();
     expect(recoveryTrack.stop).toHaveBeenCalledOnce();
+  });
+
+  it("keeps scanning when torch toggles during a slow decode", async () => {
+    const harness = createHarness();
+    const { resolveDecode, epoch } = await beginSlowDecode(harness);
+
+    await expect(harness.controller.setTorch(true)).resolves.toBe(true);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(harness.decoder.decodeCameraFrame).toHaveBeenCalledOnce();
+    expect(harness.createBitmap).toHaveBeenCalledTimes(2);
+    expect(harness.decoder.restart).not.toHaveBeenCalled();
+    expect(harness.onProblem).not.toHaveBeenCalled();
+    expect(harness.track.settings.torch).toBe(true);
+
+    resolveDecode({ kind: "empty", epoch, width: 640, height: 480 });
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersToNextTimerAsync();
+
+    expect(harness.decoder.decodeCameraFrame).toHaveBeenCalledTimes(2);
+    expect(harness.onProblem).not.toHaveBeenCalled();
+    harness.controller.cancel();
+  });
+
+  it("keeps scanning when zoom changes during a slow decode", async () => {
+    const harness = createHarness();
+    const { resolveDecode, epoch } = await beginSlowDecode(harness);
+
+    await expect(harness.controller.setZoom(3)).resolves.toBe(3);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(harness.decoder.decodeCameraFrame).toHaveBeenCalledOnce();
+    expect(harness.decoder.restart).not.toHaveBeenCalled();
+    expect(harness.onProblem).not.toHaveBeenCalled();
+    expect(harness.track.settings.zoom).toBe(3);
+
+    resolveDecode({ kind: "empty", epoch, width: 640, height: 480 });
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersToNextTimerAsync();
+
+    expect(harness.decoder.decodeCameraFrame).toHaveBeenCalledTimes(2);
+    expect(harness.onProblem).not.toHaveBeenCalled();
+    harness.controller.cancel();
+  });
+
+  it("keeps scanning when the orientation changes during a slow decode", async () => {
+    const harness = createHarness();
+    const { resolveDecode, epoch } = await beginSlowDecode(harness);
+
+    harness.controller.orientationChanged();
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(harness.decoder.decodeCameraFrame).toHaveBeenCalledOnce();
+    expect(harness.decoder.restart).not.toHaveBeenCalled();
+    expect(harness.onProblem).not.toHaveBeenCalled();
+
+    resolveDecode({ kind: "empty", epoch, width: 640, height: 480 });
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersToNextTimerAsync();
+
+    expect(harness.decoder.decodeCameraFrame).toHaveBeenCalledTimes(2);
+    expect(harness.onProblem).not.toHaveBeenCalled();
+    harness.controller.cancel();
+  });
+
+  it("closes a selection preview delivered after the epoch moved on", async () => {
+    const harness = createHarness();
+    const { resolveDecode, epoch } = await beginSlowDecode(harness);
+
+    harness.controller.orientationChanged();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const preview = bitmapDouble();
+    resolveDecode({
+      kind: "detections",
+      epoch,
+      width: 640,
+      height: 480,
+      detections: [],
+      preview: preview as unknown as ImageBitmap,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(preview.close).toHaveBeenCalledOnce();
+    expect(harness.onAccepted).not.toHaveBeenCalled();
+    expect(harness.onProblem).not.toHaveBeenCalled();
+
+    await vi.advanceTimersToNextTimerAsync();
+    expect(harness.decoder.decodeCameraFrame).toHaveBeenCalledTimes(2);
+    harness.controller.cancel();
+  });
+
+  it("completes a slow decode normally when nothing reconfigures the camera", async () => {
+    const harness = createHarness();
+    const { resolveDecode, epoch } = await beginSlowDecode(harness);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(harness.decoder.decodeCameraFrame).toHaveBeenCalledOnce();
+
+    resolveDecode({ kind: "empty", epoch, width: 640, height: 480 });
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersToNextTimerAsync();
+
+    expect(harness.decoder.decodeCameraFrame).toHaveBeenCalledTimes(2);
+    expect(harness.decoder.restart).not.toHaveBeenCalled();
+    expect(harness.onProblem).not.toHaveBeenCalled();
+    harness.controller.cancel();
   });
 
   it("does not let an older device switch tear down the newest stream", async () => {

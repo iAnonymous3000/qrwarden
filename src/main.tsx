@@ -60,6 +60,20 @@ navigator.serviceWorker?.addEventListener("message", (event) => {
 // call a message posted before (or after) load is buffered forever.
 navigator.serviceWorker?.startMessages();
 
+// A share whose redirected document the worker could not identify waits in
+// worker memory behind the static ?share-pending marker. The marker carries
+// no share data: it only tells this document to pull the parked share, which
+// the worker hands to the requesting client alone. The marker is then
+// removed so it never persists in history or re-triggers on reload.
+const startupUrl = new URL(window.location.href);
+if (startupUrl.searchParams.has("share-pending")) {
+  navigator.serviceWorker?.controller?.postMessage({
+    type: "PULL_SHARED_IMAGE",
+  });
+  startupUrl.searchParams.delete("share-pending");
+  history.replaceState(history.state, "", startupUrl);
+}
+
 const smokeDecoder = async (): Promise<boolean> => {
   const client = new DecoderWorkerClient(workerFactory);
   try {

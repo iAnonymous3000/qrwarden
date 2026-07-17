@@ -246,7 +246,9 @@ button.source-card { width: 100%; text-align: left; }
 details:not([open]) > summary .summary-open-label { display: none; }
 details[open] > summary .summary-closed-label { display: none; }
 .field-actions { display: flex; gap: .6rem; margin-top: .65rem; }
-.microcopy, .clipboard-warning, .copy-status { color: var(--muted); font-size: .77rem; line-height: 1.45; }
+.microcopy, .clipboard-warning, .copy-status, .copy-feedback { color: var(--muted); font-size: .77rem; line-height: 1.45; }
+.copy-feedback { align-self: center; }
+.copy-status { margin: .5rem 0 0; text-align: center; }
 .intake-hint { max-width: 760px; margin: .8rem auto 0; text-align: center; }
 .limitations { padding: 1rem 1.2rem; border: 1px dashed var(--line); background: var(--soft); }
 .limitations h2 { margin-top: 0; }
@@ -272,6 +274,8 @@ body:has(dialog[open]) { overflow: hidden; }
 .confirm-dialog::backdrop { background: rgba(12, 10, 9, .72); }
 .confirm-dialog h2 { margin: 0; font-size: 1.6rem; }
 .confirm-dialog p { color: var(--muted); line-height: 1.55; }
+.confirm-full-url span { display: block; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
+.confirm-full-url bdi { display: block; margin-top: .2rem; overflow-wrap: anywhere; word-break: break-all; color: var(--ink); }
 .dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
 
 .prose-card { max-width: 720px; padding: clamp(1.4rem, 5vw, 3rem); border: 1px solid var(--line); border-radius: 1rem; background: var(--paper); }

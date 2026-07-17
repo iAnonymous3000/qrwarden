@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { STARTUP_TIMEOUT_MS } from "../../src/decoder";
 import {
   filesFromDrop,
   ImageController,
@@ -28,6 +29,7 @@ function transferWith(
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("image intake validation matrix", () => {
@@ -111,6 +113,28 @@ describe("image intake validation matrix", () => {
 
     expect(workerFactory).toHaveBeenCalledOnce();
     expect(onProblem).toHaveBeenCalledExactlyOnceWith("reader-stopped");
+    expect(controller.busy).toBe(false);
+  });
+
+  it("surfaces a problem and clears busy when the decoder worker never becomes ready", async () => {
+    vi.useFakeTimers();
+    const worker = new IdleWorker();
+    const workerFactory = vi.fn(() => worker as unknown as Worker);
+    const onProblem = vi.fn();
+    const controller = new ImageController({
+      workerFactory,
+      onResult: vi.fn(),
+      onProblem,
+    });
+
+    controller.choose([fileLike(1, "image/png")]);
+    expect(workerFactory).toHaveBeenCalledOnce();
+    expect(controller.busy).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(STARTUP_TIMEOUT_MS);
+
+    expect(onProblem).toHaveBeenCalledExactlyOnceWith("took-too-long");
+    expect(worker.terminate).toHaveBeenCalledOnce();
     expect(controller.busy).toBe(false);
   });
 

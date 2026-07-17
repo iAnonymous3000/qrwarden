@@ -535,13 +535,18 @@ registerRoute(
   }),
 );
 
+// Static marker the share redirect appends so the redirected document knows
+// to pull a parked share from the worker. It carries no share data — it is a
+// fixed string — and main.tsx removes it via history.replaceState.
+const SHARE_TARGET_PENDING_SEARCH = "?share-pending";
+
 registerRoute(
   ({ request, url }) =>
     request.method === "GET" &&
     request.mode === "navigate" &&
     url.origin === self.location.origin &&
     url.pathname === "/" &&
-    url.search === "",
+    (url.search === "" || url.search === SHARE_TARGET_PENDING_SEARCH),
   async () => {
     const cache = await caches.open(CURRENT_CACHE);
     const response = await cache.match(cacheKey(rootEntry));
@@ -554,36 +559,66 @@ const SHARE_TARGET_MAX_BYTES = 25_000_000;
 const SHARE_TARGET_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const SHARE_TARGET_CLIENT_ATTEMPTS = 20;
 const SHARE_TARGET_CLIENT_RETRY_MS = 250;
+const SHARE_TARGET_PENDING_TTL_MS = 120_000;
+
+interface PendingShare {
+  readonly file: File;
+  readonly expires: number;
+}
+
+// A share whose resulting client cannot be identified waits here for the
+// redirected document to pull it. The slot is worker-lifetime-bound like the
+// in-flight delivery it backs; the deadline keeps an unclaimed share from
+// outliving the navigation that produced it.
+let pendingShare: PendingShare | null = null;
+
+function takePendingShare(): File | null {
+  const parked = pendingShare;
+  pendingShare = null;
+  if (parked === null || Date.now() >= parked.expires) {
+    return null;
+  }
+  return parked.file;
+}
+
+interface PendingPull {
+  readonly source: Client | ServiceWorker | MessagePort;
+  readonly expires: number;
+}
+
+// The redirected document posts PULL_SHARED_IMAGE exactly once, and nothing
+// orders that message after the share's multipart parse. A pull that arrives
+// before the share is parked waits here so the in-flight delivery can still
+// complete the rendezvous instead of silently dropping the share.
+let pendingPull: PendingPull | null = null;
+
+function takePendingPull(): PendingPull["source"] | null {
+  const waiting = pendingPull;
+  pendingPull = null;
+  if (waiting === null || Date.now() >= waiting.expires) {
+    return null;
+  }
+  return waiting.source;
+}
 
 /**
- * Finds the document created by the redirected share navigation. Browsers
- * discard the reserved client of a redirected POST navigation, so the id
- * lookup is only a fast path; the fallback takes the most recently focused
- * same-scope root document, which is the tab the share just opened.
+ * Finds the document created by the redirected share navigation through its
+ * reserved client id. The id survives the worker's 303 redirect in Chromium,
+ * but the document may not exist yet when the POST event fires, so the
+ * lookup polls on a bounded schedule. When the engine reports no id at all
+ * (some native share-sheet launches), this returns null and the share stays
+ * parked for the marker-driven pull — the worker never guesses among open
+ * windows, because a pre-existing tab would deterministically win.
  */
 async function resultingShareClient(event: FetchEvent): Promise<Client | null> {
+  const clientId = event.resultingClientId || event.clientId;
+  if (clientId === "") {
+    return null;
+  }
   for (let attempt = 0; attempt < SHARE_TARGET_CLIENT_ATTEMPTS; attempt += 1) {
-    const clientId = event.resultingClientId || event.clientId;
-    if (clientId !== "") {
-      const client = await self.clients.get(clientId);
-      if (client !== undefined) {
-        return client;
-      }
-    }
-    const windows = await self.clients.matchAll({
-      type: "window",
-      includeUncontrolled: true,
-    });
-    const candidate = windows.find((client) => {
-      try {
-        const url = new URL(client.url);
-        return url.origin === self.location.origin && url.pathname === "/";
-      } catch {
-        return false;
-      }
-    });
-    if (candidate !== undefined) {
-      return candidate;
+    const client = await self.clients.get(clientId);
+    if (client !== undefined) {
+      return client;
     }
     await new Promise((resolve) =>
       setTimeout(resolve, SHARE_TARGET_CLIENT_RETRY_MS),
@@ -594,9 +629,12 @@ async function resultingShareClient(event: FetchEvent): Promise<Client | null> {
 
 /**
  * Hands a shared image to the redirected document as an in-memory message.
- * Nothing is written to caches or storage: if no client appears, the share
- * is dropped. Validation here only bounds transport; the image intake
- * pipeline re-validates type and size like any chosen file.
+ * Nothing is written to caches or storage: the share is parked in worker
+ * memory behind a short deadline and dropped if no document claims it. The
+ * resulting-client push and the marker-driven pull consume the same slot,
+ * so each share is delivered at most once. Validation here only bounds
+ * transport; the image intake pipeline re-validates type and size like any
+ * chosen file.
  */
 async function deliverSharedImage(event: FetchEvent): Promise<void> {
   let file: File | null = null;
@@ -617,8 +655,14 @@ async function deliverSharedImage(event: FetchEvent): Promise<void> {
   if (file === null) {
     return;
   }
-  const client = await resultingShareClient(event);
-  client?.postMessage({ type: "SHARED_IMAGE", release: RELEASE_ID, file });
+  pendingShare = { file, expires: Date.now() + SHARE_TARGET_PENDING_TTL_MS };
+  // The resulting client stays authoritative; a parked pull is the fallback
+  // for engines that report no client id for the redirected document.
+  const client = (await resultingShareClient(event)) ?? takePendingPull();
+  if (client !== null && pendingShare?.file === file) {
+    pendingShare = null;
+    client.postMessage({ type: "SHARED_IMAGE", release: RELEASE_ID, file });
+  }
 }
 
 self.addEventListener("fetch", (event) => {
@@ -628,7 +672,12 @@ self.addEventListener("fetch", (event) => {
     url.pathname === SHARE_TARGET_PATH
   ) {
     if (event.request.method === "POST") {
-      event.respondWith(Response.redirect("/", 303));
+      event.respondWith(
+        new Response(null, {
+          status: 303,
+          headers: { Location: `/${SHARE_TARGET_PENDING_SEARCH}` },
+        }),
+      );
       event.waitUntil(deliverSharedImage(event));
       return;
     }
@@ -701,6 +750,25 @@ self.addEventListener("message", (event) => {
 
   if (data.type === "BEGIN_UPDATE_COORDINATION") {
     event.waitUntil(coordinateActivation());
+    return;
+  }
+
+  if (data.type === "PULL_SHARED_IMAGE" && event.source !== null) {
+    const file = takePendingShare();
+    if (file === null) {
+      // The share POST may still be parsing its multipart body; park the
+      // puller so delivery completes once the share is parked.
+      pendingPull = {
+        source: event.source,
+        expires: Date.now() + SHARE_TARGET_PENDING_TTL_MS,
+      };
+      return;
+    }
+    event.source.postMessage({
+      type: "SHARED_IMAGE",
+      release: RELEASE_ID,
+      file,
+    });
     return;
   }
 

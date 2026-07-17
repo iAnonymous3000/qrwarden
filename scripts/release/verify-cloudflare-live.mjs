@@ -13,6 +13,7 @@ const RELEASE_ID = /^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\+[
 const VERSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const WORKER_NAME = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const MAX_FAILURE_BODY_BYTES = 64 * 1024;
+const REPORTING_HEADER_NAMES = ["nel", "report-to", "reporting-endpoints"];
 
 function normalizeHeaderValue(value) {
   return value.trim().replace(/[\t ]+/gu, " ");
@@ -70,7 +71,7 @@ export function parseHeaderRules(source) {
   for (const [index, line] of source.split("\n").entries()) {
     if (line.trim() === "" || line.trimStart().startsWith("#")) continue;
     if (!/^\s/u.test(line)) {
-      if (!/^\/(?:[A-Za-z0-9._~-]+\/)*(?:[A-Za-z0-9._~-]+|\*)?$/u.test(line)) {
+      if (!/^\/(?:[A-Za-z0-9._~-]+\/)*(?:[A-Za-z0-9._~-]+|\*[A-Za-z0-9._~-]*)?$/u.test(line)) {
         throw new Error(`unsupported _headers route at line ${index + 1}`);
       }
       current = { pattern: line, headers: [] };
@@ -97,8 +98,15 @@ export function parseHeaderRules(source) {
 
 function routeMatches(pattern, pathname) {
   if (pattern === "/*") return true;
-  if (pattern.endsWith("*")) return pathname.startsWith(pattern.slice(0, -1));
-  return pathname === pattern;
+  const splat = pattern.indexOf("*");
+  if (splat === -1) return pathname === pattern;
+  const prefix = pattern.slice(0, splat);
+  const suffix = pattern.slice(splat + 1);
+  return (
+    pathname.length >= prefix.length + suffix.length &&
+    pathname.startsWith(prefix) &&
+    pathname.endsWith(suffix)
+  );
 }
 
 export function expectedHeadersForPath(rules, pathname) {
@@ -316,6 +324,13 @@ export async function verifyProbeResponse({ probe, response }) {
   for (const name of probe.forbiddenHeaders ?? []) {
     if (response.headers.has(name)) {
       throw new Error(`${probe.pathname} returned forbidden ${name}`);
+    }
+  }
+  for (const name of REPORTING_HEADER_NAMES) {
+    if (response.headers.has(name) && probe.expectedHeaders?.has(name) !== true) {
+      throw new Error(
+        `${probe.pathname} returned reporting header ${name}; opt out of Network Error Logging in the Cloudflare dashboard — verification fails closed until live responses stop advertising reporting endpoints`,
+      );
     }
   }
   if (probe.expectedBody !== undefined) {

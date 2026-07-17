@@ -254,6 +254,10 @@ test("scans an image locally and requires two-step review", async ({ page }) => 
   const dialog = page.getByRole("dialog", { name: "Open this link?" });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("http://127.0.0.1:8080");
+  await expect(dialog).toContainText(COPY.confirmFullUrlLabel);
+  await expect(dialog.locator(".confirm-full-url bdi")).toHaveText(
+    "http://127.0.0.1:8080/review?token=hidden#part",
+  );
   expect(
     await dialog.evaluate((element) => ({
       focusInside: element.contains(document.activeElement),
@@ -378,7 +382,7 @@ test("keeps information views in-memory and exposes privacy limits", async ({
   await expect(page.getByText(expectedInstallCopy, { exact: true })).toBeVisible();
   await expect(page.getByText(expectedSourceRepository, { exact: true })).toBeVisible();
   await expect(
-    page.getByText("Not configured in this development build", { exact: true }),
+    page.getByText(COPY.notConfiguredValue, { exact: true }),
   ).toHaveCount(3);
   await expect(page.locator("body")).not.toContainText("<SET_");
 
@@ -820,6 +824,68 @@ test("uses field-specific controls for sensitive multi-code contents", async ({ 
     "false",
   );
   await expect(passwordRow.getByRole("button", { name: "Copy password" })).toHaveCount(0);
+});
+
+test("confirms copies beside the clicked button and re-announces repeats", async ({
+  page,
+}) => {
+  // Deterministic clipboard sink: the broker's liveness guards are unit
+  // tested; this flow exercises the on-screen confirmation and the
+  // always-mounted announcement region.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.resolve() },
+    });
+  });
+  await gotoControlled(page);
+
+  const liveRegion = page.locator('main p.visually-hidden[role="status"]');
+  await expect(liveRegion).toBeAttached();
+
+  await page.locator('input[type="file"]').setInputFiles(fixture);
+  await expect(
+    page.getByRole("heading", { name: "Review before opening." }),
+  ).toBeVisible({ timeout: 15_000 });
+
+  const hostRow = page.locator(".field-row").filter({ hasText: "Destination host" });
+  const copyHost = hostRow.getByRole("button", { name: "Copy destination host" });
+  await copyHost.click();
+  await expect(hostRow.locator(".copy-feedback")).toHaveText(COPY.copied);
+  await expect(liveRegion).toHaveText(COPY.copied);
+
+  // A repeat copy of the same value must still mutate the live region's
+  // subtree so assistive technology re-announces the identical message.
+  await page.evaluate(() => {
+    const region = document.querySelector('main p.visually-hidden[role="status"]');
+    if (region === null) throw new Error("live region missing");
+    const counter = { mutations: 0 };
+    (window as Window & { __copyMutations?: { mutations: number } }).__copyMutations =
+      counter;
+    new MutationObserver(() => {
+      counter.mutations += 1;
+    }).observe(region, { childList: true, subtree: true, characterData: true });
+  });
+  await copyHost.click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as Window & { __copyMutations?: { mutations: number } })
+            .__copyMutations?.mutations ?? 0,
+      ),
+    )
+    .toBeGreaterThan(0);
+  await expect(hostRow.locator(".copy-feedback")).toHaveText(COPY.copied);
+
+  const portRow = page.locator(".field-row").filter({ hasText: "Port" });
+  await portRow.getByRole("button", { name: "Copy port" }).click();
+  await expect(portRow.locator(".copy-feedback")).toHaveText(COPY.copied);
+  await expect(hostRow.locator(".copy-feedback")).toHaveCount(0);
+
+  await page.getByRole("button", { name: COPY.copyReportButton }).click();
+  await expect(page.locator(".copy-status")).toHaveText(COPY.copied);
+  await expect(portRow.locator(".copy-feedback")).toHaveCount(0);
 });
 
 test("fails closed when a selection canvas cannot acquire a 2D context", async ({

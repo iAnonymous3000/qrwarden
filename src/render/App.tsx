@@ -30,6 +30,12 @@ import { WorkState } from "../app/workState";
 import { CameraController, type CameraProblem } from "../camera/controller";
 import { CameraDecoderAdapter } from "../camera/decoderAdapter";
 import { COPY } from "../copy";
+import {
+  ENGLISH_EVIDENCE_LANG,
+  translateFieldLabel,
+  translateSignalTitle,
+} from "../copy/evidence";
+import { APP_LOCALE } from "../copy/locale";
 import type {
   DecoderOutcome,
   DetectionResult,
@@ -122,10 +128,24 @@ const EMPTY_CAMERA_UI: CameraUi = Object.freeze({
 
 const DEVELOPMENT_COMMIT = "0000000000000000000000000000000000000000";
 
+// Copy feedback names its target so the confirmation renders beside the
+// button that was clicked; the field namespace keeps ids from colliding
+// with the whole-report target.
+const COPY_REPORT_TARGET = "report";
+const COPY_FEEDBACK_CLEAR_MS = 4000;
+
+interface CopyFeedback {
+  readonly target: string;
+  readonly status: ClipboardStatus;
+  readonly nonce: number;
+}
+
+function copyFeedbackText(status: ClipboardStatus): string {
+  return status === "copied" ? COPY.copied : COPY.copyFailed;
+}
+
 function releaseValue(value: string): string {
-  return /^<SET_[A-Z0-9_]+>$/u.test(value)
-    ? "Not configured in this development build"
-    : value;
+  return /^<SET_[A-Z0-9_]+>$/u.test(value) ? COPY.notConfiguredValue : value;
 }
 
 function sourceRepositorySegments(value: string): readonly string[] {
@@ -385,12 +405,14 @@ function FieldValue({
 
 function ConfirmationDialog({
   destination,
+  canonicalHref,
   locked,
   returnFocus,
   onOpen,
   onCancel,
 }: {
   destination: string;
+  canonicalHref: string;
   locked: boolean;
   returnFocus: HTMLElement | null;
   onOpen: (event: MouseEvent) => void;
@@ -428,6 +450,10 @@ function ConfirmationDialog({
       <h2 id="confirm-title">{COPY.confirmHeading}</h2>
       <div id="confirm-description">
         <p>{COPY.confirmBody(destination)}</p>
+        <p class="confirm-full-url">
+          <span>{COPY.confirmFullUrlLabel}</span>
+          <bdi dir="auto">{canonicalHref}</bdi>
+        </p>
         <p>{COPY.launchNotice}</p>
       </div>
       <div class="dialog-actions">
@@ -463,7 +489,9 @@ export function App(props: AppProps) {
   const [locked, setLocked] = useState(props.initialLocked);
   const lockedRef = useRef(props.initialLocked);
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
-  const [copyStatus, setCopyStatus] = useState<ClipboardStatus | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<CopyFeedback | null>(null);
+  const copyTargetRef = useRef<string>(COPY_REPORT_TARGET);
+  const copyNonceRef = useRef(0);
   const [confirmation, setConfirmation] =
     useState<OpenConfirmation<AnalysisReport> | null>(null);
   const [updateActivationFeedback, setUpdateActivationFeedback] =
@@ -499,6 +527,15 @@ export function App(props: AppProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (copyFeedback === null) return;
+    const timer = window.setTimeout(
+      () => setCopyFeedback(null),
+      COPY_FEEDBACK_CLEAR_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [copyFeedback]);
+
   useLayoutEffect(() => {
     document.title = documentTitleForView(view.kind);
     const previousKind = previousViewKindRef.current;
@@ -532,6 +569,7 @@ export function App(props: AppProps) {
     }
     if (previous.kind !== next.kind) {
       window.scrollTo(0, 0);
+      setCopyFeedback(null);
     }
     viewRef.current = next;
     setView(next);
@@ -553,7 +591,16 @@ export function App(props: AppProps) {
         reports,
         getWorkGeneration: () => work.generation,
         isLocked: () => lockedRef.current,
-        onStatus: setCopyStatus,
+        onStatus: (status) => {
+          // A fresh nonce per settlement forces a new DOM text node in the
+          // live region, so repeat copies of the same value re-announce.
+          copyNonceRef.current += 1;
+          setCopyFeedback({
+            target: copyTargetRef.current,
+            status,
+            nonce: copyNonceRef.current,
+          });
+        },
       }),
     [reports, work],
   );
@@ -563,7 +610,7 @@ export function App(props: AppProps) {
     clipboard.invalidate();
     setConfirmation(null);
     setRevealed(new Set());
-    setCopyStatus(null);
+    setCopyFeedback(null);
     transitionView({ kind: "result", active: reports.activate(report) });
   };
 
@@ -640,7 +687,7 @@ export function App(props: AppProps) {
     clipboard.invalidate();
     setConfirmation(null);
     setRevealed(new Set());
-    setCopyStatus(null);
+    setCopyFeedback(null);
     setCameraUi(EMPTY_CAMERA_UI);
     transitionView({ kind: "home" });
   };
@@ -660,7 +707,7 @@ export function App(props: AppProps) {
           clipboard.invalidate();
           setConfirmation(null);
           setRevealed(new Set());
-          setCopyStatus(null);
+          setCopyFeedback(null);
         }
       }
       if (detail.sharedImage !== undefined) {
@@ -863,7 +910,7 @@ export function App(props: AppProps) {
     reports.drop();
     setConfirmation(null);
     setRevealed(new Set());
-    setCopyStatus(null);
+    setCopyFeedback(null);
     setCameraUi(EMPTY_CAMERA_UI);
     setUpdateActivationFeedback((current) =>
       current === "busy" ? null : current,
@@ -920,7 +967,7 @@ export function App(props: AppProps) {
           </span>
         </button>
         <div class="header-actions">
-          <nav aria-label="Information">
+          <nav aria-label={COPY.navInfoLabel}>
             <button
               type="button"
               aria-current={view.kind === "privacy" ? "page" : undefined}
@@ -1357,24 +1404,27 @@ export function App(props: AppProps) {
                 <section aria-labelledby="signals-title">
                   <h2 id="signals-title">{COPY.signalsHeading}</h2>
                   <ul class="signal-list">
-                    {report.signals.map((signal) => (
-                      <li class={`signal-${signal.level}`} key={signal.code}>
-                        <span aria-hidden="true">{signal.level === "review" ? "!" : "i"}</span>
-                        <div>
-                          <small class="signal-level">
-                            {signal.level === "review"
-                              ? COPY.signalNeedsReview
-                              : COPY.signalContext}
-                          </small>
-                          <strong>{signal.title}</strong>
-                          <p>{signal.detail}</p>
-                          <details class="signal-explainer">
-                            <summary>{COPY.signalExplainerSummary}</summary>
-                            <p>{SIGNAL_GLOSSARY[signal.code].explanation}</p>
-                          </details>
-                        </div>
-                      </li>
-                    ))}
+                    {report.signals.map((signal) => {
+                      const title = translateSignalTitle(signal.title);
+                      return (
+                        <li class={`signal-${signal.level}`} key={signal.code}>
+                          <span aria-hidden="true">{signal.level === "review" ? "!" : "i"}</span>
+                          <div>
+                            <small class="signal-level">
+                              {signal.level === "review"
+                                ? COPY.signalNeedsReview
+                                : COPY.signalContext}
+                            </small>
+                            <strong lang={title.lang}>{title.text}</strong>
+                            <p lang={ENGLISH_EVIDENCE_LANG}>{signal.detail}</p>
+                            <details class="signal-explainer">
+                              <summary>{COPY.signalExplainerSummary}</summary>
+                              <p>{SIGNAL_GLOSSARY[signal.code].explanation}</p>
+                            </details>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </section>
               ) : null}
@@ -1386,15 +1436,18 @@ export function App(props: AppProps) {
                     const revealRequested = revealed.has(field.id);
                     const isRevealed = revealRequested && !locked;
                     const valueId = `field-value-${field.id}`;
+                    const fieldLabel = translateFieldLabel(field.label);
+                    const sentenceLabel = fieldLabelForSentence(fieldLabel.text);
+                    const copyTarget = `field:${field.id}`;
                     return (
                       <div class="field-row" key={field.id}>
                         <div class="field-heading">
-                          <span>{field.label}</span>
+                          <span lang={fieldLabel.lang}>{fieldLabel.text}</span>
                           {field.sensitive ? <span class="sensitive-chip">{COPY.sensitiveChip}</span> : null}
                         </div>
                         <FieldValue
                           field={field}
-                          label={field.label}
+                          label={fieldLabel.text}
                           revealRequested={revealRequested}
                           locked={locked}
                           valueId={valueId}
@@ -1407,7 +1460,7 @@ export function App(props: AppProps) {
                               disabled={locked}
                               aria-controls={valueId}
                               aria-expanded={isRevealed}
-                              aria-label={`${isRevealed ? COPY.mask : COPY.reveal} ${fieldLabelForSentence(field.label)}`}
+                              aria-label={`${isRevealed ? COPY.mask : COPY.reveal} ${sentenceLabel}`}
                               onClick={() => {
                                 setRevealed((current) => {
                                   const next = new Set(current);
@@ -1425,12 +1478,18 @@ export function App(props: AppProps) {
                               type="button"
                               class="text-button"
                               disabled={locked}
-                              onClick={(event) =>
-                                clipboard.copy(event, view.active, field)
-                              }
+                              onClick={(event) => {
+                                copyTargetRef.current = copyTarget;
+                                clipboard.copy(event, view.active, field);
+                              }}
                             >
-                              {COPY.copyField(fieldLabelForSentence(field.label))}
+                              {COPY.copyField(sentenceLabel)}
                             </button>
+                          ) : null}
+                          {copyFeedback !== null && copyFeedback.target === copyTarget ? (
+                            <span class="copy-feedback" aria-hidden="true">
+                              {copyFeedbackText(copyFeedback.status)}
+                            </span>
                           ) : null}
                         </div>
                         {field.omittedCount !== undefined && field.omittedCount > 0 ? (
@@ -1446,11 +1505,6 @@ export function App(props: AppProps) {
                     );
                   })}
                 </div>
-                {copyStatus !== null ? (
-                  <p class="copy-status" role="status">
-                    {copyStatus === "copied" ? COPY.copied : COPY.copyFailed}
-                  </p>
-                ) : null}
               </section>
               {report.kind === "web-url" ? (
                 <section class="limitations" aria-labelledby="limits-title">
@@ -1489,21 +1543,31 @@ export function App(props: AppProps) {
                 type="button"
                 class="secondary-button action-button"
                 disabled={locked}
-                onClick={(event) =>
+                onClick={(event) => {
+                  copyTargetRef.current = COPY_REPORT_TARGET;
                   clipboard.copyReport(event, view.active, (live) =>
                     reportAsText({
                       report: live,
                       kindLabel: kindLabel(live),
                       statusHeading: statusForReport(live).heading,
                     }),
-                  )
-                }
+                  );
+                }}
               >
                 {COPY.copyReportButton}
               </button>
-              {confirmation !== null && destination !== null ? (
+              {copyFeedback !== null &&
+              copyFeedback.target === COPY_REPORT_TARGET ? (
+                <p class="copy-status" aria-hidden="true">
+                  {copyFeedbackText(copyFeedback.status)}
+                </p>
+              ) : null}
+              {confirmation !== null &&
+              destination !== null &&
+              report.canonicalHref !== undefined ? (
                 <ConfirmationDialog
                   destination={destination}
+                  canonicalHref={report.canonicalHref}
                   locked={locked}
                   returnFocus={confirmationTriggerRef.current}
                   onOpen={(event) => {
@@ -1562,6 +1626,9 @@ export function App(props: AppProps) {
                   {COPY.glossaryLink}
                 </button>
               </p>
+              {APP_LOCALE === "en" ? null : (
+                <p class="microcopy">{COPY.aboutEnglishEvidenceNote}</p>
+              )}
               <section class="install-card">
                 <h2>{guidance.heading}</h2>
                 <p>{guidance.body}</p>
@@ -1588,21 +1655,21 @@ export function App(props: AppProps) {
               <details class="technical-details">
                 <summary>{COPY.technicalDetails}</summary>
                 <dl class="about-grid">
-                  <div><dt>Application release</dt><dd>{displayedReleaseId(props.releaseId)}</dd></div>
-                  <div><dt>Analyzer</dt><dd>{ANALYZER_VERSION}</dd></div>
-                  <div><dt>PSL snapshot</dt><dd>{ANALYZER_DATA_STATUS.publicSuffix.captured}</dd></div>
-                  <div><dt>IANA snapshot</dt><dd>{ANALYZER_DATA_STATUS.ianaSpecialPurpose.captured}</dd></div>
-                  <div><dt>Unicode</dt><dd>{ANALYZER_DATA_STATUS.unicodeSecurity.unicodeVersion}</dd></div>
-                  <div><dt>First-party code license</dt><dd>AGPL-3.0-or-later</dd></div>
-                  <div><dt>Bundled data licenses</dt><dd>MPL-2.0 · CC0-1.0 · Unicode-3.0</dd></div>
-                  <div><dt>Release key fingerprint</dt><dd><bdi>{releaseValue(props.signingFingerprint)}</bdi></dd></div>
-                  <div><dt>Release public key</dt><dd><bdi>{releaseValue(props.signingPublicKey)}</bdi></dd></div>
-                  <div><dt>DNS trust anchor</dt><dd><bdi>{releaseValue(props.dnsKeyOwner)}</bdi></dd></div>
+                  <div><dt>{COPY.aboutReleaseLabel}</dt><dd>{displayedReleaseId(props.releaseId)}</dd></div>
+                  <div><dt>{COPY.analyzerLabel}</dt><dd>{ANALYZER_VERSION}</dd></div>
+                  <div><dt>{COPY.aboutPslSnapshotLabel}</dt><dd>{ANALYZER_DATA_STATUS.publicSuffix.captured}</dd></div>
+                  <div><dt>{COPY.aboutIanaSnapshotLabel}</dt><dd>{ANALYZER_DATA_STATUS.ianaSpecialPurpose.captured}</dd></div>
+                  <div><dt>{COPY.aboutUnicodeLabel}</dt><dd>{ANALYZER_DATA_STATUS.unicodeSecurity.unicodeVersion}</dd></div>
+                  <div><dt>{COPY.aboutCodeLicenseLabel}</dt><dd>AGPL-3.0-or-later</dd></div>
+                  <div><dt>{COPY.aboutDataLicensesLabel}</dt><dd>MPL-2.0 · CC0-1.0 · Unicode-3.0</dd></div>
+                  <div><dt>{COPY.aboutFingerprintLabel}</dt><dd><bdi>{releaseValue(props.signingFingerprint)}</bdi></dd></div>
+                  <div><dt>{COPY.aboutPublicKeyLabel}</dt><dd><bdi>{releaseValue(props.signingPublicKey)}</bdi></dd></div>
+                  <div><dt>{COPY.aboutDnsAnchorLabel}</dt><dd><bdi>{releaseValue(props.dnsKeyOwner)}</bdi></dd></div>
                   <div>
-                    <dt>Source</dt>
+                    <dt>{COPY.aboutSourceLabel}</dt>
                     <dd class="source-repository">
                       {props.sourceRepository === null ? (
-                        "Not configured in this development build"
+                        COPY.notConfiguredValue
                       ) : (
                         <bdi>
                           {sourceRepositorySegments(props.sourceRepository).map((segment) => (
@@ -1646,6 +1713,20 @@ export function App(props: AppProps) {
             </div>
           </article>
         ) : null}
+
+        {/*
+          Always-mounted announcement region for copy results. The visible
+          confirmations render beside the button that was clicked and stay
+          out of the accessibility tree; the keyed span replaces its text
+          node on every copy so repeat copies re-announce reliably.
+        */}
+        <p class="visually-hidden" role="status">
+          {copyFeedback === null ? null : (
+            <span key={copyFeedback.nonce}>
+              {copyFeedbackText(copyFeedback.status)}
+            </span>
+          )}
+        </p>
       </main>
 
       <footer>

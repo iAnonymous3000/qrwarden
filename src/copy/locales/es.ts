@@ -2,9 +2,10 @@ import type { CopyDictionary } from "./en";
 
 /**
  * Spanish copy. Typed against the English dictionary so a missing, renamed,
- * or re-typed key fails the build. Analyzer evidence strings (signal titles
- * and details inside reports, field labels) intentionally remain English for
- * now; user guidance, statuses, and the glossary translate here.
+ * or re-typed key fails the build. Analyzer field labels and signal titles
+ * translate through the fieldLabels and signalTitles tables below; signal
+ * DETAIL sentences are parametric and intentionally remain English, marked
+ * lang="en" wherever they render.
  */
 export const ES_COPY: CopyDictionary = Object.freeze({
   brand: "QRWarden",
@@ -35,6 +36,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   confirmHeading: "¿Abrir este enlace?",
   confirmBody: (destination: string): string =>
     `Estás a punto de abrir ${destination}. Revisa los detalles de arriba antes de continuar.`,
+  confirmFullUrlLabel: "Dirección completa",
   cancel: "Cancelar",
   scanAnother: "Escanear otro código",
   chooseImage: "Elegir una imagen",
@@ -135,12 +137,16 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "QRWarden no pudo cambiar de cámara. El escaneo continúa con la cámara anterior.",
   credentialsExplanation: (host: string): string =>
     `El texto antes de @ no es el destino. El host real es ${host}.`,
+  installIphoneHeading: "iPhone o iPad",
   installIphone:
     "Abre Compartir, elige Añadir a pantalla de inicio, deja activado Abrir como app web cuando aparezca y luego abre QRWarden desde su icono de la pantalla de inicio con conexión. Espera a ver Listo sin conexión antes de usarlo sin internet.",
+  installMacHeading: "Safari en Mac",
   installMac:
     "Elige Archivo > Añadir al Dock, abre QRWarden desde el Dock con conexión y espera a ver Listo sin conexión.",
+  installTestedHeading: "Instalar QRWarden",
   installTested:
     "Usa la opción Instalar QRWarden de tu navegador, abre la aplicación instalada con conexión y espera a ver Listo sin conexión.",
+  installUnavailableHeading: "Guía no disponible",
   installUnavailable:
     "No hay guía de instalación disponible para este navegador. Aun así puedes usar QRWarden en esta pestaña y prepararlo para el uso sin conexión.",
   pasteHint: "También puedes pegar o soltar una imagen en cualquier parte de esta página.",
@@ -149,8 +155,17 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   copyReportButton: "Copiar informe",
   reportTitle: "Informe de inspección de QRWarden",
   reportHiddenValue: "(oculto)",
+  reportKindLabel: "Tipo",
+  reportStatusLabel: "Estado",
+  reportSignalsLabel: "Señales",
+  reportTruncatedNote: "(valor truncado para mostrarlo)",
+  limitationContentOnly:
+    "El análisis usa solo el contenido incluido en el código QR.",
+  limitationNoVisit:
+    "QRWarden no visita el destino ni comprueba reputación, DNS, TLS, redirecciones, antigüedad del dominio ni el contenido de la página.",
   skipToContent: "Saltar al contenido",
   brandHomeLabel: "Inicio de QRWarden",
+  navInfoLabel: "Información",
   navPrivacy: "Privacidad",
   navAbout: "Acerca de",
   themeToggleLabel: "Oscuro",
@@ -235,6 +250,20 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   useDeviceSetting: "Usar el ajuste del dispositivo",
   usingDeviceSetting: "Usando el ajuste del dispositivo",
   technicalDetails: "Detalles técnicos y de versión",
+  aboutReleaseLabel: "Versión de la aplicación",
+  analyzerLabel: "Analizador",
+  aboutPslSnapshotLabel: "Instantánea de la PSL",
+  aboutIanaSnapshotLabel: "Instantánea de IANA",
+  aboutUnicodeLabel: "Unicode",
+  aboutCodeLicenseLabel: "Licencia del código propio",
+  aboutDataLicensesLabel: "Licencias de los datos incluidos",
+  aboutFingerprintLabel: "Huella de la clave de versión",
+  aboutPublicKeyLabel: "Clave pública de versión",
+  aboutDnsAnchorLabel: "Ancla de confianza DNS",
+  aboutSourceLabel: "Código fuente",
+  notConfiguredValue: "No configurado en esta compilación de desarrollo",
+  aboutEnglishEvidenceNote:
+    "Los detalles técnicos de las señales se muestran actualmente en inglés.",
   glossaryEyebrow: "Glosario de señales",
   glossaryTitle: "Qué significa cada señal",
   glossaryLead:
@@ -249,6 +278,76 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   titlePrivacy: "Privacidad",
   titleAbout: "Acerca de",
   titleGlossary: "Glosario de señales",
+  fieldLabels: Object.freeze({
+    "Action": "Acción",
+    "Address": "Dirección",
+    "Byte count": "Cantidad de bytes",
+    "Calendar": "Calendario",
+    "Complete bootstrap payload": "Carga útil completa de arranque",
+    "Complete setup payload": "Carga útil completa de configuración",
+    "Contact": "Contacto",
+    "Coordinates": "Coordenadas",
+    "Decoded content": "Contenido decodificado",
+    "Description": "Descripción",
+    "Destination category": "Categoría del destino",
+    "Destination host": "Host de destino",
+    "Email": "Correo electrónico",
+    "Email BCC": "CCO del correo",
+    "Email CC": "CC del correo",
+    "Email body": "Cuerpo del correo",
+    "Email recipient": "Destinatario del correo",
+    "Email subject": "Asunto del correo",
+    "Ends": "Termina",
+    "Event": "Evento",
+    "Fragment": "Fragmento",
+    "Fragment names": "Nombres del fragmento",
+    "Hexadecimal preview": "Vista previa hexadecimal",
+    "Hidden network": "Red oculta",
+    "Location": "Ubicación",
+    "Message body": "Cuerpo del mensaje",
+    "Message recipient": "Destinatario del mensaje",
+    "Name": "Nombre",
+    "Name components": "Componentes del nombre",
+    "Network name (SSID)": "Nombre de red (SSID)",
+    "Note": "Nota",
+    "OTP setup type": "Tipo de configuración OTP",
+    "Organization": "Organización",
+    "Original QR content": "Contenido original del código QR",
+    "Password": "Contraseña",
+    "Path": "Ruta",
+    "Payment": "Pago",
+    "Port": "Puerto",
+    "Provisioning type": "Tipo de aprovisionamiento",
+    "QR content": "Contenido del código QR",
+    "Query names": "Nombres de la consulta",
+    "Registrable domain": "Dominio registrable",
+    "Security type": "Tipo de seguridad",
+    "Starts": "Comienza",
+    "Structured format": "Formato estructurado",
+    "Telephone": "Teléfono",
+    "Telephone number": "Número de teléfono",
+    "Text": "Texto",
+    "Title": "Cargo",
+    "URI scheme": "Esquema de URI",
+    "Unicode host": "Host Unicode",
+  }),
+  signalTitles: Object.freeze({
+    "Internationalized domain name": "Nombre de dominio internacionalizado",
+    "Trailing-dot host": "Host con punto final",
+    "Unencrypted HTTP": "HTTP sin cifrar",
+    "IP-address destination": "Destino con dirección IP",
+    "Local or special-purpose destination": "Destino local o de propósito especial",
+    "Non-default port": "Puerto no predeterminado",
+    "Link-shortener destination": "Destino en acortador de enlaces",
+    "Mixed writing systems": "Sistemas de escritura mezclados",
+    "ASCII-like internationalized label": "Etiqueta internacionalizada similar a ASCII",
+    "Hidden or control character": "Carácter oculto o de control",
+    "Material browser rewrite": "Reescritura material del navegador",
+    "Text before @ is not the destination": "El texto antes de @ no es el destino",
+    "Forbidden character in the address authority":
+      "Carácter prohibido en la autoridad de la dirección",
+    "Web address cannot be opened": "La dirección web no puede abrirse",
+  }),
   kindLabels: Object.freeze({
     "web-url": "Enlace web",
     wifi: "Datos de Wi-Fi",
