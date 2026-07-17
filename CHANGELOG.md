@@ -29,6 +29,9 @@ All notable changes to QRWarden are documented here. Release headings use exact 
 - An offline signal glossary view plus per-signal "What this means" explainers, exhaustively typed against the analyzer signal codes.
 - Locale-negotiated Spanish interface copy behind a typed dictionary contract, with hash-pinned copy sources for both languages and a Spanish end-to-end browser flow.
 - Brave-on-iOS camera guidance driven by the injected `navigator.brave` marker, and a browser regression suite for Brave-style instrumentation, missing service workers, and denied registrations.
+- A static no-JavaScript explanation on the application page, a documented browser-support statement, an RFC 9116 `security.txt` served from the closed artifact set, and contributor onboarding docs (contributing guide, code of conduct, support routes, issue contact links).
+- Type-aware TypeScript linting across application, worker, and test sources through the pinned typescript-eslint toolchain, alongside the existing compiler and source-ban gates.
+- CI now uploads Playwright traces, screenshots, and videos for failed browser runs so cross-engine failures are diagnosable from the workflow artifacts.
 
 ### Changed
 
@@ -44,6 +47,8 @@ All notable changes to QRWarden are documented here. Release headings use exact 
 
 ### Fixed
 
+- A first visit no longer reloads the page over live work: the first-install control handoff waits for the runtime to go idle before its fallback reload, and browser tests settle the handoff before starting flows.
+- The served Strict-Transport-Security policy now includes `includeSubDomains` and `preload` across the header, verification, baseline, and self-hosting contracts.
 - Camera startup no longer stalls when orientation changes before metadata is ready, and stale overlapping camera switches cannot tear down the newest stream.
 - Camera controls now identify the active track rather than assuming enumeration order, and iOS camera selectors avoid focus zoom.
 - The locked application shell renders immediately while service-worker verification is pending instead of leaving slow mobile launches blank.

@@ -1,5 +1,7 @@
 # Threat model
 
+Last reviewed: 2026-07-16 · Applies to: v0.1.0 (pre-release)
+
 ## Security objective
 
 QRWarden lets a person inspect untrusted QR input without that input causing navigation, network access, executable markup, resource loading, persistent retention, or an automatic privileged action. It reports observable properties and never claims a destination is safe, malicious, trusted, clean, verified, or low/high risk.

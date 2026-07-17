@@ -1,5 +1,7 @@
 # Security policy
 
+Last reviewed: 2026-07-16 · Applies to: v0.1.0 (pre-release)
+
 ## Private reporting
 
 Use GitHub's private vulnerability reporting form: open the repository's **Security** tab, choose **Advisories**, then **Report a vulnerability**. Do not file a public issue or pull request. Repository administrators must enable private vulnerability reporting as soon as public visibility makes it available, subscribe active maintainers to security-alert notifications, and verify the form from a non-admin account before linking or promoting the repository.

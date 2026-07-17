@@ -4,7 +4,7 @@ Releases fail closed. `npm run release:validate` rejects placeholder values for 
 
 ## Candidate gate
 
-1. Require protected `main`, a clean signed commit, exact tool/action/container pins, matching version metadata, current PSL/IANA snapshots, reviewed Unicode data, passing CI/security/accessibility/browser/offline/no-egress gates, and successful `npm run release:validate`.
+1. Require protected `main`, a clean signed commit, exact tool/action/container pins, matching version metadata, current PSL/IANA snapshots, reviewed Unicode data, passing CI/security/browser/offline/no-egress gates, and successful `npm run release:validate`. Accessibility verification today consists of the hand-written assertions in `tests/browser/` (forced-colors rendering, the skip link, and view focus handoff) plus manual keyboard, screen-reader, and reduced-motion checks; no automated axe-style scanner runs in CI.
 2. Build twice in isolated pinned environments and compare every unsigned byte. Verify decoder package integrity and the locked reader WASM SHA-256 `6a858c01e076bab3a1bd413e4f2cf5e5e45f819a0d9441d83c66993bc48ed38f`.
 3. Produce the normalized source/dist archives, dist-files manifest, archive manifest, CycloneDX SBOM, license report, and version changelog. Verify the closed artifact contract, headers, MIME, cache, CSP, release marker, 2 MiB precache limit, and absence of source maps/absolute paths.
 4. Create and verify GitHub build/SBOM attestations tied to exact digests and protected workflow identity. Attestations do not replace Minisign.
@@ -26,4 +26,4 @@ Only after live verification succeeds should maintainers publish the immutable G
 
 ## Stable v1 gate
 
-Stable v1 additionally requires name and domain clearance, independent security review, physical current and previous platform testing with exact builds, reproducibility proof, signing ceremony, rollback and watchdog drills, permission and lifecycle tests, a 20-minute camera soak, 100 sequential image scans, and all documented acceptance gates on the exact signed candidate.
+Stable v1 additionally requires name and domain clearance, independent security review, automated axe-style accessibility scanning wired into CI, physical current and previous platform testing with exact builds, reproducibility proof, signing ceremony, rollback and watchdog drills, permission and lifecycle tests, a 20-minute camera soak, 100 sequential image scans, and all documented acceptance gates on the exact signed candidate.
