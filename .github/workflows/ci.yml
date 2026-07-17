@@ -71,3 +71,12 @@ jobs:
 
       - name: Run production-serving browser checks
         run: npm run test:browser
+
+      - name: Upload failure traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: playwright-failure-artifacts
+          path: test-results/
+          retention-days: 14
+          if-no-files-found: ignore

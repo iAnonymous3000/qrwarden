@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { gotoControlled } from "./support";
 
 import { COPY } from "../../src/copy";
 
@@ -78,7 +79,7 @@ async function expectTouchTargets(page: Page, label: string): Promise<void> {
 test("keeps home and information views usable on mobile touch screens", async ({
   page,
 }) => {
-  await page.goto("/");
+  await gotoControlled(page);
   await expect(
     page.getByRole("heading", { name: COPY.primaryMessage }),
   ).toBeVisible();
@@ -119,7 +120,7 @@ test("keeps home and information views usable on mobile touch screens", async ({
 test("reflows review, confirmation, and multi-code selection at mobile widths", async ({
   page,
 }) => {
-  await page.goto("/");
+  await gotoControlled(page);
   await expect(page.getByText(COPY.readyOfflineHeading, { exact: true })).toBeVisible({
     timeout: 20_000,
   });
@@ -214,7 +215,7 @@ test("keeps the camera surface reachable in portrait and short landscape", async
     });
   });
 
-  await page.goto("/");
+  await gotoControlled(page);
   await page.getByRole("button", { name: "Scan with camera" }).click();
   await expect(
     page.getByRole("heading", { name: "Hold the QR code inside the frame" }),

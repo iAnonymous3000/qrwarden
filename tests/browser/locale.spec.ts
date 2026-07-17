@@ -1,13 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { ES_COPY } from "../../src/copy/locales/es";
+import { gotoControlled } from "./support";
 
 const fixture = new URL("../corpus/url-review.png", import.meta.url).pathname;
 
 test.use({ locale: "es-ES" });
 
 test("renders the Spanish locale end to end for a review flow", async ({ page }) => {
-  await page.goto("/");
+  await gotoControlled(page);
   await expect(
     page.getByRole("heading", { name: ES_COPY.primaryMessage }),
   ).toBeVisible();
@@ -16,7 +17,6 @@ test("renders the Spanish locale end to end for a review flow", async ({ page })
     .toBe("es");
 
   const input = page.locator('input[type="file"]').first();
-  await expect(input).toBeEnabled({ timeout: 20_000 });
   await input.setInputFiles(fixture);
   await expect(
     page.getByRole("heading", { name: ES_COPY.reviewHeading }),

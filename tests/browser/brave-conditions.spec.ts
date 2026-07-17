@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { COPY } from "../../src/copy";
+import { gotoControlled } from "./support";
 
 const fixture = new URL("../corpus/url-review.png", import.meta.url).pathname;
 
@@ -42,7 +43,7 @@ test("decodes with Brave-style page instrumentation active", async ({ page }) =>
     } as typeof XMLHttpRequest.prototype.open;
   });
 
-  await page.goto("/");
+  await gotoControlled(page);
   await expect(
     page.getByRole("heading", { name: COPY.primaryMessage }),
   ).toBeVisible();
@@ -108,7 +109,7 @@ test("shows Brave-specific camera guidance when iOS Brave denies access", async 
     });
   });
 
-  await page.goto("/");
+  await gotoControlled(page);
   const scan = page.getByRole("button", { name: "Scan with camera" });
   await expect(scan).toBeEnabled({ timeout: 20_000 });
   await scan.click();

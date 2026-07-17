@@ -232,6 +232,7 @@ export class ServiceWorkerClient {
   #registration: ServiceWorkerRegistration | null = null;
   #firstInstall = false;
   #firstInstallInFlight: Promise<void> | null = null;
+  #firstInstallRecheckTimer: number | null = null;
   #reloadStarted = false;
   #lease: UpdateLease | null = null;
   #listenersInstalled = false;
@@ -450,7 +451,8 @@ export class ServiceWorkerClient {
     }
     this.#listenersInstalled = true;
     navigator.serviceWorker.addEventListener("message", (event) => {
-      this.#handleWorkerMessage(event);
+      // #handleWorkerMessage validates every field before acting on it.
+      this.#handleWorkerMessage(event as MessageEvent<WorkerMessage>);
     });
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       this.#resetRequiredQueryFailures();
@@ -458,7 +460,7 @@ export class ServiceWorkerClient {
       void this.#handleControllerChange();
     });
     window.addEventListener("pageshow", (event) => {
-      if ((event as PageTransitionEvent).persisted) {
+      if ((event).persisted) {
         this.#regateFromLifecycle();
       }
     });
@@ -499,6 +501,21 @@ export class ServiceWorkerClient {
     });
   }
 
+  // Rechecks bypass #regateFromLifecycle on purpose: a regate pulses the
+  // lock, which clears open confirmations and flickers controls — exactly
+  // the interruption the deferred reload is avoiding.
+  #scheduleFirstInstallRecheck(registration: ServiceWorkerRegistration): void {
+    if (this.#firstInstallRecheckTimer !== null || this.#reloadStarted) {
+      return;
+    }
+    this.#firstInstallRecheckTimer = window.setTimeout(() => {
+      this.#firstInstallRecheckTimer = null;
+      if (this.#firstInstall && !this.#reloadStarted) {
+        this.#startFirstInstall(registration);
+      }
+    }, QUERY_RETRY_MS);
+  }
+
   async #finishFirstInstall(
     registration: ServiceWorkerRegistration,
   ): Promise<void> {
@@ -527,6 +544,14 @@ export class ServiceWorkerClient {
         throw new DOMException("First install release mismatch", "SecurityError");
       }
       if (navigator.serviceWorker.controller === null) {
+        // clients.claim() usually hands this page to the verified worker
+        // without a navigation; the reload is only the fallback for losing
+        // that race. It must never land on top of live work, so while the
+        // runtime is busy keep rechecking quietly instead of reloading.
+        if (!this.#options.isIdle()) {
+          this.#scheduleFirstInstallRecheck(registration);
+          return;
+        }
         this.#guardedReload(this.#options.loadedRelease);
         return;
       }

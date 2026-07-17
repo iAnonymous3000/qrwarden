@@ -623,6 +623,73 @@ describe("service-worker release gate races", () => {
     await vi.waitFor(() => expect(states).toContain("ready"));
   });
 
+  it("defers the uncontrolled first-install reload until the runtime is idle", async () => {
+    vi.useFakeTimers();
+    const installing = new FakeWorker(null);
+    installing.state = "installing";
+    const active = new FakeWorker(readyState());
+    const harness = installHarness(null);
+    harness.serviceWorkers.getRegistration.mockResolvedValueOnce(undefined);
+    harness.registration.installing = installing;
+    let idle = false;
+    const reload = vi.fn();
+    const dropReport = vi.fn();
+    const client = createClient({ isIdle: () => idle, reload, dropReport });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "preparing",
+    });
+    harness.registration.active = active;
+    harness.registration.installing = null;
+    installing.transition("activated");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reload).not.toHaveBeenCalled();
+
+    // Still mid-scan at the first recheck: the reload keeps waiting.
+    await vi.advanceTimersByTimeAsync(500);
+    expect(reload).not.toHaveBeenCalled();
+
+    idle = true;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(reload).toHaveBeenCalledOnce();
+    expect(dropReport).not.toHaveBeenCalled();
+  });
+
+  it("finishes a deferred first install without reloading once claim lands", async () => {
+    vi.useFakeTimers();
+    const installing = new FakeWorker(null);
+    installing.state = "installing";
+    const active = new FakeWorker(readyState());
+    const harness = installHarness(null);
+    harness.serviceWorkers.getRegistration.mockResolvedValueOnce(undefined);
+    harness.registration.installing = installing;
+    const idle = false;
+    const reload = vi.fn();
+    const states: OfflineState[] = [];
+    const client = createClient({
+      isIdle: () => idle,
+      reload,
+      onState: (state) => states.push(state),
+    });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "preparing",
+    });
+    harness.registration.active = active;
+    harness.registration.installing = null;
+    installing.transition("activated");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reload).not.toHaveBeenCalled();
+
+    // clients.claim() hands over control while the deferral timer is pending.
+    harness.serviceWorkers.controller = active;
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.waitFor(() => expect(states).toContain("ready"));
+    expect(reload).not.toHaveBeenCalled();
+  });
+
   it("retries an empty registration left by a failed first install", async () => {
     const installing = new FakeWorker(null);
     installing.state = "installing";

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import { COPY } from "../../src/copy";
 import { THEME_STORAGE_KEY } from "../../src/render/theme";
+import { gotoControlled } from "./support";
 
 const fixture = new URL("../corpus/url-review.png", import.meta.url).pathname;
 const canaryFixture = new URL("../corpus/canary-url.png", import.meta.url).pathname;
@@ -75,7 +76,7 @@ test("follows the system theme and persists an explicit choice", async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "light" });
-  await page.goto("/");
+  await gotoControlled(page);
 
   const root = page.locator("html");
   const toggle = page.getByRole("button", { name: "Dark mode" });
@@ -157,7 +158,7 @@ test("keeps the skip link and view focus handoff keyboard-visible", async ({
   browserName,
   page,
 }) => {
-  await page.goto("/");
+  await gotoControlled(page);
   await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
   const skipLink = page.getByRole("link", { name: "Skip to content" });
   await expect(skipLink).toBeFocused();
@@ -173,7 +174,7 @@ test("keeps the skip link and view focus handoff keyboard-visible", async ({
 
 test("keeps the desktop headline balanced", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/");
+  await gotoControlled(page);
 
   const lineCount = await page.getByRole("heading", { name: COPY.primaryMessage }).evaluate(
     (heading) => {
@@ -188,7 +189,7 @@ test("keeps the desktop headline balanced", async ({ page }) => {
 test("preserves home controls in forced colors", async ({ browserName, page }) => {
   test.skip(browserName !== "chromium", "Forced-colors emulation is a Chromium contract.");
   await page.emulateMedia({ forcedColors: "active" });
-  await page.goto("/");
+  await gotoControlled(page);
 
   const sourceIcons = page.locator(".source-icon svg");
   await expect(sourceIcons).toHaveCount(2);
@@ -213,7 +214,7 @@ test("scans an image locally and requires two-step review", async ({ page }) => 
     }
   });
 
-  await page.goto("/");
+  await gotoControlled(page);
   await expect(
     page.getByRole("heading", {
       name: COPY.primaryMessage,
@@ -286,7 +287,7 @@ test("scans an image locally and requires two-step review", async ({ page }) => 
 });
 
 test("drops a result on a non-persisted pagehide", async ({ page }) => {
-  await page.goto("/");
+  await gotoControlled(page);
   await page.locator('input[type="file"]').setInputFiles(fixture);
   await expect(
     page.getByRole("heading", { name: "Review before opening." }),
@@ -336,7 +337,7 @@ test("keeps information views in-memory and exposes privacy limits", async ({
   page,
   browserName,
 }) => {
-  await page.goto("/");
+  await gotoControlled(page);
   await page.getByRole("button", { name: "Privacy" }).click();
   await expect(page.getByRole("button", { name: "Privacy" })).toHaveAttribute(
     "aria-current",
@@ -407,7 +408,7 @@ test("guides denied camera users and offers image recovery directly", async ({ p
     });
   });
 
-  await page.goto("/");
+  await gotoControlled(page);
   await page.getByRole("button", { name: "Scan with camera" }).click();
   await expect(
     page.getByRole("heading", { name: COPY.cameraAccessHeading }),
@@ -455,7 +456,7 @@ test("offers a real camera restart after background suspension", async ({
     });
   });
 
-  await page.goto("/");
+  await gotoControlled(page);
   await page.getByRole("button", { name: "Scan with camera" }).click();
   await expect(page.getByRole("heading", { name: "Hold the QR code inside the frame" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Hold the QR code inside the frame" })).toBeFocused();
@@ -591,7 +592,7 @@ test("shows and switches from the camera that is actually active", async ({
     });
   });
 
-  await page.goto("/");
+  await gotoControlled(page);
   await page.getByRole("button", { name: "Scan with camera" }).click();
   const camera = page.getByRole("combobox", { name: "Camera", exact: true });
   await expect(camera).toBeEnabled();
@@ -637,7 +638,7 @@ test("does not contact a decoded DNS or HTTP canary during inspection", async ({
     }
   });
 
-  await page.goto("/");
+  await gotoControlled(page);
   await expect(page.getByText(COPY.readyOfflineHeading, { exact: true })).toBeVisible({
     timeout: 20_000,
   });
@@ -742,7 +743,7 @@ test("enforces Trusted Types string sinks in Chromium", async ({
 test("labels selection positions and drops canvas geometry when hidden", async ({
   page,
 }) => {
-  await page.goto("/");
+  await gotoControlled(page);
   await page.locator('input[type="file"]').setInputFiles(multiFixture);
   await expect(page.getByRole("heading", { name: "Choose a QR code" })).toBeVisible({
     timeout: 15_000,
@@ -785,7 +786,7 @@ test("labels selection positions and drops canvas geometry when hidden", async (
 });
 
 test("uses field-specific controls for sensitive multi-code contents", async ({ page }) => {
-  await page.goto("/");
+  await gotoControlled(page);
   await page.locator('input[type="file"]').setInputFiles(multiFixture);
   const wifiChoice = page.getByRole("button", {
     name: "Code 2, right, Wi-Fi details",
@@ -841,7 +842,7 @@ test("fails closed when a selection canvas cannot acquire a 2D context", async (
     });
   });
 
-  await page.goto("/");
+  await gotoControlled(page);
   await page.locator('input[type="file"]').setInputFiles(multiFixture);
   await expect(
     page.getByRole("heading", { name: COPY.readerStoppedHeading }),
@@ -866,7 +867,7 @@ test("recovers when a selection canvas cannot draw its one-shot bitmap", async (
     });
   });
 
-  await page.goto("/");
+  await gotoControlled(page);
   await page.locator('input[type="file"]').setInputFiles(multiFixture);
   await expect(
     page.getByRole("heading", { name: COPY.readerStoppedHeading }),
