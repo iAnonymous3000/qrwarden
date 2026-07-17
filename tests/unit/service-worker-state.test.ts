@@ -230,6 +230,50 @@ describe("service-worker state contract", () => {
     expect(strayMessages).toHaveLength(0);
   });
 
+  it("holds activation for a busy shell tab reached with a foreign query string", async () => {
+    const busyMessages: Readonly<Record<string, string>>[] = [];
+    let replyHandler: WorkerHandler | null = null;
+    const busyTab: HarnessClient = {
+      // A link-carried query string ('/?utm_source=…') still serves the app
+      // shell, so this tab runs the full coordinator and may hold live work;
+      // its BUSY vote must hold the quorum, not be filtered out of it.
+      id: "busy-query",
+      type: "window",
+      url: "https://qrwarden.test/?utm_source=newsletter",
+      postMessage(message: Readonly<Record<string, string>>): void {
+        busyMessages.push(message);
+        if (message.type === "PREPARE_UPDATE" && replyHandler !== null) {
+          replyHandler({
+            data: {
+              type: "BUSY",
+              nonce: message.nonce,
+              release: message.release,
+            },
+            source: busyTab,
+            waitUntil: () => undefined,
+          });
+        }
+      },
+    };
+    const harness = await loadWorker(
+      () => Promise.resolve([new Request("https://qrwarden.test/")]),
+      [busyTab],
+    );
+    const install = harness.handlers.get("install");
+    const message = harness.handlers.get("message");
+    expect(install).toBeDefined();
+    expect(message).toBeDefined();
+    replyHandler = message ?? null;
+
+    await Promise.all(invokeWithLifetime(install!, {}));
+    await Promise.all(invokeWithLifetime(message!, {
+      data: { type: "BEGIN_UPDATE_COORDINATION" },
+    }));
+
+    expect(busyMessages.some((entry) => entry.type === "PREPARE_UPDATE")).toBe(true);
+    expect(harness.skipWaiting).not.toHaveBeenCalled();
+  });
+
   it("resets a successful commit to idle after preserving client notification", async () => {
     const harness = await loadWorker(() => Promise.resolve([
       new Request("https://qrwarden.test/"),

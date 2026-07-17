@@ -402,6 +402,34 @@ describe("service-worker share-target delivery", () => {
     expect(sharedFileName(tabB)).toBe("second.png");
   });
 
+  it("keeps an overlapping share from a document already served directly", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+    const tabA = messageClient("resulting-a");
+    harness.clientsGet.mockImplementation((id) =>
+      Promise.resolve(id === "resulting-a" ? tabA : undefined),
+    );
+
+    const first = dispatchSharePost(fetchHandler!, {
+      resultingClientId: "resulting-a",
+      fileName: "first.png",
+    });
+    // Doc A's marker pull lands while share A still parses, so it parks.
+    dispatchPull(message!, tabA);
+    // Share B arrives before share A settles: the settled delivery cannot
+    // clear the pull queue wholesale, so doc A's parked pull must be
+    // dropped by its own direct delivery instead.
+    const second = dispatchSharePost(fetchHandler!, { fileName: "second.png" });
+    await Promise.all([...first.lifetime, ...second.lifetime]);
+
+    expect(sharedImageMessages(tabA)).toHaveLength(1);
+    expect(sharedFileName(tabA)).toBe("first.png");
+    const tabB = messageClient("redirected-b");
+    dispatchPull(message!, tabB);
+    expect(sharedFileName(tabB)).toBe("second.png");
+  });
+
   it("queues overlapping id-less shares in arrival order instead of overwriting", async () => {
     const harness = await loadWorker();
     const fetchHandler = harness.handlers.get("fetch");

@@ -293,15 +293,15 @@ function nonce128(): string {
 // PREPARE_UPDATE and REPORT_LOADED_RELEASE; a same-origin window parked on
 // any other path (a 404 document, a security.txt tab) holds no report state
 // and would silently block every activation for as long as it stays open.
+// Only the path decides what the host serves: '/' is the shell for every
+// query string (a link may carry foreign parameters for the tab's whole
+// lifetime), and such a document runs the full coordinator — excluding it
+// would skip its BUSY vote and let an activation destroy its live work.
 // An unparseable client URL stays in the quorum: fail closed.
 function participatesInCoordination(client: WindowClient): boolean {
   try {
     const url = new URL(client.url);
-    return (
-      url.origin === self.location.origin &&
-      url.pathname === "/" &&
-      (url.search === "" || url.search === SHARE_TARGET_PENDING_SEARCH)
-    );
+    return url.origin === self.location.origin && url.pathname === "/";
   } catch {
     return true;
   }
@@ -664,6 +664,22 @@ function takePendingPull(): PendingPull["source"] | null {
   return null;
 }
 
+// A document served through the resulting-client push has no further use for
+// a pull it parked while its share was still parsing. While another share is
+// in flight the settled delivery's cleanup cannot clear the queue wholesale,
+// so the served document's own pull must go now — leaving it parked would
+// hand that overlapping share to this already-served document while the
+// share's real recipient finds nothing. Sources without a client id cannot
+// be attributed and stay parked: they are the id-less rendezvous itself.
+function dropPendingPullsFor(served: Client): void {
+  for (let index = pendingPulls.length - 1; index >= 0; index -= 1) {
+    const source = pendingPulls[index]!.source;
+    if ("id" in source && source.id === served.id) {
+      pendingPulls.splice(index, 1);
+    }
+  }
+}
+
 // Counts share POSTs whose delivery has not settled. A pull may only park
 // while a rendezvous is still possible; once every in-flight share settles
 // with nothing parked, a waiting pull can never be answered and is dropped
@@ -767,10 +783,18 @@ async function deliverSharedImage(event: FetchEvent): Promise<void> {
     // The resulting client stays authoritative; a parked pull is the fallback
     // for engines that report no client id for the redirected document. The
     // payload stays local to this delivery, so a concurrent share can never
-    // replace it or suppress its push.
-    const client = (await resultingShareClient(event)) ?? takePendingPull();
-    if (client !== null) {
-      postSharePayload(client, payload);
+    // replace it or suppress its push. A directly served document also
+    // surrenders any pull it parked, so an overlapping share cannot fall
+    // back onto a document that already has its image.
+    const resulting = await resultingShareClient(event);
+    if (resulting !== null) {
+      dropPendingPullsFor(resulting);
+      postSharePayload(resulting, payload);
+      return;
+    }
+    const waiting = takePendingPull();
+    if (waiting !== null) {
+      postSharePayload(waiting, payload);
       return;
     }
     parkShare(payload);
