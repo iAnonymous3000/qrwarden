@@ -63,6 +63,11 @@ test("renders the Spanish locale end to end at narrow mobile width", async ({ pa
   );
   await expect
     .poll(() =>
+      page.evaluate(() => getComputedStyle(document.documentElement).overflowY),
+    )
+    .toBe("hidden");
+  await expect
+    .poll(() =>
       page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       ),

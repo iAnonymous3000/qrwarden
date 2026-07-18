@@ -270,7 +270,10 @@ button.selection-option:hover:not(:disabled) { border-color: var(--accent); }
 .number-badge { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--ink); color: var(--on-ink); }
 .selection-position { color: var(--muted); font-weight: 650; text-transform: capitalize; }
 .confirm-dialog { width: min(calc(100% - 2rem - env(safe-area-inset-left) - env(safe-area-inset-right)), 480px); max-width: none; max-height: calc(100% - 2rem); max-height: calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)); margin: auto; padding: 1.5rem; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: .9rem; color: var(--ink); background: var(--paper); box-shadow: 0 30px 80px rgba(0, 0, 0, .5); }
-body:has(dialog[open]) { overflow: hidden; }
+/* The root, not body, owns the classic viewport scrollbar in desktop
+   browsers. Lock both so opening a modal cannot leave a scrollbar-width
+   horizontal pan on platforms that use non-overlay scrollbars. */
+html:has(dialog[open]), body:has(dialog[open]) { overflow: hidden; }
 .confirm-dialog::backdrop { background: rgba(12, 10, 9, .72); }
 .confirm-dialog h2 { margin: 0; font-size: 1.6rem; }
 .confirm-dialog p { color: var(--muted); line-height: 1.55; }
