@@ -3,6 +3,7 @@ import {
   type ReportForActions,
   ReportStore,
 } from "../app/reportState";
+import { hasTrustedUserActivation } from "./userActivation";
 
 const openConfirmationBrand: unique symbol = Symbol(
   "qrwarden.open-confirmation",
@@ -18,13 +19,6 @@ export interface OpenConfirmation<
 }
 
 export type NavigationFailure = "link-changed" | "locked";
-
-function hasLiveUserActivation(): boolean {
-  if (!("userActivation" in navigator) || navigator.userActivation === null) {
-    return true;
-  }
-  return navigator.userActivation.isActive;
-}
 
 export class NavigationBroker<Report extends ReportForActions> {
   readonly #reports: ReportStore<Report>;
@@ -56,8 +50,7 @@ export class NavigationBroker<Report extends ReportForActions> {
       return null;
     }
     if (
-      !event.isTrusted ||
-      !hasLiveUserActivation() ||
+      !hasTrustedUserActivation(event) ||
       !this.#reports.isLive(candidate) ||
       candidate.report.actionPolicy !== "confirm-web" ||
       candidate.report.canonicalHref === undefined
@@ -123,7 +116,7 @@ export class NavigationBroker<Report extends ReportForActions> {
       return;
     }
 
-    if (!event.isTrusted || !hasLiveUserActivation()) {
+    if (!hasTrustedUserActivation(event)) {
       this.#fail();
       return;
     }

@@ -16,6 +16,29 @@ const contractFile = path.join(projectRoot, "release/artifact-contract.json");
 const commit = "0123456789abcdef0123456789abcdef01234567";
 const temporaryDirectories: string[] = [];
 
+interface AnalyzerDataComponent {
+  readonly purl: string;
+  readonly licenseExpression: string;
+  readonly contentSha256: string;
+  readonly licenseTextSha256: string;
+  readonly sourceUrls: readonly string[];
+  readonly name: string;
+  readonly version: string;
+  readonly licenseTermsUrl: string;
+  readonly captured: string;
+}
+
+interface HashManifestEntry {
+  readonly name: string;
+  readonly digest: string;
+}
+
+interface CycloneDxComponent {
+  readonly purl: string;
+  readonly "bom-ref"?: string;
+  readonly scope?: string;
+}
+
 async function temporary(): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "qrwarden-release-test-"));
   temporaryDirectories.push(directory);
@@ -40,7 +63,7 @@ async function analyzerDataFixture(): Promise<string> {
 
 describe("analyzer data release components", () => {
   it("loads exactly the three hash-pinned data components in canonical order", async () => {
-    const components = await loadAnalyzerDataComponents(projectRoot);
+    const components = (await loadAnalyzerDataComponents(projectRoot)) as AnalyzerDataComponent[];
 
     expect(
       components.map(
@@ -142,7 +165,7 @@ describe("dist-files manifest", () => {
     await writeFile(path.join(dist, "assets/app-abcdefgh.js"), "export {};\n");
 
     const manifest = await generateDistFilesManifest({ distDirectory: dist, contractFile });
-    const entries = parseHashManifest(manifest, "dist");
+    const entries = parseHashManifest(manifest, "dist") as HashManifestEntry[];
     expect(entries.map(({ name }) => name)).toEqual([
       "dist/_headers",
       "dist/app.webmanifest",
@@ -223,7 +246,9 @@ describe("CycloneDX normalization", () => {
         { ref: "qrwarden@0.1.0|nested@2.0.0|alpha@1.0.0", dependsOn: [] },
       ],
     };
-    const dataComponents = await loadAnalyzerDataComponents(projectRoot);
+    const dataComponents = (await loadAnalyzerDataComponents(
+      projectRoot,
+    )) as AnalyzerDataComponent[];
     const first = normalizeCycloneDx(raw, {
       version: "0.1.0",
       commit,
@@ -243,7 +268,8 @@ describe("CycloneDX normalization", () => {
     expect(first.metadata.timestamp).toBe("2023-11-14T22:13:20.000Z");
     expect(first.metadata.tools.components).toHaveLength(1);
     expect(first.components).toHaveLength(4);
-    const analyzerComponents = first.components.filter(({ purl }) => purl.startsWith("pkg:generic/"));
+    const components = first.components as CycloneDxComponent[];
+    const analyzerComponents = components.filter(({ purl }) => purl.startsWith("pkg:generic/"));
     expect(analyzerComponents.map(({ purl }) => purl)).toEqual(
       dataComponents.map(({ purl }) => purl),
     );
@@ -266,7 +292,7 @@ describe("CycloneDX normalization", () => {
       });
       expect(component?.scope ?? "required").toBe("required");
     }
-    const alpha = first.components.find(({ purl }) => purl === "pkg:npm/alpha@1.0.0");
+    const alpha = components.find(({ purl }) => purl === "pkg:npm/alpha@1.0.0");
     expect(alpha?.["bom-ref"]).toBe("pkg:npm/alpha@1.0.0");
     expect(alpha?.scope).toBe("required");
     expect(JSON.stringify(first)).not.toContain("cdx:npm:package:path");
@@ -537,12 +563,13 @@ describe("license report", () => {
 describe("archive contracts", () => {
   it("hashes exactly the ordinary unsigned base set", async () => {
     const root = await temporary();
-    for (const [index, name] of ordinaryArtifactNames("0.1.0").entries()) {
+    const artifactNames = ordinaryArtifactNames("0.1.0") as string[];
+    for (const [index, name] of artifactNames.entries()) {
       await writeFile(path.join(root, name), `artifact-${index}\n`);
     }
     const manifest = await generateArchiveManifest({ artifactDirectory: root, version: "0.1.0" });
-    const entries = parseHashManifest(manifest);
-    expect(entries.map(({ name }) => name)).toEqual([...ordinaryArtifactNames("0.1.0")].sort());
+    const entries = parseHashManifest(manifest) as HashManifestEntry[];
+    expect(entries.map(({ name }) => name)).toEqual([...artifactNames].sort());
     expect(entries).toHaveLength(6);
     expect(manifest).not.toContain("archive.sha256");
     expect(manifest).not.toContain(".minisig");

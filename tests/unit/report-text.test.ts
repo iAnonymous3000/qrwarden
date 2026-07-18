@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { analyzeDecodeResult, analyzeText } from "../../src/analyzer";
+import { ANALYZER_LIMITS, ReportFields } from "../../src/analyzer/limits";
+import { createReport } from "../../src/analyzer/report";
 import { COPY } from "../../src/copy";
-import { reportAsText } from "../../src/render/reportText";
+import {
+  reportAsText,
+  reviewedUrlSummary,
+} from "../../src/render/reportText";
 
 describe("report text rendering", () => {
   it("renders kind, status, signals, and fields as labelled plain text", () => {
@@ -46,6 +51,56 @@ describe("report text rendering", () => {
     expect(text).toContain(`- Network name (SSID): ${COPY.reportHiddenValue}`);
   });
 
+  it("fails closed for unclassified and attacker-provided Wi-Fi values", () => {
+    const fields = new ReportFields();
+    fields.add("unclassified", "Unclassified", "UNCLASSIFIED_VALUE");
+    const unclassified = reportAsText({
+      report: createReport({ kind: "text", fields: fields.value }),
+      kindLabel: "Text",
+      statusHeading: COPY.inspectOnlyHeading,
+    });
+    expect(unclassified).not.toContain("UNCLASSIFIED_VALUE");
+    expect(unclassified).toContain(`- Unclassified: ${COPY.reportHiddenValue}`);
+
+    const report = analyzeText(
+      "WIFI:T:ATTACKER_SECURITY;S:Private Test;P:secret;H:true;;",
+    );
+    expect(report.displayFields.find((field) => field.id === "security")?.value).toBe(
+      "ATTACKER_SECURITY",
+    );
+    expect(report.displayFields.find((field) => field.id === "hidden")?.value).toBe("Yes");
+    const text = reportAsText({
+      report,
+      kindLabel: "Wi-Fi details",
+      statusHeading: COPY.inspectOnlyHeading,
+    });
+    expect(text).not.toContain("ATTACKER_SECURITY");
+    expect(text).toContain(
+      `- Declared security type (not validated): ${COPY.reportHiddenValue}`,
+    );
+    expect(text).toContain("- Declared hidden network (not validated): Yes");
+  });
+
+  it("does not export enterprise Wi-Fi identities or declared methods", () => {
+    const values = ["PRIVATE_SSID", "PRIVATE_EAP", "PRIVATE_PHASE2", "PRIVATE_ANON", "PRIVATE_ID", "PRIVATE_PASSWORD"];
+    const report = analyzeText(
+      "WIFI:S:PRIVATE_SSID;T:WPA2-EAP;E:PRIVATE_EAP;PH2:PRIVATE_PHASE2;A:PRIVATE_ANON;I:PRIVATE_ID;P:PRIVATE_PASSWORD;;",
+    );
+    const text = reportAsText({
+      report,
+      kindLabel: "Wi-Fi details",
+      statusHeading: COPY.inspectOnlyHeading,
+    });
+    for (const value of values) expect(text).not.toContain(value);
+    expect(text).toContain(
+      `- Declared EAP method (not validated): ${COPY.reportHiddenValue}`,
+    );
+    expect(text).toContain(
+      `- Declared phase 2 method (not validated): ${COPY.reportHiddenValue}`,
+    );
+    expect(text).toContain(`- Identity: ${COPY.reportHiddenValue}`);
+  });
+
   it("keeps URL structure but hides path, query, and fragment names and values", () => {
     const report = analyzeText(
       "https://example.com/cb?QUERY_PRIVATE_NAME=secret123#FRAGMENT_PRIVATE_NAME=abc",
@@ -71,7 +126,31 @@ describe("report text rendering", () => {
     expect(text).toContain(
       `https://example.com/${COPY.reportPathSegmentsHidden(1)}?${COPY.reportQueryHidden}#${COPY.reportFragmentHidden}`,
     );
+    const summary = reviewedUrlSummary(report);
+    expect(summary).toBe(
+      `https://example.com/${COPY.reportPathSegmentsHidden(1)}?${COPY.reportQueryHidden}#${COPY.reportFragmentHidden}`,
+    );
+    expect(summary).not.toContain("cb");
+    expect(summary).not.toContain("secret123");
   });
+
+  it.each([
+    ["https://openai.com/?", "Present (empty)", "Not present"],
+    ["https://openai.com/#", "None", "Present (empty)"],
+    ["https://openai.com/?#", "Present (empty)", "Present (empty)"],
+  ] as const)(
+    "reports empty URL delimiters accurately for %s",
+    (url, query, fragment) => {
+      const text = reportAsText({
+        report: analyzeText(url),
+        kindLabel: "Web link",
+        statusHeading: COPY.noReviewHeading,
+      });
+      expect(text).toContain(`- Query names: ${query}`);
+      expect(text).toContain(`- Fragment: ${fragment}`);
+      expect(text).toContain(`- Original QR content: ${url}`);
+    },
+  );
 
   it("fails closed when the canonical URL and analyzer-owned origin drift", () => {
     const report = analyzeText(
@@ -90,6 +169,29 @@ describe("report text rendering", () => {
     expect(text).not.toContain("private-path");
     expect(text).not.toContain("PRIVATE_QUERY_NAME");
     expect(text).not.toContain("attacker-controlled");
+    expect(text).toContain(`- Original QR content: ${COPY.reportHiddenValue}`);
+    expect(reviewedUrlSummary(drifted)).toBeNull();
+  });
+
+  it("fails closed when a URL-name report replacement drifts to raw names", () => {
+    const report = analyzeText("https://example.com/?PRIVATE_QUERY_NAME=secret");
+    const drifted = {
+      ...report,
+      displayFields: report.displayFields.map((field) =>
+        field.id === "query-names"
+          ? { ...field, reportValue: field.value }
+          : field,
+      ),
+    } as typeof report;
+    const text = reportAsText({
+      report: drifted,
+      kindLabel: "Web link",
+      statusHeading: COPY.noReviewHeading,
+    });
+
+    expect(text).not.toContain("PRIVATE_QUERY_NAME");
+    expect(text).not.toContain("secret");
+    expect(text).toContain(`- Query names: ${COPY.reportHiddenValue}`);
     expect(text).toContain(`- Original QR content: ${COPY.reportHiddenValue}`);
   });
 
@@ -151,13 +253,20 @@ describe("report text rendering", () => {
   it("hides contact and calendar personal values while keeping labels", () => {
     const contact = reportAsText({
       report: analyzeText(
-        ["BEGIN:VCARD", "FN:Alice Example", "TEL:+15551234567", "END:VCARD"].join("\r\n"),
+        [
+          "BEGIN:VCARD",
+          "VERSION:4.0",
+          "FN:Alice Example",
+          "TEL:+15551234567",
+          "END:VCARD",
+        ].join("\r\n"),
       ),
       kindLabel: "Contact",
       statusHeading: COPY.inspectOnlyHeading,
     });
     expect(contact).not.toContain("Alice Example");
     expect(contact).not.toContain("+15551234567");
+    expect(contact).toContain("- Contact: vCard contact");
     expect(contact).toContain(`- Name: ${COPY.reportHiddenValue}`);
     expect(contact).toContain(`- Telephone: ${COPY.reportHiddenValue}`);
 
@@ -177,7 +286,60 @@ describe("report text rendering", () => {
     });
     expect(calendar).not.toContain("Board offsite");
     expect(calendar).not.toContain("Room 1");
+    expect(calendar).toContain("- Calendar: Calendar entry");
     expect(calendar).toContain(`- Event: ${COPY.reportHiddenValue}`);
+  });
+
+  it("discloses selective calendar coverage without leaking isolated components", () => {
+    const report = analyzeText(
+      [
+        "BEGIN:VCALENDAR",
+        "BEGIN:VTODO",
+        "SUMMARY:PRIVATE_TASK",
+        "END:VTODO",
+        "BEGIN:VEVENT",
+        "SUMMARY:PRIVATE_EVENT",
+        "BEGIN:VALARM",
+        "DESCRIPTION:PRIVATE_ALARM",
+        "END:VALARM",
+        "END:VEVENT",
+        "END:VCALENDAR",
+      ].join("\n"),
+    );
+    const text = reportAsText({
+      report,
+      kindLabel: "Calendar",
+      statusHeading: COPY.inspectOnlyHeading,
+    });
+    expect(text).not.toContain("PRIVATE_TASK");
+    expect(text).not.toContain("PRIVATE_EVENT");
+    expect(text).not.toContain("PRIVATE_ALARM");
+    expect(text).toContain(COPY.omittedFromDisplay(2, 3));
+  });
+
+  it.each([
+    ["otpauth:", "OTP account"],
+    ["DPP:", "DPP bootstrap"],
+  ])("does not export an affirmative label for invalid %s", (source, label) => {
+    const text = reportAsText({
+      report: analyzeText(source),
+      kindLabel: "Text",
+      statusHeading: COPY.inspectOnlyHeading,
+    });
+    expect(text).not.toContain(label);
+    expect(text).toContain(`- Text: ${COPY.reportHiddenValue}`);
+  });
+
+  it.each([
+    ["bitcoin:garbage", "Payment", "Payment-related URI (payload not validated)"],
+    ["foo:", "Action", "URI scheme only (no payload)"],
+  ])("exports only neutral URI semantics for %s", (source, label, summary) => {
+    const text = reportAsText({
+      report: analyzeText(source),
+      kindLabel: "URI",
+      statusHeading: COPY.inspectOnlyHeading,
+    });
+    expect(text).toContain(`- ${label}: ${summary}`);
   });
 
   it("shows an sms body on screen but never in the copied report", () => {
@@ -239,6 +401,16 @@ describe("report text rendering", () => {
       statusHeading: COPY.noReviewHeading,
     });
     expect(text).toContain(`  ${COPY.reportTruncatedNote}`);
+  });
+
+  it("does not disclose truncation metadata for a hidden field", () => {
+    const text = reportAsText({
+      report: analyzeText("private".repeat(ANALYZER_LIMITS.fieldScalars)),
+      kindLabel: "Text",
+      statusHeading: COPY.inspectOnlyHeading,
+    });
+    expect(text).toContain(`- Text: ${COPY.reportHiddenValue}`);
+    expect(text).not.toContain(COPY.reportTruncatedNote);
   });
 
   it("localizes scaffolding, labels, titles, and limitations in Spanish", async () => {

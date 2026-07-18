@@ -71,6 +71,21 @@ function canonicalSuffix(url: URL): string {
   return authority === undefined ? "" : url.href.slice(authority.length);
 }
 
+interface UrlDelimiterPresence {
+  readonly query: boolean;
+  readonly fragment: boolean;
+}
+
+function urlDelimiterPresence(url: URL): UrlDelimiterPresence {
+  const suffix = canonicalSuffix(url);
+  const query = suffix.indexOf("?");
+  const fragment = suffix.indexOf("#");
+  return {
+    query: query >= 0 && (fragment < 0 || query < fragment),
+    fragment: fragment >= 0,
+  };
+}
+
 function materialBrowserRewrite(
   original: string,
   url: URL,
@@ -141,6 +156,10 @@ function summarizeNames(parameters: URLSearchParams): NameSummary {
   };
 }
 
+function safeNameAggregate(summary: NameSummary, emptyValue: string): string {
+  return summary.count === 0 ? emptyValue : `Count: ${summary.count}`;
+}
+
 function malformedUrlReport(
   original: string,
   lexical: LexicalAuthority | null,
@@ -150,7 +169,7 @@ function malformedUrlReport(
   const signals: AnalysisSignal[] = [];
   // Unparsable payloads have no structural form to export, so the copied
   // report hides the value rather than leaking whatever the query carried.
-  fields.add("original", "QR content", original, { reportRedacted: true });
+  fields.add("original", "QR content", original);
 
   const authorityControls =
     lexical === null ? forbiddenCharacters(original) : forbiddenCharacters(lexical.rawAuthority);
@@ -218,8 +237,9 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
   const signals: AnalysisSignal[] = [];
   const asciiHostname = parsed.hostname;
   const ip = classifyIp(asciiHostname);
-  const localCategory = classifyLocalHostname(asciiHostname);
+  const localCategory = ip === null ? classifyLocalHostname(asciiHostname) : null;
   const trailingDot = asciiHostname.endsWith(".");
+  const delimiters = urlDelimiterPresence(parsed);
   const raw = lexical === null ? null : rawHostPort(lexical.rawAuthority);
   let unicode = asciiHostname;
   let pinnedSuppliedHostname: string | null = null;
@@ -238,9 +258,15 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
     }
   }
 
-  fields.add("ascii-hostname", "Destination host", asciiHostname, { kind: "hostname" });
+  fields.add("ascii-hostname", "Destination host", asciiHostname, {
+    kind: "hostname",
+    reportPolicy: "safe",
+  });
   if (unicode !== asciiHostname) {
-    fields.add("unicode-hostname", "Unicode host", unicode, { kind: "hostname" });
+    fields.add("unicode-hostname", "Unicode host", unicode, {
+      kind: "hostname",
+      reportPolicy: "safe",
+    });
     signals.push(
       signal(
         "idn-hostname",
@@ -257,7 +283,7 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
       "registrable-domain",
       "Registrable domain",
       domain.registrableDomain ?? "Not available",
-      { kind: "domain" },
+      { kind: "domain", reportPolicy: "safe" },
     );
   }
 
@@ -268,7 +294,7 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
     raw?.port === null || raw?.port === undefined
       ? `${effectivePort} (effective)`
       : `${raw.port} (explicit)`,
-    { kind: "port" },
+    { kind: "port", reportPolicy: "safe" },
   );
   // Path segments routinely carry capability tokens such as password-reset
   // and share links, so the copied report keeps only the segment count.
@@ -284,23 +310,36 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
     // The renderer rebuilds the localized structural summary from the count.
     // This analyzer-owned fallback is deliberately incapable of carrying a
     // path segment if another report consumer is introduced later.
+    reportPolicy: "safe",
     reportValue: reportPath,
   });
 
   const query = summarizeNames(parsed.searchParams);
-  fields.add("query-names", "Query names", query.names, {
-    kind: "names",
-    collapsed: true,
-    count: query.count,
-    omittedCount: query.omitted,
-    // Parameter names are attacker-controlled and may themselves contain
-    // secrets or personal data. Whole-report copies retain only this count;
-    // the on-screen value and explicit per-field copy remain unchanged.
-    reportRedacted: true,
-  });
+  const queryEmptyValue = delimiters.query ? "Present (empty)" : "None";
+  fields.add(
+    "query-names",
+    "Query names",
+    query.count === 0 ? queryEmptyValue : query.names,
+    {
+      kind: "names",
+      collapsed: true,
+      count: query.count,
+      omittedCount: query.omitted,
+      // Parameter names are attacker-controlled and may themselves contain
+      // secrets or personal data. Whole-report copies retain only this count;
+      // the on-screen value and explicit per-field copy remain unchanged.
+      reportPolicy: "safe",
+      reportValue: safeNameAggregate(query, queryEmptyValue),
+    },
+  );
 
   if (parsed.hash === "") {
-    fields.add("fragment", "Fragment", "Not present", { kind: "presence" });
+    fields.add(
+      "fragment",
+      "Fragment",
+      delimiters.fragment ? "Present (empty)" : "Not present",
+      { kind: "presence", reportPolicy: "safe" },
+    );
   } else {
     const fragmentText = parsed.hash.slice(1);
     if (fragmentText.includes("=") || fragmentText.includes("&")) {
@@ -310,12 +349,14 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
         collapsed: true,
         count: fragment.count,
         omittedCount: fragment.omitted,
-        reportRedacted: true,
+        reportPolicy: "safe",
+        reportValue: safeNameAggregate(fragment, "Present (empty)"),
       });
     } else {
       fields.add("fragment", "Fragment", "Present", {
         kind: "presence",
         collapsed: true,
+        reportPolicy: "safe",
       });
     }
   }
@@ -324,6 +365,7 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
     // Only the origin is safe as an analyzer-owned fallback. The report
     // renderer reconstructs the localized path/query/fragment structure from
     // canonicalHref without copying any of their contents.
+    reportPolicy: "safe",
     reportValue: parsed.origin,
   });
 
@@ -360,7 +402,9 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
   const specialCategory =
     ip !== null && ip.special && !ip.globallyReachable ? ip.category : localCategory;
   if (specialCategory !== undefined && specialCategory !== null) {
-    fields.add("destination-category", "Destination category", specialCategory);
+    fields.add("destination-category", "Destination category", specialCategory, {
+      reportPolicy: "safe",
+    });
     signals.push(
       signal(
         "local-or-special-destination",

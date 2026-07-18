@@ -29,7 +29,11 @@ describe("service-worker activation commit boundary", () => {
       requestActivationCommit(
         () => Promise.reject(new DOMException("failed", "InvalidStateError")),
         [client],
-        { type: "ACTIVATION_COMMITTED" },
+        {
+          type: "ACTIVATION_COMMITTED",
+          nonce: "a".repeat(32),
+          release: "v2",
+        },
       ),
     ).resolves.toBe(false);
     expect(client.postMessage).not.toHaveBeenCalled();

@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import process from "node:process";
 
+import { extractVersionChangelog } from "./release/generate-version-changelog.mjs";
+
 const errors = [];
 const readJson = async (relative) =>
   JSON.parse(await readFile(new URL(`../${relative}`, import.meta.url), "utf8"));
@@ -18,11 +20,6 @@ try {
   if (git("branch", "--show-current") !== "main") errors.push("release must run on main");
   if (git("status", "--porcelain=v1", "--untracked-files=all") !== "") {
     errors.push("release worktree must be clean");
-  }
-  try {
-    execFileSync("git", ["verify-commit", "HEAD"], { stdio: "ignore" });
-  } catch {
-    errors.push("release commit must have a locally verifiable signature");
   }
 } catch {
   errors.push("Git release context is unavailable");
@@ -60,8 +57,10 @@ const changelog = await readFile(new URL("../CHANGELOG.md", import.meta.url), "u
 if (manifest.version !== packageMetadata.version) {
   errors.push("manifest version must equal package.json version");
 }
-if (!changelog.includes(`## [${packageMetadata.version}]`)) {
-  errors.push("changelog must contain the exact package version heading");
+try {
+  extractVersionChangelog(changelog, packageMetadata.version);
+} catch (error) {
+  errors.push(error instanceof Error ? error.message : "changelog release section is invalid");
 }
 
 const data = await readJson("release/data-status.json");

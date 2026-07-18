@@ -8,6 +8,36 @@ export interface IpClassification {
   readonly category?: string;
   readonly mappedIpv4?: IpClassification;
 }
+
+// Pinned from the IANA Special-Use Domain Names registry captured 2026-05-22.
+// The registry designates each listed name and all of its subdomains. More
+// specific local names below retain their plain-language category labels.
+const IANA_SPECIAL_USE_SUFFIXES: readonly string[] = Object.freeze([
+  "alt",
+  "6tisch.arpa",
+  "eap.arpa",
+  "eap-noob.arpa",
+  "10.in-addr.arpa",
+  ...Array.from({ length: 16 }, (_, index) => `${index + 16}.172.in-addr.arpa`),
+  "254.169.in-addr.arpa",
+  "170.0.0.192.in-addr.arpa",
+  "171.0.0.192.in-addr.arpa",
+  "168.192.in-addr.arpa",
+  "8.e.f.ip6.arpa",
+  "9.e.f.ip6.arpa",
+  "a.e.f.ip6.arpa",
+  "b.e.f.ip6.arpa",
+  "ipv4only.arpa",
+  "resolver.arpa",
+  "service.arpa",
+  "example",
+  "example.com",
+  "example.net",
+  "example.org",
+  "invalid",
+  "onion",
+  "test",
+]);
 function parseIpv4(value: string): number | null {
   const parts = value.split(".");
   if (parts.length !== 4) return null;
@@ -138,8 +168,14 @@ export function classifyIp(hostname: string): IpClassification | null {
 
 export function classifyLocalHostname(hostname: string): string | null {
   const value = hostname.toLowerCase().replace(/\.$/, "");
+  if (value === "") return null;
   if (value === "localhost" || value.endsWith(".localhost")) return "Localhost";
   if (value === "local" || value.endsWith(".local")) return "Multicast DNS .local";
   if (value === "home.arpa" || value.endsWith(".home.arpa")) return "Home network home.arpa";
+  const specialUse = IANA_SPECIAL_USE_SUFFIXES.find(
+    (suffix) => value === suffix || value.endsWith(`.${suffix}`),
+  );
+  if (specialUse !== undefined) return `IANA special-use ${specialUse}`;
+  if (!value.includes(".")) return "Dotless hostname";
   return null;
 }

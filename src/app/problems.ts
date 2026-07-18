@@ -9,6 +9,7 @@ export type ProblemCode =
   | "image-unreadable"
   | "took-too-long"
   | "choose-one-image"
+  | "share-busy"
   | "share-multiple-files"
   | "share-too-large"
   | "share-unsupported-type"
@@ -72,6 +73,12 @@ export const PROBLEM_COPY: Readonly<Record<ProblemCode, ProblemCopy>> =
     "choose-one-image": {
       heading: COPY.chooseOneImageHeading,
       body: COPY.chooseOneImageBody,
+      tone: "recovery",
+    },
+    "share-busy": {
+      heading: COPY.shareBusyHeading,
+      body: COPY.shareBusyBody,
+      dismissLabel: COPY.backToScanner,
       tone: "recovery",
     },
     "share-multiple-files": {

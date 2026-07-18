@@ -1,31 +1,22 @@
+import type { ShareRejectionReason } from "../sw/protocol";
 import type { ProblemCode } from "./problems";
 
-/** Mirrors the worker's rejection vocabulary for invalid share-target posts. */
-export type ShareRejectionReason =
-  | "multiple-files"
-  | "too-large"
-  | "unsupported-type"
-  | "unreadable";
+/** Re-export the protocol vocabulary used by app recovery state. */
+export type { ShareRejectionReason } from "../sw/protocol";
 
 export type ShareIntakeEntry =
   | { readonly kind: "image"; readonly file: File }
   | { readonly kind: "rejected"; readonly reason: ShareRejectionReason };
 
-/** Mirrors the worker's bounded parking so buffered shares stay small. */
-export const SHARE_INTAKE_MAX_BUFFERED = 4;
-
-/** Coerces an untrusted worker-message reason; unknown values fail closed. */
-export function shareRejectionReason(value: unknown): ShareRejectionReason {
-  return value === "multiple-files" ||
-    value === "too-large" ||
-    value === "unsupported-type"
-    ? value
-    : "unreadable";
-}
+/** Four deliverable entries plus one coalesced, visible overflow rejection. */
+export const SHARE_INTAKE_MAX_DELIVERIES = 4;
+export const SHARE_INTAKE_MAX_BUFFERED = SHARE_INTAKE_MAX_DELIVERIES + 1;
 
 /** Maps a rejected share onto its source-specific recovery copy. */
 export function shareRejectionProblem(reason: ShareRejectionReason): ProblemCode {
   switch (reason) {
+    case "busy":
+      return "share-busy";
     case "multiple-files":
       return "share-multiple-files";
     case "too-large":
@@ -38,18 +29,34 @@ export function shareRejectionProblem(reason: ShareRejectionReason): ProblemCode
 }
 
 /**
- * Appends to the buffered-share queue fail-closed: a full buffer refuses the
- * newest entry instead of silently overwriting an older parked share, and
- * consumption drains oldest first so overlapping shares stay deterministic.
+ * Appends to the buffered-share queue in arrival order. Four owned deliveries
+ * are retained exactly; a fifth is represented by one terminal busy rejection
+ * rather than disappearing silently, and later overflow coalesces into it.
  */
 export function bufferShareIntake(
   entries: readonly ShareIntakeEntry[],
   entry: ShareIntakeEntry,
 ): readonly ShareIntakeEntry[] {
-  if (entries.length >= SHARE_INTAKE_MAX_BUFFERED) {
-    return entries;
+  const isBusy = (candidate: ShareIntakeEntry): boolean =>
+    candidate.kind === "rejected" && candidate.reason === "busy";
+  const deliveries = entries
+    .filter((candidate) => !isBusy(candidate))
+    .slice(0, SHARE_INTAKE_MAX_DELIVERIES);
+  const entryIsBusy = isBusy(entry);
+  const deliverySlotsWereFull =
+    deliveries.length >= SHARE_INTAKE_MAX_DELIVERIES;
+  const busy = entries.some(isBusy) || entryIsBusy;
+  if (!entryIsBusy && !deliverySlotsWereFull) {
+    deliveries.push(entry);
   }
-  return [...entries, entry];
+  // If a non-busy arrival found all four delivery slots occupied, represent
+  // that loss with the same one terminal busy sentinel. Keeping the sentinel
+  // outside the delivery count lets a later valid share refill a consumed
+  // slot instead of being silently discarded.
+  const overflowed = !entryIsBusy && deliverySlotsWereFull;
+  return busy || overflowed
+    ? [...deliveries, { kind: "rejected", reason: "busy" }]
+    : deliveries;
 }
 
 /**

@@ -11,6 +11,7 @@
   "disabledAccountFeatures": [
     "Workers Builds and Git integration",
     "Workers Logs and observability",
+    "Network Error Logging",
     "Web Analytics",
     "Zaraz",
     "Rocket Loader",
@@ -43,7 +44,8 @@
     "persistent deny-by-default Access application for all preview deployments",
     "persistent deny-by-default Access application for QRWarden preview deployments",
     "no cache rule overriding signed Cache-Control",
-    "no transform rule mutating signed response bodies or headers"
+    "no transform rule mutating signed response bodies or headers",
+    "no NEL, Report-To, or Reporting-Endpoints response headers"
   ],
   "releaseKeyDns": {
     "recordType": "TXT",

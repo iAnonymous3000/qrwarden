@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.tests.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client", "vitest/globals"]
+  },
+  "include": ["tests/release/**/*.ts", "tests/types/**/*.d.ts"]
+}

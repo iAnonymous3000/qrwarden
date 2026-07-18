@@ -10,15 +10,15 @@ import { EN_COPY } from "../../src/copy/locales/en";
 import { ES_COPY } from "../../src/copy/locales/es";
 
 const SOURCE_SHA256: Readonly<Record<string, string>> = {
-  "index.ts": "e5a010ff1f36bef2fd5706ce201994e9496199cfbac96f410f598a0798a58a8c",
+  "index.ts": "234450ba710c6ac8be379a7a6069da5dc6636c8967927e7b93b4a0da9aa9095c",
   "locale.ts": "25d5b29e629a58c0fe772b5ff97830fd68f0064b2fbeb79b0326ff170539055e",
-  "evidence.ts": "5d5b37d4c57f33cfe2538f6d4c5c2471e6a2d6ab0ae6a5e5235d0712d95dd481",
-  "locales/en.ts": "5af57547f7c6515ece8da77dd3c78294a041fb129baf8ee2c451eccc3bfbf33e",
-  "locales/es.ts": "e18d1fe992735b64557ea1a950f14f62861fb5921e3131972679a5d9d969f861",
+  "evidence.ts": "1307803b3c27a93131567b6a0b2efca539d034c1438920979935927895ca9ce0",
+  "locales/en.ts": "ec0ceb3b5868599452eae1eecc6f23a78c43de2cd82f7bf90773ca27c834f15b",
+  "locales/es.ts": "c17c9e9b05902814837ce97643986efc1c9a1ab36085cb7ad094e893fac3b8eb",
 };
 const RUNTIME_CONTRACT_SHA256 =
-  "f7e6c29807d3db9755237484c0a163705d3a37d4e5cc28bb78874d4fda5eac73";
-const COPY_KEY_COUNT = 232;
+  "255285100f0594c53fdb4d833b2b588adc7d079203bc3c5305988f3be902a866";
+const COPY_KEY_COUNT = 235;
 
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");

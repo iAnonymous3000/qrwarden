@@ -7,7 +7,7 @@ import type {
   DisplayField,
 } from "./types";
 
-export const ANALYZER_VERSION = "1.0.2";
+export const ANALYZER_VERSION = "1.0.4";
 
 export const PERMANENT_LIMITATIONS = Object.freeze([
   "Analysis uses only the content contained in the QR code.",

@@ -58,7 +58,7 @@ import type { OfflineState, ServiceWorkerClient } from "../sw/client";
 import { detectBraveIos } from "./braveGuidance";
 import { fieldLabelForSentence, presentFieldValue } from "./fieldPresentation";
 import { detectInstallGuidance } from "./installGuidance";
-import { reportAsText } from "./reportText";
+import { reportAsText, reviewedUrlSummary } from "./reportText";
 import { SIGNAL_GLOSSARY, SIGNAL_GLOSSARY_CODES } from "./signalGlossary";
 import type { ThemeController } from "./theme";
 import {
@@ -121,6 +121,8 @@ interface CameraUi {
   readonly torchAvailable: boolean;
   readonly torchEnabled: boolean;
   readonly notice: CameraProblem | null;
+  /** Forces a fresh live-region node for repeated, identical camera failures. */
+  readonly noticeNonce: number;
   readonly starting: boolean;
 }
 
@@ -132,6 +134,7 @@ const EMPTY_CAMERA_UI: CameraUi = Object.freeze({
   torchAvailable: false,
   torchEnabled: false,
   notice: null,
+  noticeNonce: 0,
   starting: false,
 });
 
@@ -247,12 +250,20 @@ function statusForReport(report: AnalysisReport): {
   };
 }
 
-function destinationOrigin(report: AnalysisReport): string | null {
+interface ReviewedDestination {
+  readonly summary: string;
+  readonly href: string;
+}
+
+function reviewedDestination(report: AnalysisReport): ReviewedDestination | null {
   if (report.kind !== "web-url" || report.canonicalHref === undefined) return null;
   try {
     const parsed = new URL(report.canonicalHref);
+    const summary = reviewedUrlSummary(report);
     return parsed.protocol === "https:" || parsed.protocol === "http:"
-      ? parsed.origin
+      ? summary === null
+        ? null
+        : { summary, href: parsed.href }
       : null;
   } catch {
     return null;
@@ -525,6 +536,9 @@ export function App(props: AppProps) {
   const [braveIos, setBraveIos] = useState(false);
   const pendingShareRef = useRef<readonly ShareIntakeEntry[]>([]);
   const [shareRevision, setShareRevision] = useState(0);
+  const infoReturnViewRef = useRef<Extract<View, { kind: "result" }> | null>(
+    null,
+  );
 
   useEffect(
     () => props.themeController.subscribe(setTheme),
@@ -554,7 +568,7 @@ export function App(props: AppProps) {
     document.title = documentTitleForView(view.kind);
     const previousKind = previousViewKindRef.current;
     previousViewKindRef.current = view.kind;
-    if (previousKind === view.kind || view.kind === "error") return;
+    if (previousKind === view.kind) return;
     viewHeadingRef.current?.focus({ preventScroll: true });
   }, [view.kind]);
 
@@ -620,6 +634,7 @@ export function App(props: AppProps) {
   );
 
   const showReport = (report: AnalysisReport): void => {
+    if (lockedRef.current) return;
     navigation.clearConfirmation();
     clipboard.invalidate();
     setConfirmation(null);
@@ -629,6 +644,10 @@ export function App(props: AppProps) {
   };
 
   const processOutcome = (outcome: DecoderOutcome): void => {
+    if (lockedRef.current) {
+      if (outcome.kind === "multiple") outcome.preview.bitmap.close();
+      return;
+    }
     switch (outcome.kind) {
       case "no-result":
         transitionView({ kind: "error", problem: "no-result" });
@@ -663,8 +682,15 @@ export function App(props: AppProps) {
     () =>
       new ImageController({
         workerFactory: props.workerFactory,
-        onResult: ({ outcome }) => processOutcome(outcome),
+        onResult: ({ outcome }) => {
+          if (lockedRef.current) {
+            if (outcome.kind === "multiple") outcome.preview.bitmap.close();
+            return;
+          }
+          processOutcome(outcome);
+        },
         onProblem: (problem) => {
+          if (lockedRef.current) return;
           const mapped = problemFromImage(problem);
           if (mapped !== null) transitionView({ kind: "error", problem: mapped });
         },
@@ -673,9 +699,42 @@ export function App(props: AppProps) {
   );
 
   const chooseImages = (files: readonly File[]): void => {
+    if (lockedRef.current) return;
     work.begin();
     transitionView({ kind: "reading" });
     imageController.choose(files);
+  };
+
+  /** Cancels asynchronous capabilities without deciding whether a reviewed
+   * report or buffered share must be discarded. Some browser APIs can still
+   * resolve after cancellation, so their callbacks are lock-guarded below.
+   */
+  const cancelActiveWork = (): void => {
+    work.suspend();
+    imageController.cancel();
+    const camera = cameraRef.current;
+    cameraRef.current = null;
+    camera?.cancel();
+    resetCameraTasks();
+    navigation.clearConfirmation();
+    clipboard.invalidate();
+    setConfirmation(null);
+    setRevealed(new Set());
+    setCopyFeedback(null);
+    setCameraUi(EMPTY_CAMERA_UI);
+  };
+
+  /** One destructive teardown path for explicit navigation or a release gate
+   * that has determined the current report can no longer remain authoritative.
+   */
+  const resetToHome = (clearPendingShare: boolean): void => {
+    cancelActiveWork();
+    reports.drop();
+    if (clearPendingShare) {
+      pendingShareRef.current = [];
+      setShareRevision((current) => current + 1);
+    }
+    transitionView({ kind: "home" });
   };
 
   // A buffered share is pending work: an update must not reload this
@@ -692,22 +751,7 @@ export function App(props: AppProps) {
       hasPendingShare: pendingShareRef.current.length > 0,
       hasRetainedResources: work.hasRetainedResources,
     });
-  props.bridge.dropReport = () => {
-    work.suspend();
-    imageController.cancel();
-    const camera = cameraRef.current;
-    cameraRef.current = null;
-    camera?.cancel();
-    resetCameraTasks();
-    reports.drop();
-    navigation.clearConfirmation();
-    clipboard.invalidate();
-    setConfirmation(null);
-    setRevealed(new Set());
-    setCopyFeedback(null);
-    setCameraUi(EMPTY_CAMERA_UI);
-    transitionView({ kind: "home" });
-  };
+  props.bridge.dropReport = () => resetToHome(true);
 
   useLayoutEffect(() => {
     const handler = (event: Event): void => {
@@ -720,11 +764,21 @@ export function App(props: AppProps) {
         lockedRef.current = detail.locked;
         setLocked(detail.locked);
         if (detail.locked) {
-          navigation.clearConfirmation();
-          clipboard.invalidate();
-          setConfirmation(null);
-          setRevealed(new Set());
-          setCopyFeedback(null);
+          // A lifecycle re-gate briefly locks controls even when the active
+          // release has not changed. Cancel capabilities and any confirmation,
+          // but preserve an already-reviewed report and parked share delivery.
+          // If verification later fails, bridge.dropReport() takes the
+          // destructive path. In-progress camera/image/selection views cannot
+          // be resumed safely after cancellation, so return only those home.
+          cancelActiveWork();
+          const currentKind = viewRef.current.kind;
+          if (
+            currentKind === "reading" ||
+            currentKind === "camera" ||
+            currentKind === "selection"
+          ) {
+            transitionView({ kind: "home" });
+          }
         }
       }
       if (detail.sharedImage !== undefined) {
@@ -746,17 +800,17 @@ export function App(props: AppProps) {
     return () => props.statusEvents.removeEventListener("status", handler);
   }, [clipboard, navigation, props.statusEvents]);
 
-  useEffect(
-    () =>
-      installDropNavigationGuard((files) => {
-        if (!locked && view.kind === "home") {
-          work.begin();
-          transitionView({ kind: "reading" });
-          imageController.choose(files);
-        }
-      }),
-    [imageController, locked, view.kind, work],
-  );
+  useEffect(() => {
+    // A file drop must never navigate this document away from an active
+    // review. Only the unlocked home view consumes the file as a new scan;
+    // every other view prevents browser navigation without changing state.
+    // Consult refs at event time: passive effect cleanup can lag one paint
+    // behind navigation, leaving the previous render's handler briefly live.
+    return installDropNavigationGuard((files) => {
+      if (lockedRef.current || viewRef.current.kind !== "home") return;
+      chooseImages(files);
+    });
+  }, [imageController, work]);
 
   useEffect(() => {
     if (!canConsumeShare(locked, view.kind, document.visibilityState)) return;
@@ -835,6 +889,10 @@ export function App(props: AppProps) {
       video: videoRef.current,
       decoder: adapter,
       onAccepted: (accepted) => {
+        if (lockedRef.current) {
+          accepted.preview?.close();
+          return;
+        }
         navigator.vibrate?.(30);
         if (accepted.kind === "single") {
           const detection = accepted.detections[0]?.result;
@@ -871,25 +929,36 @@ export function App(props: AppProps) {
           }),
         });
       },
-      onOverflow: () => transitionView({ kind: "error", problem: "overflow" }),
+      onOverflow: () => {
+        if (!lockedRef.current) transitionView({ kind: "error", problem: "overflow" });
+      },
       onProblem: (problem) => {
+        if (lockedRef.current) return;
         const mapped = problemFromCamera(problem);
         if (mapped !== null) {
           transitionView({ kind: "error", problem: mapped });
         } else {
-          setCameraUi((current) => ({ ...current, notice: problem }));
+          setCameraUi((current) => ({
+            ...current,
+            notice: problem,
+            noticeNonce: current.noticeNonce + 1,
+          }));
         }
       },
-      onDevices: (devices, activeDeviceId) =>
-        setCameraUi((current) => ({ ...current, devices, activeDeviceId })),
-      onCapabilities: (capabilities) =>
+      onDevices: (devices, activeDeviceId) => {
+        if (lockedRef.current) return;
+        setCameraUi((current) => ({ ...current, devices, activeDeviceId }));
+      },
+      onCapabilities: (capabilities) => {
+        if (lockedRef.current) return;
         setCameraUi((current) => ({
           ...current,
           zoom: capabilities.zoom,
           zoomValue: capabilities.zoomValue ?? capabilities.zoom?.min ?? current.zoomValue,
           torchAvailable: capabilities.torch,
           torchEnabled: capabilities.torchEnabled,
-        })),
+        }));
+      },
     });
     cameraRef.current = controller;
     const orientation = (): void => controller.orientationChanged();
@@ -948,23 +1017,11 @@ export function App(props: AppProps) {
   }, [clipboard, imageController, navigation, props.bridge, work]);
 
   const goHome = (): void => {
-    work.suspend();
-    imageController.cancel();
-    const camera = cameraRef.current;
-    cameraRef.current = null;
-    camera?.cancel();
-    resetCameraTasks();
-    navigation.clearConfirmation();
-    clipboard.invalidate();
-    reports.drop();
-    setConfirmation(null);
-    setRevealed(new Set());
-    setCopyFeedback(null);
-    setCameraUi(EMPTY_CAMERA_UI);
+    infoReturnViewRef.current = null;
     setUpdateActivationFeedback((current) =>
       current === "busy" ? null : current,
     );
-    transitionView({ kind: "home" });
+    resetToHome(false);
   };
 
   const resumeCamera = (): void => {
@@ -975,12 +1032,36 @@ export function App(props: AppProps) {
   };
 
   const navigateInfo = (kind: "privacy" | "about" | "glossary"): void => {
-    goHome();
+    const current = viewRef.current;
+    if (current.kind === "result" && reports.isLive(current.active)) {
+      infoReturnViewRef.current = current;
+    } else if (
+      current.kind !== "privacy" &&
+      current.kind !== "about" &&
+      current.kind !== "glossary"
+    ) {
+      infoReturnViewRef.current = null;
+      resetToHome(false);
+    }
     transitionView({ kind });
+  };
+
+  const returnFromInfo = (): void => {
+    const previous = infoReturnViewRef.current;
+    infoReturnViewRef.current = null;
+    if (previous !== null && reports.isLive(previous.active)) {
+      transitionView(previous);
+      return;
+    }
+    goHome();
   };
 
   const offline = offlineCopy(offlineState);
   const controlsDisabled = locked;
+  const infoBackLabel =
+    infoReturnViewRef.current === null
+      ? COPY.backToScanner
+      : COPY.backToReview;
   const cameraTaskBusy = cameraTaskCount.current > 0;
   // The visible workflow controls the affordance; the client rechecks the
   // full synchronous idle predicate before sending activation coordination.
@@ -1100,7 +1181,7 @@ export function App(props: AppProps) {
         ) : null}
 
         {view.kind === "home" ? (
-          <section class="hero" aria-labelledby="hero-title" aria-busy={locked}>
+          <section class="hero" aria-labelledby="hero-title">
             <div class="eyebrow">{COPY.heroEyebrow}</div>
             <h1 id="hero-title" ref={viewHeadingRef} tabIndex={-1}>
               {COPY.primaryMessage}
@@ -1165,7 +1246,7 @@ export function App(props: AppProps) {
         ) : null}
 
         {view.kind === "reading" ? (
-          <section class="center-card" aria-live="polite" aria-busy={locked}>
+          <section class="center-card" aria-live="polite" aria-busy="true">
             <span class="reader-pulse" aria-hidden="true" />
             <h1 ref={viewHeadingRef} tabIndex={-1}>{COPY.readingHeading}</h1>
             <p>{COPY.readingBody}</p>
@@ -1174,7 +1255,11 @@ export function App(props: AppProps) {
         ) : null}
 
         {view.kind === "camera" ? (
-          <section class="scanner-panel" aria-labelledby="camera-title" aria-busy={locked}>
+          <section
+            class="scanner-panel"
+            aria-labelledby="camera-title"
+            aria-busy={cameraUi.starting || cameraTaskBusy}
+          >
             <div class="section-heading">
               <div>
                 <p class="eyebrow">{COPY.cameraEyebrow}</p>
@@ -1202,11 +1287,13 @@ export function App(props: AppProps) {
             </p>
             {cameraUi.notice !== null ? (
               <p class="camera-notice" role="status">
-                {cameraUi.notice === "torch-unavailable"
-                  ? COPY.torchUnavailableBody
-                  : cameraUi.notice === "zoom-unavailable"
-                    ? COPY.zoomUnavailableBody
-                    : COPY.switchUnavailableBody}
+                <span key={cameraUi.noticeNonce}>
+                  {cameraUi.notice === "torch-unavailable"
+                    ? COPY.torchUnavailableBody
+                    : cameraUi.notice === "zoom-unavailable"
+                      ? COPY.zoomUnavailableBody
+                      : COPY.switchUnavailableBody}
+                </span>
               </p>
             ) : null}
             <div class="camera-controls">
@@ -1287,7 +1374,7 @@ export function App(props: AppProps) {
         ) : null}
 
         {view.kind === "selection" ? (
-          <section class="result-layout" aria-labelledby="selection-title" aria-busy={locked}>
+          <section class="result-layout" aria-labelledby="selection-title">
             <div class="section-heading">
               <div>
                 <p class="eyebrow">{COPY.selectionEyebrow}</p>
@@ -1368,7 +1455,6 @@ export function App(props: AppProps) {
             <section
               class={`center-card ${isRecovery ? "recovery-card" : "error-card"}`}
               role="alert"
-              aria-busy={locked}
             >
               <span class={isRecovery ? "recovery-glyph" : "error-glyph"} aria-hidden="true">
                 {canResumeCamera ? "↻" : isRecovery ? "i" : "!"}
@@ -1431,9 +1517,9 @@ export function App(props: AppProps) {
         {view.kind === "result" ? (() => {
           const report = view.active.report;
           const status = statusForReport(report);
-          const destination = destinationOrigin(report);
+          const destination = reviewedDestination(report);
           return (
-            <section class="result-layout" aria-labelledby="result-title" aria-busy={locked}>
+            <section class="result-layout" aria-labelledby="result-title">
               <div class="result-topline">
                 <span class="kind-chip">{kindLabel(report)}</span>
               </div>
@@ -1449,7 +1535,7 @@ export function App(props: AppProps) {
               {destination !== null ? (
                 <div class="destination-card">
                   <span>{COPY.actualDestination}</span>
-                  <bdi dir="auto">{destination}</bdi>
+                  <bdi dir="auto">{destination.summary}</bdi>
                 </div>
               ) : null}
               {report.signals.length > 0 ? (
@@ -1615,11 +1701,10 @@ export function App(props: AppProps) {
                 </p>
               ) : null}
               {confirmation !== null &&
-              destination !== null &&
-              report.canonicalHref !== undefined ? (
+              destination !== null ? (
                 <ConfirmationDialog
-                  destination={destination}
-                  canonicalHref={report.canonicalHref}
+                  destination={destination.summary}
+                  canonicalHref={destination.href}
                   locked={locked}
                   returnFocus={confirmationTriggerRef.current}
                   onOpen={(event) => {
@@ -1644,7 +1729,7 @@ export function App(props: AppProps) {
         })() : null}
 
         {view.kind === "privacy" ? (
-          <article class="prose-card" aria-busy={locked}>
+          <article class="prose-card">
             <p class="eyebrow">{COPY.privacyEyebrow}</p>
             <h1 ref={viewHeadingRef} tabIndex={-1}>{COPY.privacyTitle}</h1>
             <p class="lead">{COPY.privacyStatement}</p>
@@ -1656,7 +1741,7 @@ export function App(props: AppProps) {
             <p>{COPY.privacyHostingBody}</p>
             <h2>{COPY.privacyActionsHeading}</h2>
             <p>{COPY.privacyActionsBody}</p>
-            <button type="button" class="primary-button" onClick={goHome}>{COPY.backToScanner}</button>
+            <button type="button" class="primary-button" onClick={returnFromInfo}>{infoBackLabel}</button>
           </article>
         ) : null}
 
@@ -1668,7 +1753,7 @@ export function App(props: AppProps) {
             (navigator as Navigator & { standalone?: boolean }).standalone === true;
           const guidance = detectInstallGuidance(navigator.userAgent, alreadyInstalled);
           return (
-            <article class="prose-card" aria-busy={locked}>
+            <article class="prose-card">
               <p class="eyebrow">{COPY.aboutEyebrow}</p>
               <h1 ref={viewHeadingRef} tabIndex={-1}>
                 {COPY.aboutTitle}
@@ -1740,13 +1825,13 @@ export function App(props: AppProps) {
                   </div>
                 </dl>
               </details>
-              <button type="button" class="primary-button" onClick={goHome}>{COPY.backToScanner}</button>
+              <button type="button" class="primary-button" onClick={returnFromInfo}>{infoBackLabel}</button>
             </article>
           );
         })() : null}
 
         {view.kind === "glossary" ? (
-          <article class="prose-card" aria-busy={locked}>
+          <article class="prose-card">
             <p class="eyebrow">{COPY.glossaryEyebrow}</p>
             <h1 ref={viewHeadingRef} tabIndex={-1}>{COPY.glossaryTitle}</h1>
             <p class="lead">{COPY.glossaryLead}</p>
@@ -1766,7 +1851,7 @@ export function App(props: AppProps) {
               >
                 {COPY.backToAbout}
               </button>
-              <button type="button" class="primary-button" onClick={goHome}>{COPY.backToScanner}</button>
+              <button type="button" class="primary-button" onClick={returnFromInfo}>{infoBackLabel}</button>
             </div>
           </article>
         ) : null}

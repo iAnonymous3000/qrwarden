@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.tests.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client", "@playwright/test"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
+  },
+  "include": ["tests/browser/**/*.ts"]
+}

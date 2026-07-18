@@ -1,5 +1,10 @@
+import {
+  postWorkerToClient,
+  type ActivationCommittedMessage,
+} from "./protocol";
+
 export interface CommitMessageTarget {
-  postMessage(message: Readonly<Record<string, string>>): void;
+  postMessage(message: unknown): void;
 }
 
 /**
@@ -10,7 +15,7 @@ export interface CommitMessageTarget {
 export async function requestActivationCommit(
   skipWaiting: () => Promise<void>,
   clients: readonly CommitMessageTarget[],
-  message: Readonly<Record<string, string>>,
+  message: ActivationCommittedMessage,
 ): Promise<boolean> {
   try {
     await skipWaiting();
@@ -20,7 +25,7 @@ export async function requestActivationCommit(
 
   for (const client of clients) {
     try {
-      client.postMessage(message);
+      postWorkerToClient(client, message);
     } catch {
       // Activation was requested already; this client will reconcile locally.
     }

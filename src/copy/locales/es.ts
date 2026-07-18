@@ -73,6 +73,9 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "QRWarden no pudo leer esta imagen. Prueba con otro archivo JPEG, PNG o WebP.",
   chooseOneImageHeading: "Elige una sola imagen.",
   chooseOneImageBody: "Suelta una sola imagen JPEG, PNG o WebP a la vez.",
+  shareBusyHeading: "Demasiadas imágenes compartidas.",
+  shareBusyBody:
+    "QRWarden ya está procesando cuatro imágenes compartidas. Vuelve a la aplicación desde la que compartiste e intenta compartir esta imagen de nuevo cuando terminen las anteriores.",
   shareMultipleFilesBody:
     "Se compartió más de una imagen. Vuelve a la aplicación desde la que compartiste y comparte una sola imagen JPEG, PNG o WebP a la vez.",
   shareTooLargeBody:
@@ -160,10 +163,10 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   installInstalledHeading: "Ya instalado",
   installInstalled:
     "Estás usando la aplicación QRWarden instalada en este dispositivo. No se necesitan pasos de instalación.",
-  pasteHint: "También puedes pegar o soltar una imagen en cualquier parte de esta página.",
+  pasteHint: "También puedes pegar o soltar una imagen aquí.",
   signalNeedsReview: "Requiere revisión",
   signalContext: "Contexto",
-  copyReportButton: "Copiar informe",
+  copyReportButton: "Copiar informe con datos ocultos",
   reportTitle: "Informe de inspección de QRWarden",
   reportHiddenValue: "(oculto)",
   reportPathSegmentsHidden: (count: number): string =>
@@ -231,7 +234,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   }),
   selectionOptionLabel: (index: number, position: string, kind: string): string =>
     `Código ${index}, ${position}, ${kind}`,
-  actualDestination: "Destino real",
+  actualDestination: "Dirección en el código QR",
   signalsHeading: "Detalles a tener en cuenta",
   signalExplainerSummary: "Qué significa esto",
   contentsHeading: "Contenido decodificado",
@@ -250,6 +253,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   lockedFieldDetails:
     "Detalles no disponibles mientras se comprueba la versión de la aplicación.",
   backToScanner: "Volver al escáner",
+  backToReview: "Volver a la revisión",
   backToAbout: "Volver a la página Acerca de",
   privacyEyebrow: "Privacidad",
   privacyTitle: "Qué se queda en tu dispositivo",
@@ -309,6 +313,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   fieldLabels: Object.freeze({
     "Action": "Acción",
     "Address": "Dirección",
+    "Anonymous identity": "Identidad anónima",
     "Byte count": "Cantidad de bytes",
     "Calendar": "Calendario",
     "Complete bootstrap payload": "Carga útil completa de arranque",
@@ -325,12 +330,14 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "Email body": "Cuerpo del correo",
     "Email recipient": "Destinatario del correo",
     "Email subject": "Asunto del correo",
+    "Declared EAP method (not validated)": "Método EAP declarado (no validado)",
     "Ends": "Termina",
     "Event": "Evento",
     "Fragment": "Fragmento",
     "Fragment names": "Nombres del fragmento",
     "Hexadecimal preview": "Vista previa hexadecimal",
-    "Hidden network": "Red oculta",
+    "Declared hidden network (not validated)": "Red oculta declarada (no validada)",
+    "Identity": "Identidad",
     "Location": "Ubicación",
     "Message body": "Cuerpo del mensaje",
     "Message recipient": "Destinatario del mensaje",
@@ -343,13 +350,18 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "Original QR content": "Contenido original del código QR",
     "Password": "Contraseña",
     "Path": "Ruta",
+    "Declared phase 2 method (not validated)":
+      "Método de fase 2 declarado (no validado)",
+    "Declared phase 2 method (legacy H, not validated)":
+      "Método de fase 2 declarado (H heredado, no validado)",
     "Payment": "Pago",
     "Port": "Puerto",
     "Provisioning type": "Tipo de aprovisionamiento",
     "QR content": "Contenido del código QR",
     "Query names": "Nombres de la consulta",
     "Registrable domain": "Dominio registrable",
-    "Security type": "Tipo de seguridad",
+    "Declared security type (not validated)":
+      "Tipo de seguridad declarado (no validado)",
     "Starts": "Comienza",
     "Structured format": "Formato estructurado",
     "Telephone": "Teléfono",
@@ -362,21 +374,27 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   fieldValues: Object.freeze({
     "None": "Ninguno",
     "Present": "Presente",
+    "Present (empty)": "Presente (vacío)",
     "Not present": "No presente",
     "Not available": "No disponible",
     "Unavailable": "No disponible",
     "Empty": "Vacío",
     "Not specified": "No especificado",
-    "OTP account": "Cuenta OTP",
-    "OTP migration": "Migración OTP",
-    "DPP bootstrap": "Arranque DPP",
+    "Yes": "Sí",
+    "No": "No",
+    "TOTP setup payload": "Carga útil de configuración TOTP",
+    "HOTP setup payload": "Carga útil de configuración HOTP",
+    "DPP bootstrap data (public key not validated)":
+      "Datos de arranque DPP (clave pública no validada)",
     "vCard contact": "Contacto vCard",
     "Calendar entry": "Entrada de calendario",
     "Email details (inspect only)": "Datos de correo (solo inspección)",
     "Message details (inspect only)": "Datos de mensaje (solo inspección)",
-    "Payment request (inspect only)": "Solicitud de pago (solo inspección)",
-    "Custom application link (inspect only)":
-      "Enlace de aplicación personalizado (solo inspección)",
+    "Payment-related URI (payload not validated)":
+      "URI relacionado con pagos (carga útil no validada)",
+    "URI scheme recognized; payload not validated":
+      "Esquema de URI reconocido; carga útil no validada",
+    "URI scheme only (no payload)": "Solo esquema de URI (sin carga útil)",
     "Localhost": "Localhost",
     "Multicast DNS .local": "DNS multicast .local",
     "Home network home.arpa": "Red doméstica home.arpa",
@@ -405,16 +423,16 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   kindLabels: Object.freeze({
     "web-url": "Enlace web",
     wifi: "Datos de Wi-Fi",
-    otp: "Configuración de contraseña de un solo uso",
-    dpp: "Aprovisionamiento de dispositivo",
+    otp: "Datos de configuración OTP",
+    dpp: "Datos con formato DPP",
     contact: "Contacto",
     calendar: "Entrada de calendario",
     email: "Datos de correo",
     sms: "Datos de mensaje",
     telephone: "Número de teléfono",
     geo: "Ubicación",
-    payment: "Datos de pago",
-    "custom-uri": "Enlace de aplicación",
+    payment: "URI con esquema de pago",
+    "custom-uri": "URI no web",
     gs1: "Datos GS1",
     "iso-15434": "Datos ISO/IEC 15434",
     empty: "Código QR vacío",
@@ -450,7 +468,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "local-or-special-destination": {
       title: "Destino local o de propósito especial",
       explanation:
-        "La dirección apunta a un rango de red privado, local o especial: algún lugar dentro de tu propia red o dispositivo en lugar de la internet pública.",
+        "El host o la dirección pertenece a una categoría local o de propósito especial. Puede ser local, privada, de documentación, multidifusión, reservada o una excepción globalmente alcanzable; revisa la categoría mostrada arriba.",
     },
     "non-default-port": {
       title: "Puerto no predeterminado",

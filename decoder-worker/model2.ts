@@ -70,10 +70,6 @@ export function checkModel2(result: CapturedReaderResult): Model2Check {
   return { kind: "supported", version };
 }
 
-export function isValidQrFamilyResult(result: CapturedReaderResult): boolean {
-  return result.isValid && result.symbology === "QRCode";
-}
-
 export type ResultCount =
   | { readonly kind: "none" }
   | { readonly kind: "results"; readonly results: readonly CapturedReaderResult[] }

@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.tests.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable", "WebWorker"],
+    "types": ["node", "vite/client", "vitest/globals"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": ["tests/unit/**/*.ts", "tests/integration/**/*.ts"]
+}

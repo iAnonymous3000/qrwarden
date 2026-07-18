@@ -191,7 +191,7 @@ describe("Cloudflare live release verifier", () => {
         requests.push({
           pathname: url.pathname,
           headers: new Headers(init?.headers),
-          redirect: init?.redirect,
+          ...(init?.redirect === undefined ? {} : { redirect: init.redirect }),
         });
         return Promise.resolve(responseFor(url.pathname, bodies));
       },

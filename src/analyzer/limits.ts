@@ -1,4 +1,8 @@
-import type { DisplayField, DisplayFieldKind } from "./types";
+import type {
+  DisplayField,
+  DisplayFieldKind,
+  ReportFieldPolicy,
+} from "./types";
 import { escapeForbiddenForDisplay } from "./characters";
 
 export const ANALYZER_LIMITS = Object.freeze({
@@ -18,8 +22,8 @@ export interface FieldOptions {
   readonly collapsed?: boolean;
   readonly count?: number;
   readonly omittedCount?: number;
+  readonly reportPolicy?: ReportFieldPolicy;
   readonly reportValue?: string;
-  readonly reportRedacted?: boolean;
 }
 
 export function scalarLength(value: string): number {
@@ -46,21 +50,22 @@ export class ReportFields {
   readonly #fields: DisplayField[] = [];
   #remaining = ANALYZER_LIMITS.reportScalars;
 
-  add(id: string, label: string, value: string, options: FieldOptions = {}): void {
+  add(id: string, label: string, value: string, options: FieldOptions = {}): boolean {
     if (this.#fields.length >= ANALYZER_LIMITS.logicalFields || this.#remaining <= 0) {
-      return;
+      return false;
     }
 
     const available = Math.min(ANALYZER_LIMITS.fieldScalars, this.#remaining);
     const bounded = truncateScalars(escapeForbiddenForDisplay(value), available);
-    // The replacement report value obeys the same escape-and-truncate bound,
-    // so the copied report never carries content beyond what review could
-    // have shown on screen.
+    // The replacement report value obeys the same per-field bound. Account
+    // for the longer representation globally: a field with a short display
+    // value and a long report replacement must not leave the full display
+    // budget available to later exported fields.
     const boundedReport =
       options.reportValue === undefined
         ? undefined
         : truncateScalars(escapeForbiddenForDisplay(options.reportValue), available);
-    this.#remaining -= bounded.used;
+    this.#remaining -= Math.max(bounded.used, boundedReport?.used ?? 0);
     this.#fields.push({
       id,
       label,
@@ -75,11 +80,10 @@ export class ReportFields {
       ...(options.omittedCount === undefined
         ? {}
         : { omittedCount: options.omittedCount }),
+      reportPolicy: options.reportPolicy ?? "hidden",
       ...(boundedReport === undefined ? {} : { reportValue: boundedReport.value }),
-      ...(options.reportRedacted === undefined
-        ? {}
-        : { reportRedacted: options.reportRedacted }),
     });
+    return true;
   }
 
   get value(): readonly DisplayField[] {

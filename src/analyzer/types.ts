@@ -32,14 +32,20 @@ export type DisplayFieldKind =
   | "count"
   | "hex";
 
+export type ReportFieldPolicy = "hidden" | "safe";
+
 /**
  * A renderer may render only `value`, which is escaped and bounded inert text.
- * `actionValue` retains the exact analyzed field value for an explicit brokered
- * action and must never be substituted into markup or another active sink.
+ * `actionValue` retains the exact analyzed field value for analyzer integrity
+ * checks and must never be substituted into markup or another active sink.
  * `sensitive` and `masked` are display instructions; they never grant an action
- * capability. `reportValue` replaces the value in the copied plain-text report
- * only, and `reportRedacted` hides the value from that report entirely; neither
- * changes the on-screen display.
+ * capability. `reportPolicy` is fail-closed: a field reaches the copied report
+ * only when its analyzer call site explicitly marks it `safe`. When
+ * `reportValue` is present, every report consumer must use it instead of
+ * `value`; falling back to the display value can re-export attacker-controlled
+ * detail the analyzer deliberately replaced. Neither property changes the
+ * on-screen display. Clipboard actions copy the escaped, bounded `value`, never
+ * the exact `actionValue`.
  */
 export interface DisplayField {
   readonly id: string;
@@ -53,8 +59,8 @@ export interface DisplayField {
   readonly truncated: boolean;
   readonly count?: number;
   readonly omittedCount?: number;
+  readonly reportPolicy: ReportFieldPolicy;
   readonly reportValue?: string;
-  readonly reportRedacted?: boolean;
 }
 
 export type AnalysisSignalCode =

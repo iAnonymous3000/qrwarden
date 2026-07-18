@@ -486,7 +486,8 @@ if (cloudflare) {
       "persistent deny-by-default Access application for all preview deployments",
       "persistent deny-by-default Access application for QRWarden preview deployments",
       "no cache rule overriding signed Cache-Control",
-      "no transform rule mutating signed response bodies or headers"
+      "no transform rule mutating signed response bodies or headers",
+      "no NEL, Report-To, or Reporting-Endpoints response headers"
     ],
     "Cloudflare operational controls"
   );
@@ -502,8 +503,10 @@ if (cloudflare) {
     },
     "Cloudflare release-key DNS contract"
   );
-  if (!cloudflare.disabledAccountFeatures.includes("Workers Logs and observability")) {
-    errors.push("Cloudflare account baseline must disable Workers Logs and observability");
+  for (const feature of ["Workers Logs and observability", "Network Error Logging"]) {
+    if (!cloudflare.disabledAccountFeatures.includes(feature)) {
+      errors.push(`Cloudflare account baseline must disable ${feature}`);
+    }
   }
 }
 

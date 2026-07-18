@@ -48,6 +48,7 @@ describe("problem recovery actions", () => {
 
   it.each([
     ["share-multiple-files", COPY.shareMultipleFilesBody],
+    ["share-busy", COPY.shareBusyBody],
     ["share-too-large", COPY.shareTooLargeBody],
     ["share-unsupported-type", COPY.shareUnsupportedTypeBody],
     ["share-unreadable", COPY.shareUnreadableBody],

@@ -89,9 +89,6 @@ export interface DetectionFingerprint {
   readonly sequenceId: string;
 }
 
-/** The only content types for which QRWarden will expose decoded text. */
-export type TextualReaderContentType = "Text" | "GS1" | "ISO15434";
-
 export interface ContentTypePolicy {
   readonly renderText: boolean;
   readonly urlEligible: boolean;

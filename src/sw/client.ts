@@ -1,5 +1,14 @@
 import type { QrwardenTrustedScriptURL } from "../app/trustedScripts";
+import {
+  postClientToWorker,
+  postClientToWorkerWithTransfer,
+  readWorkerToClientMessage,
+  type WorkerState,
+  type WorkerToClientMessage,
+} from "./protocol";
 import { isSharePendingToken } from "./shareToken";
+
+export type { WorkerState } from "./protocol";
 
 const QUERY_TIMEOUT_MS = 2_000;
 const QUERY_RETRY_MS = 500;
@@ -40,17 +49,6 @@ export type OfflineState =
   | "update-ready"
   | "update-failed";
 
-export interface WorkerState {
-  readonly releaseId: string;
-  readonly transactionState:
-    | "idle"
-    | "preparing"
-    | "finalizing"
-    | "committing";
-  readonly cacheVerified: boolean;
-  readonly cacheVerification: "pending" | "verified" | "failed";
-}
-
 export interface ReleaseGateResult {
   readonly controlsEnabled: boolean;
   readonly offlineState: OfflineState;
@@ -89,7 +87,7 @@ export function requestPendingShare(
     return false;
   }
   try {
-    controller.postMessage({ type: "PULL_SHARED_IMAGE", token });
+    postClientToWorker(controller, { type: "PULL_SHARED_IMAGE", token });
     return true;
   } catch {
     return false;
@@ -115,16 +113,6 @@ interface UpdateLease {
 }
 
 type LeaseReconcileOutcome = "committed" | "failed" | "unknown";
-
-interface WorkerMessage {
-  readonly type?: string;
-  readonly nonce?: string;
-  readonly release?: string;
-  readonly releaseId?: string;
-  readonly transactionState?: WorkerState["transactionState"];
-  readonly cacheVerified?: boolean;
-  readonly cacheVerification?: WorkerState["cacheVerification"];
-}
 
 type WorkerQueryResult =
   | { readonly kind: "absent" }
@@ -178,23 +166,9 @@ async function queryWorker(
       () => finish({ kind: "unavailable" }),
       QUERY_TIMEOUT_MS,
     );
-    channel.port1.onmessage = (event: MessageEvent<WorkerMessage>) => {
-      const data = event.data;
-      const cacheVerification = data.cacheVerification ??
-        (data.cacheVerified === true ? "verified" : "pending");
-      if (
-        data.type !== "WORKER_STATE" ||
-        typeof data.releaseId !== "string" ||
-        (data.transactionState !== "idle" &&
-          data.transactionState !== "preparing" &&
-          data.transactionState !== "finalizing" &&
-          data.transactionState !== "committing") ||
-        typeof data.cacheVerified !== "boolean" ||
-        (cacheVerification !== "pending" &&
-          cacheVerification !== "verified" &&
-          cacheVerification !== "failed") ||
-        (cacheVerification === "verified") !== data.cacheVerified
-      ) {
+    channel.port1.onmessage = (event: MessageEvent<unknown>) => {
+      const data = readWorkerToClientMessage(event.data);
+      if (data?.type !== "WORKER_STATE") {
         finish({ kind: "unavailable" });
         return;
       }
@@ -204,12 +178,16 @@ async function queryWorker(
           releaseId: data.releaseId,
           transactionState: data.transactionState,
           cacheVerified: data.cacheVerified,
-          cacheVerification,
+          cacheVerification: data.cacheVerification,
         },
       });
     };
     try {
-      worker.postMessage({ type: "QUERY_WORKER_STATE" }, [channel.port2]);
+      postClientToWorkerWithTransfer(
+        worker,
+        { type: "QUERY_WORKER_STATE" },
+        [channel.port2],
+      );
     } catch {
       finish({ kind: "unavailable" });
     }
@@ -491,7 +469,7 @@ export class ServiceWorkerClient {
       return { status: "unavailable" };
     }
     try {
-      waiting.postMessage({ type: "BEGIN_UPDATE_COORDINATION" });
+      postClientToWorker(waiting, { type: "BEGIN_UPDATE_COORDINATION" });
       return { status: "started" };
     } catch {
       queueMicrotask(() => this.#regateFromLifecycle());
@@ -506,7 +484,9 @@ export class ServiceWorkerClient {
     this.#listenersInstalled = true;
     navigator.serviceWorker.addEventListener("message", (event) => {
       // #handleWorkerMessage validates every field before acting on it.
-      this.#handleWorkerMessage(event as MessageEvent<WorkerMessage>);
+      this.#handleWorkerMessage(
+        event as MessageEvent<unknown> & { readonly source: ServiceWorker | null },
+      );
     });
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       this.#resetRequiredQueryFailures();
@@ -531,13 +511,17 @@ export class ServiceWorkerClient {
     }
     if (active.cacheVerification === "failed") return "incomplete";
     const smokePassed = await this.#options.decoderSmoke();
-    return smokePassed ? "ready" : "incomplete";
+    return smokePassed ? "ready" : "update-failed";
   }
 
   async #completeReadiness(active: WorkerState): Promise<ReleaseGateResult> {
     const state = await this.#readinessState(active);
     if (state === "preparing") {
       this.#scheduleQueryRetry(QUERY_TIMEOUT_MS);
+    }
+    if (state === "update-failed") {
+      this.#options.dropReport();
+      return this.#applyGateResult(false, state);
     }
     return this.#applyGateResult(true, state);
   }
@@ -631,49 +615,52 @@ export class ServiceWorkerClient {
     }
   }
 
-  #handleWorkerMessage(event: MessageEvent<WorkerMessage>): void {
-    const message = event.data;
-    if (
-      message.type === "PREPARE_UPDATE" &&
-      typeof message.nonce === "string" &&
-      typeof message.release === "string"
-    ) {
+  #handleWorkerMessage(
+    event: MessageEvent<unknown> & { readonly source: ServiceWorker | null },
+  ): void {
+    const message = readWorkerToClientMessage(event.data);
+    if (message === null) return;
+    if (message.type === "PREPARE_UPDATE") {
       const source = event.source;
       if (this.#leaseMatches(message)) {
-        source?.postMessage({
+        if (source !== null) {
+          postClientToWorker(source, {
+            type: "READY",
+            nonce: message.nonce,
+            release: message.release,
+          });
+        }
+        return;
+      }
+      if (!this.#options.isIdle() || this.#lease !== null) {
+        if (source !== null) {
+          postClientToWorker(source, {
+            type: "BUSY",
+            nonce: message.nonce,
+            release: message.release,
+          });
+        }
+        return;
+      }
+      this.#acquireLease(message.nonce, message.release);
+      if (source !== null) {
+        postClientToWorker(source, {
           type: "READY",
           nonce: message.nonce,
           release: message.release,
         });
-        return;
       }
-      if (!this.#options.isIdle() || this.#lease !== null) {
-        source?.postMessage({
-          type: "BUSY",
-          nonce: message.nonce,
-          release: message.release,
-        });
-        return;
-      }
-      this.#acquireLease(message.nonce, message.release);
-      source?.postMessage({
-        type: "READY",
-        nonce: message.nonce,
-        release: message.release,
-      });
       return;
     }
 
-    if (
-      message.type === "REPORT_LOADED_RELEASE" &&
-      typeof message.nonce === "string" &&
-      /^[0-9a-f]{32}$/.test(message.nonce)
-    ) {
-      event.source?.postMessage({
-        type: "LOADED_RELEASE",
-        nonce: message.nonce,
-        release: this.#options.loadedRelease,
-      });
+    if (message.type === "REPORT_LOADED_RELEASE") {
+      if (event.source !== null) {
+        postClientToWorker(event.source, {
+          type: "LOADED_RELEASE",
+          nonce: message.nonce,
+          release: this.#options.loadedRelease,
+        });
+      }
       return;
     }
 
@@ -735,7 +722,7 @@ export class ServiceWorkerClient {
     if (worker === null || state.transactionState === "idle") {
       return;
     }
-    worker.postMessage({
+    postClientToWorker(worker, {
       type: "JOIN_UPDATE_STATE",
       loadedRelease: this.#options.loadedRelease,
     });
@@ -749,7 +736,7 @@ export class ServiceWorkerClient {
     const nonce = [...bytes]
       .map((value) => value.toString(16).padStart(2, "0"))
       .join("");
-    worker.postMessage({
+    postClientToWorker(worker, {
       type: "CLEANUP_STALE_CACHES",
       nonce,
       release: this.#options.loadedRelease,
@@ -790,7 +777,9 @@ export class ServiceWorkerClient {
     this.#latchGateResult(false, "update-failed");
   }
 
-  #leaseMatches(message: WorkerMessage): boolean {
+  #leaseMatches(
+    message: Extract<WorkerToClientMessage, { readonly nonce: string }>,
+  ): boolean {
     return (
       this.#lease !== null &&
       message.nonce === this.#lease.nonce &&

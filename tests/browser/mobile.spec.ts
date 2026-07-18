@@ -86,7 +86,7 @@ test("keeps home and information views usable on mobile touch screens", async ({
   await expectNoHorizontalOverflow(page, "home");
   await expectTouchTargets(page, "home");
   const viewport = page.viewportSize();
-  if (viewport !== null && viewport.width <= 400 && viewport.height <= 650) {
+  if (viewport !== null && viewport.width <= 400 && viewport.height <= 680) {
     const firstSourceCard = page.getByRole("button", { name: "Scan with camera" });
     const cardTop = await firstSourceCard.evaluate(
       (element) => element.getBoundingClientRect().top,
@@ -115,6 +115,36 @@ test("keeps home and information views usable on mobile touch screens", async ({
   await page.getByText("Technical and release details", { exact: true }).click();
   await expectNoHorizontalOverflow(page, "about");
   await expectTouchTargets(page, "about");
+});
+
+test("keeps a scan action visible when offline setup is incomplete", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(
+      Object.getPrototypeOf(navigator.serviceWorker),
+      "getRegistration",
+      {
+        configurable: true,
+        value: () =>
+          Promise.reject(new DOMException("Storage blocked", "SecurityError")),
+      },
+    );
+  });
+  await page.goto("/");
+  await expect(
+    page.getByText(COPY.offlineIncompleteHeading, { exact: true }),
+  ).toBeVisible();
+  const viewport = page.viewportSize();
+  if (viewport === null) throw new TypeError("Mobile viewport is required");
+  const cardTop = await page
+    .getByRole("button", { name: COPY.sourceCameraTitle })
+    .evaluate((element) => element.getBoundingClientRect().top);
+  expect(
+    cardTop,
+    "At least one full-size tap row of a scan action should be visible initially",
+  ).toBeLessThanOrEqual(viewport.height - 44);
+  await expectNoHorizontalOverflow(page, "incomplete offline home");
 });
 
 test("reflows review, confirmation, and multi-code selection at mobile widths", async ({

@@ -1,10 +1,10 @@
 # Security policy
 
-Last reviewed: 2026-07-16 · Applies to: v0.1.0 (pre-release)
+Last reviewed: 2026-07-18 · Applies to: v0.1.0 (pre-release)
 
 ## Private reporting
 
-Use GitHub's private vulnerability reporting form: open the repository's **Security** tab, choose **Advisories**, then **Report a vulnerability**. Do not file a public issue or pull request. Repository administrators must enable private vulnerability reporting as soon as public visibility makes it available, subscribe active maintainers to security-alert notifications, and verify the form from a non-admin account before linking or promoting the repository.
+Use GitHub's enabled private vulnerability reporting form: open the repository's **Security** tab, choose **Advisories**, then **Report a vulnerability**. Do not file a public issue or pull request. Repository administrators must keep private vulnerability reporting enabled, subscribe active maintainers to security-alert notifications, and periodically verify the form from a non-admin account.
 
 If the private form is unexpectedly unavailable, do not put vulnerability details in an issue, discussion, pull request, commit, or other public channel. A content-free public issue may ask administrators to restore the private route only when Issues are enabled. If Issues are disabled and the repository owner publishes no separate contact route, retain the report privately until the form is restored; the project does not claim an unconfigured fallback.
 
@@ -16,7 +16,7 @@ Maintainers aim to acknowledge a report within three business days, provide an i
 
 ## Supported versions
 
-Before the first signed public release, no version is supported for production use. After launch, only the latest stable release receives security fixes unless an advisory says otherwise. A compromised signing-key event follows the recovery process in `SIGNING.md` and `RELEASE.md`.
+Before the first signed public release, no version is supported for production use. After launch, only the latest stable release receives security fixes unless an advisory says otherwise. A compromised signing-key event stops releases; [SIGNING.md](SIGNING.md) documents the required recovery contract and the tooling that must still be completed before a recovery release can proceed.
 
 ## Disclosure
 

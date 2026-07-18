@@ -7,9 +7,18 @@ import {
 } from "workbox-precaching";
 import { requestActivationCommit } from "./activationCommit";
 import {
-  isSharePendingToken,
+  postClientToWorkerWithTransfer,
+  postWorkerToClient,
+  readClientToWorkerMessage,
+  readWorkerToClientMessage,
+  type CacheVerification,
+  type ShareRejectionReason,
+  type WorkerToClientMessage,
+  type WorkerTransactionState,
+} from "./protocol";
+import {
+  shareAdmissionBusyLocation,
   sharePendingLocation,
-  sharePendingTokenFromUrl,
 } from "./shareToken";
 
 declare const __QRWARDEN_RELEASE_ID__: string;
@@ -84,9 +93,7 @@ const precache = new PrecacheController({
 });
 precache.addToCacheList([...manifest]);
 
-type TransactionState = "idle" | "preparing" | "finalizing" | "committing";
-type CacheVerification = "pending" | "verified" | "failed";
-let transactionState: TransactionState = "idle";
+let transactionState: WorkerTransactionState = "idle";
 let transactionNonce: string | null = null;
 let cacheVerified = false;
 let cacheVerification: CacheVerification = "pending";
@@ -182,7 +189,7 @@ function refreshCacheVerification(): Promise<boolean> {
       const clients = await windowClients();
       for (const client of clients) {
         try {
-          client.postMessage({
+          postWorkerToClient(client, {
             type: "CACHE_VERIFICATION_COMPLETE",
             release: RELEASE_ID,
           });
@@ -272,7 +279,7 @@ async function repairAndVerifyCache(
 
 async function repairWithDeadline(nonce: string): Promise<boolean> {
   const abort = new AbortController();
-  let timeout = 0;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       repairAndVerifyCache(nonce, abort.signal),
@@ -284,7 +291,7 @@ async function repairWithDeadline(nonce: string): Promise<boolean> {
       }),
     ]);
   } finally {
-    clearTimeout(timeout);
+    if (timeout !== undefined) clearTimeout(timeout);
   }
 }
 
@@ -337,11 +344,16 @@ async function activeReleaseIsCurrent(): Promise<boolean> {
       resolve(matches);
     };
     const timeout = setTimeout(() => finish(false), 1_000);
-    channel.port1.onmessage = (event: MessageEvent<{ readonly releaseId?: string }>) => {
-      finish(event.data?.releaseId === RELEASE_ID);
+    channel.port1.onmessage = (event: MessageEvent<unknown>) => {
+      const message = readWorkerToClientMessage(event.data);
+      finish(message?.type === "WORKER_STATE" && message.releaseId === RELEASE_ID);
     };
     try {
-      active.postMessage({ type: "QUERY_WORKER_STATE" }, [channel.port2]);
+      postClientToWorkerWithTransfer(
+        active,
+        { type: "QUERY_WORKER_STATE" },
+        [channel.port2],
+      );
     } catch {
       finish(false);
     }
@@ -360,10 +372,10 @@ function sameClientSet(
 
 function postTo(
   clients: readonly WindowClient[],
-  message: Readonly<Record<string, string>>,
+  message: WorkerToClientMessage,
 ): void {
   for (const client of clients) {
-    client.postMessage(message);
+    postWorkerToClient(client, message);
   }
 }
 
@@ -564,8 +576,7 @@ registerRoute(
     request.method === "GET" &&
     request.mode === "navigate" &&
     url.origin === self.location.origin &&
-    url.pathname === "/" &&
-    (url.search === "" || sharePendingTokenFromUrl(url) !== null),
+    url.pathname === "/",
   async () => {
     const cache = await caches.open(CURRENT_CACHE);
     const response = await cache.match(cacheKey(rootEntry));
@@ -578,14 +589,9 @@ const SHARE_TARGET_MAX_BYTES = 25_000_000;
 const SHARE_TARGET_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const SHARE_TARGET_CLIENT_ATTEMPTS = 20;
 const SHARE_TARGET_CLIENT_RETRY_MS = 250;
+const SHARE_TARGET_PARSE_TIMEOUT_MS = 10_000;
 const SHARE_TARGET_PENDING_TTL_MS = 120_000;
-const SHARE_TARGET_MAX_PARKED = 4;
-
-type ShareRejectionReason =
-  | "multiple-files"
-  | "too-large"
-  | "unsupported-type"
-  | "unreadable";
+const SHARE_TARGET_MAX_ADMITTED = 4;
 
 type SharePayload =
   | { readonly kind: "image"; readonly file: File }
@@ -604,20 +610,41 @@ interface ParkedShare {
 // simultaneous id-less shares paired when their bodies settle out of order.
 // The deadline keeps an unclaimed share from outliving its navigation.
 const pendingShares: ParkedShare[] = [];
+// Admission is reserved before multipart parsing and retained while the
+// payload waits for its redirect document. This single ownership set bounds
+// parsing, client lookup, and parked payloads together.
+const admittedShares = new Set<string>();
+
+function releaseShareAdmission(token: string): void {
+  admittedShares.delete(token);
+}
 
 function pruneExpiredShares(): void {
   const now = Date.now();
   for (let index = pendingShares.length - 1; index >= 0; index -= 1) {
-    if (now >= pendingShares[index]!.expires) pendingShares.splice(index, 1);
+    const share = pendingShares[index]!;
+    if (now >= share.expires) {
+      pendingShares.splice(index, 1);
+      releaseShareAdmission(share.token);
+    }
   }
 }
 
-function parkShare(token: string, payload: SharePayload): void {
+function reserveShareAdmission(token: string): boolean {
   pruneExpiredShares();
-  if (pendingShares.length >= SHARE_TARGET_MAX_PARKED) {
-    // Fail closed: refusing the newest share beats overwriting an older one.
-    return;
+  if (
+    admittedShares.has(token) ||
+    admittedShares.size >= SHARE_TARGET_MAX_ADMITTED
+  ) {
+    return false;
   }
+  admittedShares.add(token);
+  return true;
+}
+
+function parkShare(token: string, payload: SharePayload): void {
+  // Every parked payload owns one of the same four admission reservations,
+  // so this array cannot exceed the bound without an admission invariant bug.
   pendingShares.push({
     token,
     payload,
@@ -631,7 +658,9 @@ function takePendingShare(token: string): SharePayload | null {
   if (index < 0) {
     return null;
   }
-  return pendingShares.splice(index, 1)[0]!.payload;
+  const share = pendingShares.splice(index, 1)[0]!;
+  releaseShareAdmission(share.token);
+  return share.payload;
 }
 
 interface PendingPull {
@@ -655,7 +684,7 @@ function pruneExpiredPulls(): void {
 
 function parkPull(token: string, source: PendingPull["source"]): void {
   pruneExpiredPulls();
-  if (pendingPulls.length >= SHARE_TARGET_MAX_PARKED) {
+  if (pendingPulls.length >= SHARE_TARGET_MAX_ADMITTED) {
     return;
   }
   // A copied marker or duplicate startup message must not displace the first
@@ -696,13 +725,13 @@ function postSharePayload(
 ): void {
   try {
     if (payload.kind === "image") {
-      target.postMessage({
+      postWorkerToClient(target, {
         type: "SHARED_IMAGE",
         release: RELEASE_ID,
         file: payload.file,
       });
     } else {
-      target.postMessage({
+      postWorkerToClient(target, {
         type: "SHARE_REJECTED",
         release: RELEASE_ID,
         reason: payload.reason,
@@ -734,6 +763,38 @@ function classifySharedFiles(files: readonly File[]): SharePayload {
 }
 
 /**
+ * Multipart parsing is browser-owned and cannot be aborted. Race it against
+ * an ownership deadline so four stalled request bodies cannot hold every
+ * share admission forever. The parse promise handles its own rejection and
+ * has no delivery side effects, so a late settlement is safely discarded.
+ */
+async function parseSharedImageWithDeadline(event: FetchEvent): Promise<SharePayload> {
+  const parsed = event.request.formData().then(
+    (data) =>
+      classifySharedFiles(
+        data
+          .getAll("image")
+          .filter((entry): entry is File => entry instanceof File),
+      ),
+    () => ({ kind: "rejected", reason: "unreadable" }) as const,
+  );
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      parsed,
+      new Promise<SharePayload>((resolve) => {
+        timeout = setTimeout(
+          () => resolve({ kind: "rejected", reason: "unreadable" }),
+          SHARE_TARGET_PARSE_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
+/**
  * Finds the document created by the redirected share navigation through its
  * reserved client id. The id survives the worker's 303 redirect in Chromium,
  * but the document may not exist yet when the POST event fires, so the
@@ -743,7 +804,7 @@ function classifySharedFiles(files: readonly File[]): SharePayload {
  * windows, because a pre-existing tab would deterministically win.
  */
 async function resultingShareClient(event: FetchEvent): Promise<Client | null> {
-  const clientId = event.resultingClientId || event.clientId;
+  const clientId = event.resultingClientId;
   if (clientId === "") {
     return null;
   }
@@ -777,17 +838,7 @@ async function deliverSharedImage(
 ): Promise<void> {
   sharesInFlight.add(token);
   try {
-    let payload: SharePayload;
-    try {
-      const data = await event.request.formData();
-      payload = classifySharedFiles(
-        data
-          .getAll("image")
-          .filter((entry): entry is File => entry instanceof File),
-      );
-    } catch {
-      payload = { kind: "rejected", reason: "unreadable" };
-    }
+    const payload = await parseSharedImageWithDeadline(event);
     // The resulting client stays authoritative; a parked pull is the fallback
     // for engines that report no client id for the redirected document. The
     // payload stays local to this delivery, so a concurrent share can never
@@ -808,6 +859,7 @@ async function deliverSharedImage(
   } finally {
     sharesInFlight.delete(token);
     if (!pendingShares.some((share) => share.token === token)) {
+      releaseShareAdmission(token);
       // A delivery that settled without a parked payload leaves no future
       // producer for this token, so any duplicate/raced pull is stale.
       dropPendingPull(token);
@@ -823,13 +875,20 @@ self.addEventListener("fetch", (event) => {
   ) {
     if (event.request.method === "POST") {
       const token = nonce128();
+      const admitted = reserveShareAdmission(token);
       event.respondWith(
         new Response(null, {
           status: 303,
-          headers: { Location: sharePendingLocation(token) },
+          headers: {
+            Location: admitted
+              ? sharePendingLocation(token)
+              : shareAdmissionBusyLocation(),
+          },
         }),
       );
-      event.waitUntil(deliverSharedImage(event, token));
+      if (admitted) {
+        event.waitUntil(deliverSharedImage(event, token));
+      }
       return;
     }
     if (event.request.method === "GET" && event.request.mode === "navigate") {
@@ -880,20 +939,19 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("message", (event) => {
-  const data = event.data as {
-    readonly type?: string;
-    readonly token?: unknown;
-    readonly nonce?: string;
-    readonly release?: string;
-  };
+  const data = readClientToWorkerMessage(event.data);
+  if (data === null) return;
   if (data.type === "QUERY_WORKER_STATE") {
-    event.ports[0]?.postMessage({
-      type: "WORKER_STATE",
-      releaseId: RELEASE_ID,
-      transactionState,
-      cacheVerified,
-      cacheVerification,
-    });
+    const port = event.ports[0];
+    if (port !== undefined) {
+      postWorkerToClient(port, {
+        type: "WORKER_STATE",
+        releaseId: RELEASE_ID,
+        transactionState,
+        cacheVerified,
+        cacheVerification,
+      });
+    }
     if (cacheVerification === "pending") {
       event.waitUntil(refreshCacheVerification().then(() => undefined));
     }
@@ -907,7 +965,6 @@ self.addEventListener("message", (event) => {
 
   if (
     data.type === "PULL_SHARED_IMAGE" &&
-    isSharePendingToken(data.token) &&
     event.source !== null
   ) {
     const payload = takePendingShare(data.token);
@@ -926,8 +983,7 @@ self.addEventListener("message", (event) => {
 
   if (
     data.type === "CLEANUP_STALE_CACHES" &&
-    data.release === RELEASE_ID &&
-    typeof data.nonce === "string"
+    data.release === RELEASE_ID
   ) {
     event.waitUntil(cleanupStaleCaches(data.nonce));
     return;
@@ -935,9 +991,7 @@ self.addEventListener("message", (event) => {
 
   if (
     data.type === "LOADED_RELEASE" &&
-    typeof data.nonce === "string" &&
     data.nonce === cleanupNonce &&
-    typeof data.release === "string" &&
     event.source !== null &&
     "id" in event.source
   ) {
@@ -959,9 +1013,12 @@ self.addEventListener("message", (event) => {
 
   if (data.type === "JOIN_UPDATE_STATE" && event.source !== null) {
     if (transactionState === "idle" || transactionNonce === null) {
-      event.source.postMessage({ type: "NO_ACTIVE_PREPARE", release: RELEASE_ID });
+      postWorkerToClient(event.source, {
+        type: "NO_ACTIVE_PREPARE",
+        release: RELEASE_ID,
+      });
     } else {
-      event.source.postMessage({
+      postWorkerToClient(event.source, {
         type: "PREPARE_UPDATE",
         nonce: transactionNonce,
         release: RELEASE_ID,

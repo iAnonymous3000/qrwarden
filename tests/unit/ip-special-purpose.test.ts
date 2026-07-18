@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyIp } from "../../src/analyzer/ip";
+import { classifyIp, classifyLocalHostname } from "../../src/analyzer/ip";
 import { IANA_SPECIAL_PURPOSE_SNAPSHOT } from "../../src/data/ianaSpecialPurposeSnapshot";
 
 describe("complete IANA special-purpose snapshot", () => {
@@ -38,5 +38,24 @@ describe("complete IANA special-purpose snapshot", () => {
       special: false,
       globallyReachable: true,
     });
+  });
+});
+
+describe("special-use hostname classification", () => {
+  it.each([
+    ["router", "Dotless hostname"],
+    ["service.onion", "IANA special-use onion"],
+    ["name.test", "IANA special-use test"],
+    ["resolver.arpa", "IANA special-use resolver.arpa"],
+    ["example.com.", "IANA special-use example.com"],
+    ["printer.local", "Multicast DNS .local"],
+    ["gateway.home.arpa", "Home network home.arpa"],
+  ] as const)("classifies %s for explicit review", (hostname, category) => {
+    expect(classifyLocalHostname(hostname)).toBe(category);
+  });
+
+  it("leaves ordinary public hostnames and the DNS root outside special-use review", () => {
+    expect(classifyLocalHostname("openai.com")).toBeNull();
+    expect(classifyLocalHostname(".")).toBeNull();
   });
 });

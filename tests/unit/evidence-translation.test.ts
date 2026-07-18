@@ -38,6 +38,7 @@ const TEXT_FIXTURES: readonly string[] = [
   "http://exa\u0001mple.com/a",
   [
     "BEGIN:VCARD",
+    "VERSION:4.0",
     "FN:Alice Example",
     "N:Example;Alice",
     "ORG:Example Co",
@@ -48,8 +49,16 @@ const TEXT_FIXTURES: readonly string[] = [
     "NOTE:hello",
     "END:VCARD",
   ].join("\r\n"),
-  ["BEGIN:VCARD", "VERSION:2.1", "END:VCARD"].join("\r\n"),
+  [
+    "BEGIN:VCARD",
+    "VERSION:2.1",
+    "FN:Minimal",
+    "N:Minimal;;;;",
+    "END:VCARD",
+  ].join("\r\n"),
   "WIFI:T:WPA;S:Cafe;P:secret;H:true;;",
+  "WIFI:T:WPA2-EAP;S:Corp;E:TTLS;PH2:MSCHAPV2;A:anonymous;I:alice;P:secret;;",
+  "WIFI:T:WPA2-EAP;S:Legacy;H:MSCHAPV2;;",
   [
     "BEGIN:VCALENDAR",
     "BEGIN:VEVENT",
@@ -61,17 +70,18 @@ const TEXT_FIXTURES: readonly string[] = [
     "END:VEVENT",
     "END:VCALENDAR",
   ].join("\n"),
-  ["BEGIN:VCALENDAR", "END:VCALENDAR"].join("\n"),
   "sms:+15551234?body=Meet%20at%20noon",
   "SMSTO:+15551234:Meet at noon",
   "mailto:alice@example.com?subject=Hi&body=See%20you",
   "mailto:?to=alice@example.com&cc=bob@example.com&bcc=carol@example.com",
   "tel:+15551234567",
   "geo:37.7,-122.4",
-  "otpauth://totp/Example:alice?secret=ABC",
-  "DPP:C:81/1;K:abc;;",
+  "otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP",
+  "otpauth://hotp/Example:alice?secret=JBSWY3DPEHPK3PXP&counter=0",
+  "DPP:C:81/1;K:0123456789abcdef;;",
   "bitcoin:bc1qexample",
   "myapp:open?x=1",
+  "foo:",
   "plain text payload",
   "",
 ];
@@ -131,7 +141,13 @@ describe("analyzer evidence translation", () => {
     // therefore have entries in both fieldValues tables. destination-category
     // is excluded: its IANA registry names deliberately stay English and are
     // marked lang="en" by translateFieldValue's fail-closed fallback.
-    const synthesizedIds = new Set(["fragment", "otp-type", "dpp-type", "summary"]);
+    const synthesizedIds = new Set([
+      "fragment",
+      "hidden",
+      "otp-type",
+      "dpp-type",
+      "summary",
+    ]);
     const enValues: Readonly<Record<string, string>> = EN_COPY.fieldValues;
     const esValues: Readonly<Record<string, string>> = ES_COPY.fieldValues;
     for (const report of fixtureReports()) {

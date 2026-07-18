@@ -6,8 +6,8 @@
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "example.com", "registrable-domain": "example.com", "port": "443 (effective)", "path": "/" },
-    "signals": [],
-    "actionPolicy": "open-web"
+    "signals": ["local-or-special-destination"],
+    "actionPolicy": "confirm-web"
   },
   {
     "id": "case-and-root-normalization",
@@ -16,8 +16,8 @@
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "example.com" },
-    "signals": [],
-    "actionPolicy": "open-web"
+    "signals": ["local-or-special-destination"],
+    "actionPolicy": "confirm-web"
   },
   {
     "id": "idn-context-only",
@@ -26,8 +26,8 @@
     "canonicalHref": "https://xn--bcher-kva.example/",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "xn--bcher-kva.example", "unicode-hostname": "bücher.example" },
-    "signals": ["idn-hostname"],
-    "actionPolicy": "open-web"
+    "signals": ["idn-hostname", "local-or-special-destination"],
+    "actionPolicy": "confirm-web"
   },
   {
     "id": "mixed-confusable-idn",
@@ -36,7 +36,7 @@
     "canonicalHref": "https://xn--ypal-43d9g.example/",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "xn--ypal-43d9g.example", "unicode-hostname": "раypal.example" },
-    "signals": ["idn-hostname", "mixed-scripts", "confusable-label"],
+    "signals": ["idn-hostname", "local-or-special-destination", "mixed-scripts", "confusable-label"],
     "actionPolicy": "confirm-web"
   },
   {
@@ -46,7 +46,7 @@
     "canonicalHref": "https://xn--e1afmkfd.example/",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "xn--e1afmkfd.example", "unicode-hostname": "пример.example" },
-    "signals": ["idn-hostname", "mixed-scripts"],
+    "signals": ["idn-hostname", "local-or-special-destination", "mixed-scripts"],
     "actionPolicy": "confirm-web"
   },
   {
@@ -65,7 +65,7 @@
     "canonicalHref": "http://example.com/path",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "example.com", "port": "80 (effective)", "path": "/path" },
-    "signals": ["http"],
+    "signals": ["http", "local-or-special-destination"],
     "actionPolicy": "confirm-web"
   },
   {
@@ -135,7 +135,7 @@
     "canonicalHref": "https://example.com:8443/a",
     "kind": "web-url",
     "displayFields": { "port": "8443 (explicit)" },
-    "signals": ["non-default-port"],
+    "signals": ["local-or-special-destination", "non-default-port"],
     "actionPolicy": "confirm-web"
   },
   {
@@ -145,8 +145,8 @@
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
     "displayFields": { "port": "443 (explicit)" },
-    "signals": [],
-    "actionPolicy": "open-web"
+    "signals": ["local-or-special-destination"],
+    "actionPolicy": "confirm-web"
   },
   {
     "id": "trailing-dot-context",
@@ -155,8 +155,8 @@
     "canonicalHref": "https://example.com./",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "example.com.", "registrable-domain": "example.com" },
-    "signals": ["trailing-dot-host"],
-    "actionPolicy": "open-web"
+    "signals": ["trailing-dot-host", "local-or-special-destination"],
+    "actionPolicy": "confirm-web"
   },
   {
     "id": "private-psl-suffix",
@@ -175,7 +175,7 @@
     "canonicalHref": "https://accounts.google.com@evil.example/login",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "evil.example" },
-    "signals": ["userinfo"],
+    "signals": ["local-or-special-destination", "userinfo"],
     "actionPolicy": "inspect-only"
   },
   {
@@ -185,7 +185,7 @@
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "example.com" },
-    "signals": ["userinfo"],
+    "signals": ["local-or-special-destination", "userinfo"],
     "actionPolicy": "inspect-only"
   },
   {
@@ -195,7 +195,7 @@
     "canonicalHref": "https://a%40b@evil.example/",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "evil.example" },
-    "signals": ["userinfo", "material-browser-rewrite"],
+    "signals": ["local-or-special-destination", "userinfo", "material-browser-rewrite"],
     "actionPolicy": "inspect-only"
   },
   {
@@ -205,7 +205,7 @@
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "example.com" },
-    "signals": ["material-browser-rewrite"],
+    "signals": ["local-or-special-destination", "material-browser-rewrite"],
     "actionPolicy": "confirm-web"
   },
   {
@@ -215,7 +215,7 @@
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "example.com" },
-    "signals": ["material-browser-rewrite"],
+    "signals": ["local-or-special-destination", "material-browser-rewrite"],
     "actionPolicy": "confirm-web"
   },
   {
@@ -225,7 +225,7 @@
     "canonicalHref": "https://example.com/b",
     "kind": "web-url",
     "displayFields": { "path": "/b" },
-    "signals": ["material-browser-rewrite"],
+    "signals": ["local-or-special-destination", "material-browser-rewrite"],
     "actionPolicy": "confirm-web"
   },
   {
@@ -235,7 +235,7 @@
     "canonicalHref": "https://example.com/admin",
     "kind": "web-url",
     "displayFields": { "path": "/admin" },
-    "signals": ["material-browser-rewrite"],
+    "signals": ["local-or-special-destination", "material-browser-rewrite"],
     "actionPolicy": "confirm-web"
   },
   {
@@ -245,8 +245,8 @@
     "canonicalHref": "https://example.com/%2fkeep",
     "kind": "web-url",
     "displayFields": { "path": "/%2fkeep" },
-    "signals": [],
-    "actionPolicy": "open-web"
+    "signals": ["local-or-special-destination"],
+    "actionPolicy": "confirm-web"
   },
   {
     "id": "bidi-outside-authority",
@@ -255,7 +255,7 @@
     "canonicalHref": "https://example.com/path%E2%80%AEfoo",
     "kind": "web-url",
     "displayFields": { "original": "https://example.com/path[U+202E]foo" },
-    "signals": ["hidden-character", "material-browser-rewrite"],
+    "signals": ["local-or-special-destination", "hidden-character", "material-browser-rewrite"],
     "actionPolicy": "confirm-web"
   },
   {
@@ -265,7 +265,7 @@
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "example.com" },
-    "signals": ["forbidden-authority-character", "material-browser-rewrite"],
+    "signals": ["local-or-special-destination", "forbidden-authority-character", "material-browser-rewrite"],
     "actionPolicy": "inspect-only"
   },
   {
@@ -275,8 +275,8 @@
     "canonicalHref": "https://example.com/?token=secret&mode=x#section",
     "kind": "web-url",
     "displayFields": { "query-names": "token, mode", "fragment": "Present" },
-    "signals": [],
-    "actionPolicy": "open-web"
+    "signals": ["local-or-special-destination"],
+    "actionPolicy": "confirm-web"
   },
   {
     "id": "malformed-authority",
@@ -301,7 +301,7 @@
     "original": "ftp://example.com/file",
     "parseOutcome": false,
     "kind": "custom-uri",
-    "displayFields": { "scheme": "ftp", "summary": "Custom application link (inspect only)" },
+    "displayFields": { "scheme": "ftp", "summary": "URI scheme recognized; payload not validated" },
     "signals": [],
     "actionPolicy": "inspect-only"
   },
@@ -332,7 +332,7 @@
     "canonicalHref": "https://bit.ly.example.com/path",
     "kind": "web-url",
     "displayFields": { "ascii-hostname": "bit.ly.example.com", "registrable-domain": "example.com" },
-    "signals": [],
-    "actionPolicy": "open-web"
+    "signals": ["local-or-special-destination"],
+    "actionPolicy": "confirm-web"
   }
 ]

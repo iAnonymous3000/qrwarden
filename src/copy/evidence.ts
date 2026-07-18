@@ -47,6 +47,7 @@ export function translateSignalTitle(title: string): EvidenceText {
 const SYNTHESIZED_VALUE_FIELD_IDS: ReadonlySet<string> = new Set([
   "fragment",
   "destination-category",
+  "hidden",
   "otp-type",
   "dpp-type",
   "summary",
@@ -91,7 +92,7 @@ export function translateFieldValue(
   if (
     (field.id === "query-names" || field.id === "fragment-names") &&
     field.count === 0 &&
-    field.value === "None"
+    (field.value === "None" || field.value === "Present (empty)")
   ) {
     // The count distinguishes this synthesized empty-state value from a real
     // attacker-controlled parameter whose literal name happens to be "None".

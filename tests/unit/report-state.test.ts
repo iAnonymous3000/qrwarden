@@ -38,6 +38,27 @@ describe("active report identity", () => {
     expect(failed).toHaveBeenCalledWith("link-changed");
   });
 
+  it("rejects trusted navigation after live user activation expires", () => {
+    vi.stubGlobal("navigator", { userActivation: { isActive: false } });
+    const createElement = vi.fn();
+    vi.stubGlobal("document", { createElement });
+    const reports = new ReportStore<{
+      actionPolicy: "open-web";
+      canonicalHref: string;
+    }>();
+    const active = reports.activate({
+      actionPolicy: "open-web",
+      canonicalHref: "https://example.com/",
+    });
+    const failed = vi.fn();
+    const broker = new NavigationBroker(reports, failed, () => false);
+
+    broker.openReviewedLink({ isTrusted: true } as MouseEvent, active, null);
+
+    expect(createElement).not.toHaveBeenCalled();
+    expect(failed).toHaveBeenCalledExactlyOnceWith("link-changed");
+  });
+
   it("preserves trusted unlocked navigation to the reviewed canonical URL", () => {
     vi.stubGlobal("navigator", { userActivation: { isActive: true } });
     const anchor = {

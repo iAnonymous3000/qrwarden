@@ -20,6 +20,7 @@ export type {
   DisplayField,
   DisplayFieldKind,
   PayloadKind,
+  ReportFieldPolicy,
   SignalLevel,
 } from "./types";
 export { ANALYZER_LIMITS } from "./limits";
@@ -45,7 +46,10 @@ export const ANALYZER_DATA_STATUS = Object.freeze({
 function binaryReport(bytes: AnalyzerFrozenBytes): AnalysisReport {
   const fields = new ReportFields();
   if (!hasValidFrozenBytes(bytes)) {
-    fields.add("byte-count", "Byte count", "Unavailable", { kind: "count" });
+    fields.add("byte-count", "Byte count", "Unavailable", {
+      kind: "count",
+      reportPolicy: "safe",
+    });
     fields.add("hex-preview", "Hexadecimal preview", "Unavailable", { kind: "hex" });
   } else {
     const previewCharacters = 256 * 2;
@@ -53,6 +57,7 @@ function binaryReport(bytes: AnalyzerFrozenBytes): AnalysisReport {
     fields.add("byte-count", "Byte count", String(bytes.byteLength), {
       kind: "count",
       count: bytes.byteLength,
+      reportPolicy: "safe",
     });
     fields.add(
       "hex-preview",
@@ -60,7 +65,7 @@ function binaryReport(bytes: AnalyzerFrozenBytes): AnalysisReport {
       bytes.byteLength > 256
         ? `${preview}… (${bytes.byteLength} bytes total)`
         : preview || "Empty",
-      { kind: "hex", collapsed: true, reportRedacted: true },
+      { kind: "hex", collapsed: true },
     );
   }
   return createReport({ kind: "binary", fields: fields.value });
@@ -75,23 +80,23 @@ function inertReaderText(
     "format",
     "Structured format",
     kind === "gs1" ? "GS1" : "ISO/IEC 15434",
+    { reportPolicy: "safe" },
   );
   fields.add("content", "Decoded content", text, {
     collapsed: true,
-    reportRedacted: true,
   });
   return createReport({ kind, fields: fields.value });
 }
 
 function textReport(text: string): AnalysisReport {
   const fields = new ReportFields();
-  fields.add("text", "Text", text, { collapsed: true, reportRedacted: true });
+  fields.add("text", "Text", text, { collapsed: true });
   return createReport({ kind: "text", fields: fields.value });
 }
 
 function emptyReport(): AnalysisReport {
   const fields = new ReportFields();
-  fields.add("content", "QR content", "Empty");
+  fields.add("content", "QR content", "Empty", { reportPolicy: "safe" });
   return createReport({ kind: "empty", fields: fields.value });
 }
 
@@ -136,12 +141,10 @@ function ensureExactStructuredSource(
       ...(field.omittedCount === undefined
         ? {}
         : { omittedCount: field.omittedCount }),
+      reportPolicy: field.reportPolicy,
       ...(field.reportValue === undefined
         ? {}
         : { reportValue: field.reportValue }),
-      ...(field.reportRedacted === undefined
-        ? {}
-        : { reportRedacted: field.reportRedacted }),
     });
   }
 

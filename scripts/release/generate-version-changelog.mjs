@@ -10,18 +10,37 @@ export function extractVersionChangelog(markdown, version) {
   if (typeof markdown !== "string" || markdown.charCodeAt(0) === 0xfeff || markdown.includes("\r")) {
     throw new Error("CHANGELOG.md must be BOM-free UTF-8 text with LF line endings");
   }
-  const heading = new RegExp(`^## \\[${version.replaceAll(".", "\\.")}\\] - (\\d{4}-\\d{2}-\\d{2})$`, "gmu");
-  const matches = [...markdown.matchAll(heading)];
-  if (matches.length !== 1) {
-    throw new Error(`CHANGELOG.md must contain exactly one dated heading for ${version}`);
+  const escapedVersion = version.replaceAll(".", "\\.");
+  const anyVersionHeading = new RegExp(
+    `^##[ \\t]+\\[${escapedVersion}\\][^\\n]*$`,
+    "gmu",
+  );
+  const matches = [...markdown.matchAll(anyVersionHeading)];
+  const exactHeading = new RegExp(
+    `^## \\[${escapedVersion}\\] - (\\d{4}-\\d{2}-\\d{2})$`,
+    "u",
+  ).exec(matches[0]?.[0] ?? "");
+  const date = exactHeading?.[1];
+  if (matches.length !== 1 || date === undefined) {
+    throw new Error(
+      `CHANGELOG.md must contain exactly one dated heading for ${version}; Unreleased or duplicate version headings are forbidden`,
+    );
   }
-  const date = matches[0][1];
   if (new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date) {
     throw new Error(`CHANGELOG.md has an invalid release date for ${version}`);
   }
   const start = matches[0].index;
-  const nextHeading = markdown.indexOf("\n## [", start + matches[0][0].length);
-  const section = markdown.slice(start, nextHeading < 0 ? undefined : nextHeading + 1).replace(/\n*$/u, "\n");
+  const remainderStart = start + matches[0][0].length;
+  const nextHeadingOffset = markdown
+    .slice(remainderStart)
+    .search(/\n##[ \t]+/u);
+  const sectionEnd =
+    nextHeadingOffset < 0
+      ? undefined
+      : remainderStart + nextHeadingOffset + 1;
+  const section = markdown
+    .slice(start, sectionEnd)
+    .replace(/\n*$/u, "\n");
   if (!section.includes("\n### ")) {
     throw new Error(`CHANGELOG.md release section for ${version} has no categorized entries`);
   }

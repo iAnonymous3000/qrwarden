@@ -618,7 +618,7 @@ describe("service-worker release gate races", () => {
     expect(harness.storage.has("qrwarden-update-check")).toBe(false);
   });
 
-  it("settles the gate and unlocks when the decoder worker never becomes ready", async () => {
+  it("settles the gate fail-closed when the decoder worker never becomes ready", async () => {
     vi.useFakeTimers();
     const worker = new FakeWorker(readyState());
     installHarness(worker);
@@ -654,11 +654,11 @@ describe("service-worker release gate races", () => {
     await vi.advanceTimersByTimeAsync(STARTUP_TIMEOUT_MS);
 
     await expect(gate).resolves.toEqual({
-      controlsEnabled: true,
-      offlineState: "incomplete",
+      controlsEnabled: false,
+      offlineState: "update-failed",
     });
-    expect(locks.at(-1)).toBe(false);
-    expect(states.at(-1)).toBe("incomplete");
+    expect(locks.at(-1)).toBe(true);
+    expect(states.at(-1)).toBe("update-failed");
   });
 
   it("keeps the reload marker when post-reload decoder validation fails", async () => {

@@ -35,7 +35,7 @@ All notable changes to QRWarden are documented here. Release headings use exact 
 
 ### Changed
 
-- Positioned the repository as production-grade pre-action QR inspection source while keeping signed public-release gates fail closed until operator, domain, signing, deployment, and live-verification facts are configured.
+- Positioned the repository honestly as pre-release pre-action QR inspection source, with signed public-release gates kept fail closed until operator, domain, signing, deployment, and live-verification facts are configured.
 - Every structured payload report now preserves the exact decoded QR content as masked, collapsed, inert evidence when its parsed summary is selective.
 - Mobile camera previews show the complete decoded frame instead of a visually cropped region, respect display cutouts and dynamic viewport height, and reset new workflows to the top of the view.
 - Result and recovery language now distinguishes evidence, review cues, and genuine failures; reviewed URL destinations show their scheme, host, and explicit port consistently.
@@ -44,6 +44,7 @@ All notable changes to QRWarden are documented here. Release headings use exact 
 - Camera-permission recovery now gives an actionable iPhone and iPad settings path and offers image selection directly from camera failure cards.
 - Camera and service-worker startup waits are bounded; camera failures can be retried directly, while unverifiable controlled releases stop with an explicit reload action instead of polling forever.
 - Field actions preserve acronym casing (QR, SSID), decoded-content expanders label their open state as Hide instead of Show, and the signal glossary links directly back to About.
+- Release documentation now distinguishes implemented automated local/hosted work from manual evidence gates and from transition, recovery, and signed-set finalization tooling that remains pending.
 
 ### Fixed
 
@@ -56,3 +57,10 @@ All notable changes to QRWarden are documented here. Release headings use exact 
 - Browser chrome now receives a first-paint theme color that matches the system preference and the app's dark header palette.
 - Stale camera work, consumed multi-code previews, failed canvas draws, and deferred service-worker updates now recover without poisoning the next interaction or presenting a blank surface.
 - The page behind an open confirmation dialog can no longer scroll on touch devices, and dialog overscroll is contained.
+- Decoder intake now rejects malformed or oversized image structures earlier, validates ECI and typed worker results more strictly, and disposes raster, camera, and worker resources on bounded failure paths.
+- Copied reports now use an explicit allowlist: decoded or unclassified structured content, structured secrets, URL path segments, and query/fragment names and values stay hidden, while reviewed origin/host/domain/port and structural presence or counts remain visible.
+- Concurrent Web Share Target deliveries are correlated with one-time tokens, so overlapping shares cannot cross-wire files between tabs or consume another delivery's fallback.
+- Service-worker update coordination now includes application-shell tabs reached with query strings and preserves correct busy/idle behavior across overlapping share deliveries.
+- Generated and live-response verification now detaches and rejects `NEL`, `Report-To`, and `Reporting-Endpoints`; the Cloudflare account baseline explicitly requires Network Error Logging to remain disabled.
+- Release readiness now requires exactly one dated changelog section for the package version, so an `Unreleased` heading cannot pass the release gate.
+- Local `release:validate` retains a fail-closed `git verify-commit HEAD` gate, while fresh release-build containers rely on the exact-commit GitHub signature preflight instead of an unavailable maintainer keyring; GitHub API checks are also bound to the repository identity in release constants.

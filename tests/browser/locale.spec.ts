@@ -7,7 +7,8 @@ const fixture = new URL("../corpus/url-review.png", import.meta.url).pathname;
 
 test.use({ locale: "es-ES" });
 
-test("renders the Spanish locale end to end for a review flow", async ({ page }) => {
+test("renders the Spanish locale end to end at narrow mobile width", async ({ page }) => {
+  await page.setViewportSize({ width: 280, height: 653 });
   await gotoControlled(page);
   await expect(
     page.getByRole("heading", { name: ES_COPY.primaryMessage }),
@@ -60,6 +61,13 @@ test("renders the Spanish locale end to end for a review flow", async ({ page })
   await expect(dialog.locator(".confirm-full-url bdi")).toHaveText(
     "http://127.0.0.1:8080/review?token=hidden#part",
   );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      ),
+    )
+    .toBe(0);
   await dialog.getByRole("button", { name: ES_COPY.cancel }).click();
   await expect(dialog).not.toBeVisible();
 
@@ -76,6 +84,11 @@ test("renders the Spanish locale end to end for a review flow", async ({ page })
     ES_COPY.installTestedHeading,
     ES_COPY.installUnavailableHeading,
   ]).toContain(await installHeading.textContent());
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBe(0);
 });
 
 test("keeps the Spanish header inside a 401px viewport", async ({ page }) => {

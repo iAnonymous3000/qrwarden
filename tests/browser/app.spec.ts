@@ -214,6 +214,22 @@ test("keeps the skip link and view focus handoff keyboard-visible", async ({
   await expect(page).toHaveTitle(`Privacy · ${COPY.brand}`);
 });
 
+test("moves keyboard focus to a recovery heading after an intake error", async ({
+  page,
+}) => {
+  await gotoControlled(page);
+
+  await page.locator('input[type="file"]').setInputFiles({
+    buffer: Buffer.from("not an image"),
+    mimeType: "text/plain",
+    name: "not-an-image.txt",
+  });
+
+  const heading = page.getByRole("heading", { name: COPY.unsupportedImageHeading });
+  await expect(heading).toBeVisible();
+  await expect(heading).toBeFocused();
+});
+
 test("keeps the desktop headline balanced", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await gotoControlled(page);
@@ -272,7 +288,9 @@ test("scans an image locally and requires two-step review", async ({ page }) => 
   await expect(
     page.getByRole("heading", { name: "Review before opening." }),
   ).toBeFocused();
-  await expect(page.locator(".destination-card")).toContainText("http://127.0.0.1:8080");
+  await expect(page.locator(".destination-card bdi")).toHaveText(
+    `http://127.0.0.1:8080/${COPY.reportPathSegmentsHidden(1)}?${COPY.reportQueryHidden}#${COPY.reportFragmentHidden}`,
+  );
   await expect(page.getByText("Needs review", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("127.0.0.1", { exact: true }).first()).toBeVisible();
   const queryField = page.locator(".field-row").filter({ hasText: "Query names" });
@@ -332,6 +350,30 @@ test("scans an image locally and requires two-step review", async ({ page }) => 
   await expect(continueButton).toBeFocused();
 });
 
+test("returns from information pages to the active review", async ({ page }) => {
+  await gotoControlled(page);
+  await page.locator('input[type="file"]').setInputFiles(fixture);
+  const reviewHeading = page.getByRole("heading", { name: COPY.reviewHeading });
+  await expect(reviewHeading).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: COPY.navPrivacy }).click();
+  await expect(
+    page.getByRole("heading", { name: COPY.privacyTitle }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: COPY.backToReview }).click();
+  await expect(reviewHeading).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: COPY.continueToLink }),
+  ).toBeEnabled();
+
+  await page.getByRole("button", { name: COPY.navAbout }).click();
+  await expect(
+    page.getByRole("heading", { name: COPY.aboutTitle }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: COPY.backToReview }).click();
+  await expect(reviewHeading).toBeVisible();
+});
+
 test("drops a result on a non-persisted pagehide", async ({ page }) => {
   await gotoControlled(page);
   await page.locator('input[type="file"]').setInputFiles(fixture);
@@ -358,7 +400,7 @@ test("drops a result on a non-persisted pagehide", async ({ page }) => {
   await expect(page.getByRole("button", { name: COPY.continueToLink })).toHaveCount(0);
 });
 
-test("clears link confirmation while the update gate is locked", async ({ page }) => {
+test("preserves a reviewed result across an unchanged-release re-gate", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Ready offline.", { exact: true })).toBeVisible({
     timeout: 20_000,
@@ -373,10 +415,68 @@ test("clears link confirmation while the update gate is locked", async ({ page }
     navigator.serviceWorker.dispatchEvent(new Event("controllerchange"));
   });
   await expect(page.getByRole("dialog", { name: "Open this link?" })).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Review before opening." }),
+  ).toBeVisible();
   await expect(continueButton).toBeEnabled({ timeout: 20_000 });
+});
 
-  await continueButton.click();
-  await expect(page.getByRole("dialog", { name: "Open this link?" })).toBeVisible();
+test("drops an in-flight image decode when the update gate locks", async ({ page }) => {
+  await gotoControlled(page);
+  await page.locator('input[type="file"]').setInputFiles(multiFixture);
+  const reading = page.getByRole("heading", { name: COPY.readingHeading });
+  await expect(reading).toBeVisible();
+  await expect(reading.locator("..")).toHaveAttribute("aria-busy", "true");
+
+  await page.evaluate(() => {
+    navigator.serviceWorker.dispatchEvent(new Event("controllerchange"));
+  });
+
+  await expect(page.getByRole("heading", { name: COPY.primaryMessage })).toBeVisible();
+  await page.waitForTimeout(1_000);
+  await expect(page.getByRole("heading", { name: COPY.chooseQrHeading })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: COPY.reviewHeading })).toHaveCount(0);
+});
+
+test("drops an in-flight camera start when the update gate locks", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        enumerateDevices: () => Promise.resolve([]),
+        getUserMedia: () => new Promise<MediaStream>(() => undefined),
+      },
+    });
+  });
+  await gotoControlled(page);
+  await page.getByRole("button", { name: "Scan with camera" }).click();
+  await expect(page.getByRole("heading", { name: COPY.cameraHeading })).toBeVisible();
+  await expect(page.locator(".scanner-panel")).toHaveAttribute("aria-busy", "true");
+
+  await page.evaluate(() => {
+    navigator.serviceWorker.dispatchEvent(new Event("controllerchange"));
+  });
+
+  await expect(page.getByRole("heading", { name: COPY.primaryMessage })).toBeVisible();
+  await expect(page.getByRole("heading", { name: COPY.cameraHeading })).toHaveCount(0);
+});
+
+test("prevents dropped images from navigating away outside the scanner", async ({ page }) => {
+  await gotoControlled(page);
+  await page.getByRole("button", { name: "Privacy" }).click();
+  await expect(page.getByRole("heading", { name: COPY.privacyTitle })).toBeVisible();
+
+  const prevented = await page.evaluate(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["image"], "example.png", { type: "image/png" }));
+    const event = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(prevented).toBe(true);
+  await expect(page.getByRole("heading", { name: COPY.privacyTitle })).toBeVisible();
 });
 
 test("keeps information views in-memory and exposes privacy limits", async ({
@@ -631,7 +731,11 @@ test("shows and switches from the camera that is actually active", async ({
           const video = constraints.video;
           if (typeof video === "object" && video !== null) {
             const requested = video.deviceId;
-            if (typeof requested === "object" && requested !== null) {
+            if (
+              typeof requested === "object" &&
+              requested !== null &&
+              !Array.isArray(requested)
+            ) {
               const exact = requested.exact;
               if (typeof exact === "string") deviceId = exact;
             }
@@ -777,7 +881,7 @@ test("enforces Trusted Types string sinks in Chromium", async ({
   );
 
   const assertion = await page.evaluate(() => {
-    if (window.trustedTypes === undefined) {
+    if ((window as Window & { trustedTypes?: unknown }).trustedTypes === undefined) {
       return { outcome: "unsupported", supported: false } as const;
     }
     const target = document.createElement("div");
@@ -810,10 +914,12 @@ test("labels selection positions and drops canvas geometry when hidden", async (
   await expect(canvas).toBeVisible();
   const retainedCanvas = await canvas.elementHandle();
   expect(retainedCanvas).not.toBeNull();
-  expect(await retainedCanvas?.evaluate((element) => [element.width, element.height])).not.toEqual([
-    0,
-    0,
-  ]);
+  expect(
+    await retainedCanvas?.evaluate((element) => {
+      const canvas = element as HTMLCanvasElement;
+      return [canvas.width, canvas.height];
+    }),
+  ).not.toEqual([0, 0]);
 
   await page.evaluate(() => {
     Object.defineProperty(document, "visibilityState", {
@@ -830,10 +936,12 @@ test("labels selection positions and drops canvas geometry when hidden", async (
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Choose a QR code" })).toHaveCount(0);
   await expect(canvas).toHaveCount(0);
-  expect(await retainedCanvas?.evaluate((element) => [element.width, element.height])).toEqual([
-    0,
-    0,
-  ]);
+  expect(
+    await retainedCanvas?.evaluate((element) => {
+      const canvas = element as HTMLCanvasElement;
+      return [canvas.width, canvas.height];
+    }),
+  ).toEqual([0, 0]);
 });
 
 test("uses field-specific controls for sensitive multi-code contents", async ({ page }) => {
@@ -1029,6 +1137,28 @@ test("keeps scanner controls usable when service-worker storage is blocked", asy
   await expect(page.locator('input[type="file"]')).toBeEnabled();
 });
 
+test("locks scanning and offers recovery when decoder worker construction is blocked", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis, "Worker", {
+      configurable: true,
+      value: function BlockedWorker(): never {
+        throw new DOMException("Worker blocked", "SecurityError");
+      },
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(
+    page.getByText(COPY.updateFailedHeading, { exact: true }),
+  ).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "Scan with camera" })).toBeDisabled();
+  await expect(page.locator('input[type="file"]')).toBeDisabled();
+  await expect(page.getByRole("button", { name: COPY.reloadApp })).toBeVisible();
+});
+
 test("offers reload when a controlled release cannot be verified", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator.serviceWorker, "controller", {
@@ -1100,7 +1230,7 @@ test("reaches a controlled offline-ready shell", async ({ page }) => {
     .toBe(true);
 });
 
-test("cold-launches the verified shell while offline", async ({
+test("cold-launches the verified query-string shell while offline", async ({
   page,
   context,
   browserName,
@@ -1121,7 +1251,11 @@ test("cold-launches the verified shell while offline", async ({
   await context.setOffline(true);
   const offlinePage = await context.newPage();
   if (baseURL === undefined) throw new TypeError("Browser base URL is required");
-  await offlinePage.goto(baseURL);
+  const offlineUrl = new URL("/?utm_source=offline-regression", baseURL);
+  await offlinePage.goto(offlineUrl.href);
+  expect(new URL(offlinePage.url()).searchParams.get("utm_source")).toBe(
+    "offline-regression",
+  );
   await expect(
     offlinePage.getByRole("heading", {
       name: COPY.primaryMessage,
@@ -1270,4 +1404,19 @@ test("shows dedicated recovery copy for a rejected unsupported share", async ({
   await expect(
     page.getByRole("button", { name: COPY.backToScanner }),
   ).toBeVisible();
+});
+
+test("shows dedicated recovery copy for a busy share admission", async ({
+  page,
+}) => {
+  await page.goto("/?share-rejected=busy");
+
+  await expect(
+    page.getByRole("heading", { name: COPY.shareBusyHeading }),
+  ).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(COPY.shareBusyBody, { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: COPY.backToScanner }),
+  ).toBeVisible();
+  expect(new URL(page.url()).searchParams.has("share-rejected")).toBe(false);
 });

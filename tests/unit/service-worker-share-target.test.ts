@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readWorkerToClientMessage } from "../../src/sw/protocol";
 
 vi.mock("workbox-routing", () => ({ registerRoute: vi.fn() }));
 vi.mock("workbox-precaching", () => ({
@@ -101,7 +102,7 @@ async function loadWorker(): Promise<WorkerHarness> {
   };
 }
 
-function dispatchShareForm(
+function dispatchShareFormRequest(
   handler: WorkerHandler,
   form: FormData,
   ids: { readonly resultingClientId?: string; readonly clientId?: string } = {},
@@ -109,7 +110,7 @@ function dispatchShareForm(
 ): {
   readonly lifetime: readonly Promise<unknown>[];
   readonly respondWith: ReturnType<typeof vi.fn>;
-  readonly token: string;
+  readonly location: string;
 } {
   const lifetime: Promise<unknown>[] = [];
   const respondWith = vi.fn();
@@ -129,6 +130,25 @@ function dispatchShareForm(
   });
   const response = respondWith.mock.calls[0]?.[0] as Response | undefined;
   const location = response?.headers.get("Location") ?? "";
+  return { lifetime, respondWith, location };
+}
+
+function dispatchShareForm(
+  handler: WorkerHandler,
+  form: FormData,
+  ids: { readonly resultingClientId?: string; readonly clientId?: string } = {},
+  readForm?: () => Promise<FormData>,
+): {
+  readonly lifetime: readonly Promise<unknown>[];
+  readonly respondWith: ReturnType<typeof vi.fn>;
+  readonly token: string;
+} {
+  const { lifetime, respondWith, location } = dispatchShareFormRequest(
+    handler,
+    form,
+    ids,
+    readForm,
+  );
   const token = new URL(location, "https://qrwarden.test").searchParams.get(
     "share-pending",
   );
@@ -200,24 +220,28 @@ function dispatchPull(
 
 function sharedImageMessages(
   client: MessageClient,
-): readonly { readonly release?: string; readonly file?: unknown }[] {
+): readonly Extract<
+  NonNullable<ReturnType<typeof readWorkerToClientMessage>>,
+  { readonly type: "SHARED_IMAGE" }
+>[] {
   return client.postMessage.mock.calls
-    .map((call) => call[0] as { readonly type?: string })
-    .filter(
-      (message): message is { readonly release?: string; readonly file?: unknown } =>
-        message.type === "SHARED_IMAGE",
-    );
+    .flatMap((call) => {
+      const message = readWorkerToClientMessage(call[0]);
+      return message?.type === "SHARED_IMAGE" ? [message] : [];
+    });
 }
 
 function shareRejectedMessages(
   client: MessageClient,
-): readonly { readonly release?: string; readonly reason?: string }[] {
+): readonly Extract<
+  NonNullable<ReturnType<typeof readWorkerToClientMessage>>,
+  { readonly type: "SHARE_REJECTED" }
+>[] {
   return client.postMessage.mock.calls
-    .map((call) => call[0] as { readonly type?: string })
-    .filter(
-      (message): message is { readonly release?: string; readonly reason?: string } =>
-        message.type === "SHARE_REJECTED",
-    );
+    .flatMap((call) => {
+      const message = readWorkerToClientMessage(call[0]);
+      return message?.type === "SHARE_REJECTED" ? [message] : [];
+    });
 }
 
 function sharedFileName(client: MessageClient, index = 0): string | undefined {
@@ -410,6 +434,28 @@ describe("service-worker share-target delivery", () => {
     expect(sharedImageMessages(resultingDocument)).toHaveLength(1);
   });
 
+  it("never delivers a share POST to the initiating client id", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+    const initiatingDocument = messageClient("initiating-1");
+    harness.clientsGet.mockImplementation((id) =>
+      Promise.resolve(id === "initiating-1" ? initiatingDocument : undefined),
+    );
+
+    const { lifetime, token } = dispatchSharePost(fetchHandler!, {
+      clientId: "initiating-1",
+    });
+    await Promise.all(lifetime);
+
+    expect(harness.clientsGet).not.toHaveBeenCalled();
+    expect(initiatingDocument.postMessage).not.toHaveBeenCalled();
+
+    const redirectedDocument = messageClient("redirected-document");
+    dispatchPull(message!, redirectedDocument, token);
+    expect(sharedFileName(redirectedDocument)).toBe("shared.png");
+  });
+
   it("keeps the share pullable when the resulting client never materializes", async () => {
     const harness = await loadWorker();
     const fetchHandler = harness.handlers.get("fetch");
@@ -562,6 +608,119 @@ describe("service-worker share-target delivery", () => {
     expect(sharedFileName(docB)).toBe("second.png");
   });
 
+  it("bounds overlapping POST admission before parsing and retains ownership while parked", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+    const forms = Array.from({ length: 4 }, (_, index) =>
+      imageForm(`share-${index + 1}.png`),
+    );
+    const parses = forms.map(() => deferredForm());
+    const admitted = forms.map((form, index) =>
+      dispatchShareForm(
+        fetchHandler!,
+        form,
+        {},
+        () => parses[index]!.promise,
+      ),
+    );
+
+    const refusedForm = imageForm("share-5.png");
+    const refusedRead = vi.fn(() => Promise.resolve(refusedForm));
+    const refused = dispatchShareFormRequest(
+      fetchHandler!,
+      refusedForm,
+      {},
+      refusedRead,
+    );
+    expect(refused.location).toBe("/?share-rejected=busy");
+    expect(
+      (refused.respondWith.mock.calls[0]?.[0] as Response).status,
+    ).toBe(303);
+    expect(refused.lifetime).toHaveLength(0);
+    expect(refusedRead).not.toHaveBeenCalled();
+
+    for (let index = admitted.length - 1; index >= 0; index -= 1) {
+      parses[index]!.resolve(forms[index]!);
+      await Promise.all(admitted[index]!.lifetime);
+    }
+
+    // Settled payloads still own their slots until their redirect pages claim
+    // them, so a later POST cannot parse and then disappear from a full park.
+    const parkedRefusalForm = imageForm("still-full.png");
+    const parkedRefusalRead = vi.fn(() => Promise.resolve(parkedRefusalForm));
+    const parkedRefusal = dispatchShareFormRequest(
+      fetchHandler!,
+      parkedRefusalForm,
+      {},
+      parkedRefusalRead,
+    );
+    expect(parkedRefusal.location).toBe("/?share-rejected=busy");
+    expect(parkedRefusalRead).not.toHaveBeenCalled();
+
+    for (const [index, share] of admitted.entries()) {
+      const document = messageClient(`doc-${index + 1}`);
+      dispatchPull(message!, document, share.token);
+      expect(sharedFileName(document)).toBe(`share-${index + 1}.png`);
+    }
+
+    const afterClaim = dispatchSharePost(fetchHandler!, {
+      fileName: "after-claim.png",
+    });
+    expect(afterClaim.token).toMatch(/^[0-9a-f]{32}$/);
+    await Promise.all(afterClaim.lifetime);
+  });
+
+  it("releases every admission when multipart parsing misses its deadline", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const stalled = Array.from({ length: 4 }, (_, index) => ({
+      form: imageForm(`stalled-${index + 1}.png`),
+      parse: deferredForm(),
+      document: messageClient(`resulting-${index + 1}`),
+    }));
+    harness.clientsGet.mockImplementation((id) =>
+      Promise.resolve(stalled.find((entry) => entry.document.id === id)?.document),
+    );
+    const admitted = stalled.map((entry) =>
+      dispatchShareForm(
+        fetchHandler!,
+        entry.form,
+        { resultingClientId: entry.document.id },
+        () => entry.parse.promise,
+      ),
+    );
+
+    const refused = dispatchShareFormRequest(
+      fetchHandler!,
+      imageForm("refused-before-deadline.png"),
+    );
+    expect(refused.location).toBe("/?share-rejected=busy");
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    await Promise.all(admitted.flatMap((entry) => entry.lifetime));
+    for (const entry of stalled) {
+      expect(shareRejectedMessages(entry.document)).toEqual([
+        { type: "SHARE_REJECTED", release: RELEASE, reason: "unreadable" },
+      ]);
+    }
+
+    const afterDeadline = dispatchSharePost(fetchHandler!, {
+      fileName: "after-deadline.png",
+    });
+    expect(afterDeadline.token).toMatch(/^[0-9a-f]{32}$/);
+    await Promise.all(afterDeadline.lifetime);
+
+    // Settling a timed-out parse later must not create a second delivery.
+    for (const entry of stalled) entry.parse.resolve(entry.form);
+    await Promise.resolve();
+    for (const entry of stalled) {
+      expect(sharedImageMessages(entry.document)).toHaveLength(0);
+      expect(shareRejectedMessages(entry.document)).toHaveLength(1);
+    }
+  });
+
   it("matches raced-ahead pulls by token when parsing finishes in reverse", async () => {
     const harness = await loadWorker();
     const fetchHandler = harness.handlers.get("fetch");
@@ -709,7 +868,7 @@ describe("service-worker share-target delivery", () => {
     expect(shareRejectedMessages(doc)[0]?.reason).toBe("unreadable");
   });
 
-  it("serves the offline shell only for an exact valid share marker", async () => {
+  it("serves the offline shell for every same-origin root navigation", async () => {
     const harness = await loadWorker();
     const capture = harness.registerRoute.mock.calls
       .map((call) => call[0] as unknown)
@@ -736,8 +895,27 @@ describe("service-worker share-target delivery", () => {
       `https://qrwarden.test/?share-pending=${"a".repeat(32)}&extra=1`,
       `https://qrwarden.test/?share-pending=${"a".repeat(32)}&share-pending=${"b".repeat(32)}`,
       "https://qrwarden.test/?unrelated",
+      "https://qrwarden.test/?utm_source=installed-app",
     ]) {
-      expect(matches({ request: navigation, url: new URL(url) })).toBe(false);
+      expect(matches({ request: navigation, url: new URL(url) })).toBe(true);
     }
+    expect(
+      matches({
+        request: navigation,
+        url: new URL("https://qrwarden.test/not-root?unrelated"),
+      }),
+    ).toBe(false);
+    expect(
+      matches({
+        request: navigation,
+        url: new URL("https://different-origin.test/?unrelated"),
+      }),
+    ).toBe(false);
+    expect(
+      matches({
+        request: { method: "POST", mode: "navigate" },
+        url: new URL("https://qrwarden.test/?unrelated"),
+      }),
+    ).toBe(false);
   });
 });

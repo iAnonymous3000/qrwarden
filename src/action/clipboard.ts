@@ -3,11 +3,12 @@ import {
   type ReportForActions,
   ReportStore,
 } from "../app/reportState";
+import { hasTrustedUserActivation } from "./userActivation";
 
 export type ClipboardStatus = "copied" | "failed";
 
 export interface ClipboardActionField {
-  readonly actionValue: string;
+  readonly value: string;
 }
 
 export interface ReportForClipboardActions extends ReportForActions {
@@ -19,17 +20,6 @@ export interface ClipboardBrokerOptions<Report extends ReportForClipboardActions
   readonly getWorkGeneration: () => number;
   readonly isLocked: () => boolean;
   readonly onStatus: (status: ClipboardStatus) => void;
-}
-
-function clickIsLive(event: MouseEvent): boolean {
-  if (!event.isTrusted) {
-    return false;
-  }
-  return !(
-    "userActivation" in navigator &&
-    navigator.userActivation !== null &&
-    !navigator.userActivation.isActive
-  );
 }
 
 export class ClipboardBroker<Report extends ReportForClipboardActions> {
@@ -62,8 +52,8 @@ export class ClipboardBroker<Report extends ReportForClipboardActions> {
   ): void {
     this.#copyValue(event, candidate, (live) =>
       live.displayFields.includes(reviewedField) &&
-      typeof reviewedField.actionValue === "string"
-        ? reviewedField.actionValue
+      typeof reviewedField.value === "string"
+        ? reviewedField.value
         : null,
     );
   }
@@ -101,7 +91,7 @@ export class ClipboardBroker<Report extends ReportForClipboardActions> {
     const value =
       live !== null &&
       !this.#isLocked() &&
-      clickIsLive(event) &&
+      hasTrustedUserActivation(event) &&
       this.#reports.isLive(candidate)
         ? resolveValue(live.report)
         : null;

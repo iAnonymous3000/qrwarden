@@ -27,6 +27,22 @@ async function githubJson(url, token, expectedStatus = 200) {
   return expectedStatus === 204 || expectedStatus === 404 ? null : response.json();
 }
 
+export function assertGitHubRepository(repository, releaseConstants) {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository)) {
+    throw new Error("GITHUB_REPOSITORY is not an owner/repository identity");
+  }
+  const expectedRepository = `${releaseConstants.github?.owner ?? ""}/${releaseConstants.github?.repository ?? ""}`;
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(expectedRepository)) {
+    throw new Error("release constants GitHub repository identity is invalid");
+  }
+  if (repository !== expectedRepository) {
+    throw new Error(
+      "GITHUB_REPOSITORY must exactly match release/constants.json GitHub owner/repository",
+    );
+  }
+  return repository;
+}
+
 export async function verifyReleaseContext({ root, environment = process.env }) {
   const commit = assertCommit(required(environment, "QRWARDEN_RELEASE_COMMIT"));
   const version = assertReleaseVersion(required(environment, "QRWARDEN_RELEASE_VERSION"));
@@ -42,10 +58,13 @@ export async function verifyReleaseContext({ root, environment = process.env }) 
   if (required(environment, "GITHUB_SHA") !== commit) {
     throw new Error("release commit must equal the workflow dispatch commit");
   }
-  const repository = required(environment, "GITHUB_REPOSITORY");
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository)) {
-    throw new Error("GITHUB_REPOSITORY is not an owner/repository identity");
-  }
+  const releaseConstants = JSON.parse(
+    await readFile(path.join(root, "release/constants.json"), "utf8"),
+  );
+  const repository = assertGitHubRepository(
+    required(environment, "GITHUB_REPOSITORY"),
+    releaseConstants,
+  );
   const api = new URL(required(environment, "GITHUB_API_URL"));
   if (api.protocol !== "https:" || api.username !== "" || api.password !== "") {
     throw new Error("GITHUB_API_URL must be an authenticated HTTPS API origin");

@@ -63,6 +63,13 @@ export function validateReleaseWorkflow(text) {
   requireText("scripts/release/verify-release-context.mjs", "release GitHub context verification is missing");
   requireText("node scripts/validate-release-constants.mjs --release", "release constants gate is missing");
   requireText("node scripts/validate-release-readiness.mjs", "internal release readiness gate is missing");
+  if (
+    text.includes("verify-local-release-commit.mjs") ||
+    text.includes("git verify-commit") ||
+    text.includes("release:validate")
+  ) {
+    errors.push("release workflow must rely on GitHub signature preflight without a local keyring");
+  }
   requireText("npm run release:wrangler:check", "committed Wrangler configuration gate is missing");
   requireText(
     "npm ci --ignore-scripts=false --strict-allow-scripts",

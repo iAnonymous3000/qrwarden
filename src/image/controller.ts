@@ -53,14 +53,14 @@ export function filesFromDrop(dataTransfer: DataTransfer): readonly File[] {
 }
 
 export function installDropNavigationGuard(
-  onFiles: (files: readonly File[]) => void,
+  onFiles: ((files: readonly File[]) => void) | null,
 ): () => void {
   const onDragOver = (event: DragEvent): void => {
     event.preventDefault();
   };
   const onDrop = (event: DragEvent): void => {
     event.preventDefault();
-    if (event.dataTransfer !== null) {
+    if (event.dataTransfer !== null && onFiles !== null) {
       onFiles(filesFromDrop(event.dataTransfer));
     }
   };
@@ -117,6 +117,7 @@ export class ImageController {
     this.cancel();
     const generation = this.#generation;
     let client: DecoderWorkerClient | null = null;
+    let result: ImageScanResult | null = null;
     try {
       client = new DecoderWorkerClient(this.#workerFactory);
       this.#client = client;
@@ -131,7 +132,7 @@ export class ImageController {
         }
         return;
       }
-      this.#onResult({ outcome, generation });
+      result = { outcome, generation };
     } catch (error) {
       if (
         generation === this.#generation &&
@@ -147,6 +148,9 @@ export class ImageController {
         client.dispose("cancelled");
         this.#client = null;
       }
+    }
+    if (result !== null) {
+      this.#onResult(result);
     }
   }
 }

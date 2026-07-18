@@ -10,6 +10,8 @@ import { compareReleaseCandidates } from "../../scripts/release/compare-release-
 import { extractVersionChangelog } from "../../scripts/release/generate-version-changelog.mjs";
 import { generateArchiveManifest } from "../../scripts/release/generate-archive-manifest.mjs";
 import { sha256 } from "../../scripts/release/release-contract.mjs";
+import { verifyLocalReleaseCommit } from "../../scripts/release/verify-local-release-commit.mjs";
+import { assertGitHubRepository } from "../../scripts/release/verify-release-context.mjs";
 import {
   RELEASE_IMAGE,
   validateActionPins,
@@ -69,6 +71,8 @@ describe("release workflow policy", () => {
     }
     const release = await readFile(path.join(workflowDirectory, "release.yml"), "utf8");
     expect(release).toContain(`image: ${RELEASE_IMAGE}`);
+    expect(release).not.toContain("verify-local-release-commit.mjs");
+    expect(release).not.toContain("git verify-commit");
     expect(validateReleaseWorkflow(release)).toEqual([]);
   });
 
@@ -101,6 +105,86 @@ describe("release workflow policy", () => {
     expect(validateReleaseWorkflow(release.replace("npm run release:wrangler:check", "npm run release:wrangler:skip"))).toContain(
       "committed Wrangler configuration gate is missing",
     );
+    expect(
+      validateReleaseWorkflow(
+        release.replace(
+          "node scripts/validate-release-readiness.mjs",
+          "node scripts/validate-release-readiness.mjs\n          node scripts/release/verify-local-release-commit.mjs",
+        ),
+      ),
+    ).toContain(
+      "release workflow must rely on GitHub signature preflight without a local keyring",
+    );
+    expect(
+      validateReleaseWorkflow(
+        release.replace(
+          "npm run release:wrangler:check",
+          "npm run release:wrangler:check\n          npm run release:validate",
+        ),
+      ),
+    ).toContain(
+      "release workflow must rely on GitHub signature preflight without a local keyring",
+    );
+  });
+
+  it("keeps local release validation fail-closed on an unverifiable commit", async () => {
+    const calls: Array<{ root: string; args: string[] }> = [];
+    expect(() =>
+      verifyLocalReleaseCommit({
+        root,
+        executeGit: (workingDirectory: string, args: string[]) => {
+          calls.push({ root: workingDirectory, args });
+          throw new Error("no trusted signing key");
+        },
+      }),
+    ).toThrow("release commit must have a locally verifiable signature");
+    expect(calls).toEqual([{ root, args: ["verify-commit", "HEAD"] }]);
+
+    const metadata = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    expect(metadata.scripts["release:validate"]).toContain(
+      "node scripts/release/verify-local-release-commit.mjs",
+    );
+    const readiness = await readFile(path.join(root, "scripts/validate-release-readiness.mjs"), "utf8");
+    expect(readiness).not.toContain("verify-commit");
+  });
+
+  it("binds GitHub release API calls to the repository in release constants", () => {
+    const releaseConstants = {
+      github: { owner: "iAnonymous3000", repository: "qrwarden" },
+    };
+    expect(
+      assertGitHubRepository("iAnonymous3000/qrwarden", releaseConstants),
+    ).toBe("iAnonymous3000/qrwarden");
+    for (const repository of [
+      "other/qrwarden",
+      "iAnonymous3000/other",
+      "ianonymous3000/qrwarden",
+    ]) {
+      expect(() => assertGitHubRepository(repository, releaseConstants)).toThrow(
+        "GITHUB_REPOSITORY must exactly match release/constants.json GitHub owner/repository",
+      );
+    }
+  });
+
+  it("wires release readiness to the strict dated changelog contract", async () => {
+    const readiness = await readFile(path.join(root, "scripts/validate-release-readiness.mjs"), "utf8");
+    expect(readiness).toContain("extractVersionChangelog(changelog, packageMetadata.version)");
+    expect(readiness).not.toContain("changelog.includes");
+  });
+
+  it("locks platform reporting endpoints out of the Cloudflare baseline", async () => {
+    const baseline = JSON.parse(
+      await readFile(path.join(root, "release/cloudflare-baseline.json"), "utf8"),
+    ) as {
+      disabledAccountFeatures: string[];
+      requiredOperationalControls: string[];
+    };
+    expect(baseline.disabledAccountFeatures).toContain("Network Error Logging");
+    expect(baseline.requiredOperationalControls).toContain(
+      "no NEL, Report-To, or Reporting-Endpoints response headers",
+    );
   });
 });
 
@@ -125,6 +209,35 @@ describe("release candidate finalization", () => {
     expect(() => extractVersionChangelog(changelog.replace("2026-07-15", "Unreleased"), "0.1.0")).toThrow(
       "exactly one dated heading",
     );
+    expect(() =>
+      extractVersionChangelog(
+        changelog.replace(
+          "## [0.1.0] - 2026-07-15",
+          "## [0.1.0] - Unreleased\n\n## [0.1.0] - 2026-07-15",
+        ),
+        "0.1.0",
+      ),
+    ).toThrow("duplicate version headings");
+    for (const malformed of ["## [0.1.0]", "## [0.1.0] Unreleased"]) {
+      expect(() =>
+        extractVersionChangelog(
+          changelog.replace(
+            "## [0.1.0] - 2026-07-15",
+            `${malformed}\n\n## [0.1.0] - 2026-07-15`,
+          ),
+          "0.1.0",
+        ),
+      ).toThrow("duplicate version headings");
+    }
+    expect(
+      extractVersionChangelog(
+        changelog.replace(
+          "## [0.0.1] - 2026-01-01",
+          "## Notes\n\n- Not part of this release.\n\n##  [0.0.1] - 2026-01-01",
+        ),
+        "0.1.0",
+      ),
+    ).not.toContain("Not part of this release");
   });
 
   it("approves only two closed, byte-identical, manifest-authenticated sets", async () => {

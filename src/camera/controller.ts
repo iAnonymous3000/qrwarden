@@ -75,6 +75,10 @@ export interface CameraAccepted<Result> {
   readonly epoch: number;
 }
 
+type CameraDispatch<Result> =
+  | { readonly kind: "accepted"; readonly value: CameraAccepted<Result> }
+  | { readonly kind: "overflow" };
+
 export interface CameraControllerOptions<Result> {
   readonly video: HTMLVideoElement;
   readonly decoder: CameraFrameDecoder<Result>;
@@ -509,98 +513,99 @@ export class CameraController<Result> {
     constraints: MediaStreamConstraints,
     epoch: number,
   ): Promise<void> {
-    const stream = await withCancellableTimeout(
-      (signal) => requestUserMedia(constraints, signal),
-      USER_MEDIA_TIMEOUT_MS,
-    );
-    if (epoch !== this.#epoch || this.#suspended || document.visibilityState !== "visible") {
-      stopStream(stream);
-      throw new DOMException("Stale camera start", "AbortError");
-    }
-
-    this.#stream = stream;
-    const track = stream.getVideoTracks()[0];
-    if (track === undefined) {
-      stopStream(stream);
-      this.#stream = null;
-      throw new DOMException("No video track", "NotFoundError");
-    }
-    this.#activeDeviceId = settingsFor(track).deviceId ?? null;
-    this.#video.muted = true;
-    this.#video.playsInline = true;
-    this.#video.srcObject = stream;
-
     const startupAbort = new AbortController();
     this.#startupAbort = startupAbort;
+    let stream: MediaStream | null = null;
     try {
-      try {
-        await this.#video.play();
-        await waitForMetadata(this.#video, startupAbort.signal);
-        if (
-          startupAbort.signal.aborted ||
-          epoch !== this.#epoch ||
-          this.#stream !== stream ||
-          this.#suspended
-        ) {
-          throw new DOMException("Stale camera playback", "AbortError");
-        }
-        // createImageBitmap has no abort support, so bound the wait; a stalled
-        // probe otherwise leaves the camera live forever with startup frozen.
-        // The probe closes its own bitmap if one arrives after the deadline.
-        await withCancellableTimeout(
-          () => this.#captureConformanceProbe(),
-          PROBE_TIMEOUT_MS,
-          startupAbort.signal,
-        );
-        if (
-          startupAbort.signal.aborted ||
-          epoch !== this.#epoch ||
-          this.#stream !== stream ||
-          this.#suspended
-        ) {
-          throw new DOMException("Stale camera probe", "AbortError");
-        }
-      } finally {
-        if (this.#startupAbort === startupAbort) {
-          this.#startupAbort = null;
-        }
+      stream = await withCancellableTimeout(
+        (signal) => requestUserMedia(constraints, signal),
+        USER_MEDIA_TIMEOUT_MS,
+        startupAbort.signal,
+      );
+      if (
+        epoch !== this.#epoch ||
+        this.#suspended ||
+        document.visibilityState !== "visible"
+      ) {
+        throw new DOMException("Stale camera start", "AbortError");
       }
+
+      this.#stream = stream;
+      const track = stream.getVideoTracks()[0];
+      if (track === undefined) {
+        throw new DOMException("No video track", "NotFoundError");
+      }
+      this.#activeDeviceId = settingsFor(track).deviceId ?? null;
+      this.#video.muted = true;
+      this.#video.playsInline = true;
+      this.#video.srcObject = stream;
+
+      await this.#video.play();
+      await waitForMetadata(this.#video, startupAbort.signal);
+      if (
+        startupAbort.signal.aborted ||
+        epoch !== this.#epoch ||
+        this.#stream !== stream ||
+        this.#suspended
+      ) {
+        throw new DOMException("Stale camera playback", "AbortError");
+      }
+      // createImageBitmap has no abort support, so bound the wait; a stalled
+      // probe otherwise leaves the camera live forever with startup frozen.
+      // The probe closes its own bitmap if one arrives after the deadline.
+      await withCancellableTimeout(
+        () => this.#captureConformanceProbe(),
+        PROBE_TIMEOUT_MS,
+        startupAbort.signal,
+      );
+      if (
+        startupAbort.signal.aborted ||
+        epoch !== this.#epoch ||
+        this.#stream !== stream ||
+        this.#suspended
+      ) {
+        throw new DOMException("Stale camera probe", "AbortError");
+      }
+
+      if (epoch !== this.#epoch || this.#stream !== stream || this.#suspended) {
+        throw new DOMException("Stale camera publication", "AbortError");
+      }
+      track.addEventListener(
+        "ended",
+        () => {
+          if (this.#stream === stream) {
+            this.#advanceEpoch();
+            this.#teardownStream();
+            this.#onProblem("camera-stopped");
+          }
+        },
+        { once: true },
+      );
+      this.#publishCapabilities(track);
+      if (epoch !== this.#epoch || this.#stream !== stream || this.#suspended) {
+        throw new DOMException("Stale camera listener", "AbortError");
+      }
+      // Hide choices from the previous stream until fresh enumeration completes,
+      // while synchronously publishing which camera is actually active.
+      this.#onDevices(EMPTY_DEVICES, this.#activeDeviceId);
+      if (epoch !== this.#epoch || this.#stream !== stream || this.#suspended) {
+        throw new DOMException("Stale camera device publication", "AbortError");
+      }
+      this.#installDeviceChange();
+      this.#schedule(0);
+      void this.#enumerateDevices();
     } catch (error) {
       stopStream(stream);
-      if (this.#stream === stream) {
+      if (stream !== null && this.#stream === stream) {
         this.#stream = null;
         this.#video.srcObject = null;
       }
       throw error;
+    } finally {
+      if (this.#startupAbort === startupAbort) {
+        this.#startupAbort = null;
+      }
     }
-
-    if (epoch !== this.#epoch || this.#stream !== stream || this.#suspended) {
-      throw new DOMException("Stale camera publication", "AbortError");
-    }
-    track.addEventListener(
-      "ended",
-      () => {
-        if (this.#stream === stream) {
-          this.#advanceEpoch();
-          this.#teardownStream();
-          this.#onProblem("camera-stopped");
-        }
-      },
-      { once: true },
-    );
-    this.#publishCapabilities(track);
-    if (epoch !== this.#epoch || this.#stream !== stream || this.#suspended) {
-      throw new DOMException("Stale camera listener", "AbortError");
-    }
-    // Hide choices from the previous stream until fresh enumeration completes,
-    // while synchronously publishing which camera is actually active.
-    this.#onDevices(EMPTY_DEVICES, this.#activeDeviceId);
-    if (epoch !== this.#epoch || this.#stream !== stream || this.#suspended) {
-      throw new DOMException("Stale camera device publication", "AbortError");
-    }
-    this.#installDeviceChange();
-    this.#schedule(0);
-    void this.#enumerateDevices();
   }
 
   async #captureConformanceProbe(): Promise<void> {
@@ -746,6 +751,7 @@ export class CameraController<Result> {
 
     let bitmap: ImageBitmap | null = null;
     let submitted: Promise<CameraDecodeResponse<Result>> | null = null;
+    let dispatch: CameraDispatch<Result> | null = null;
     const frameAbort = new AbortController();
     this.#frameAbort = frameAbort;
     this.#inFlight = true;
@@ -796,7 +802,7 @@ export class CameraController<Result> {
         }
         return;
       }
-      this.#handleResponse(response);
+      dispatch = this.#handleResponse(response);
     } catch {
       bitmap?.close();
       context.clearRect(0, 0, width, height);
@@ -830,25 +836,29 @@ export class CameraController<Result> {
         this.#schedule(Math.max(0, FRAME_INTERVAL_MS - elapsed));
       }
     }
+    if (dispatch?.kind === "accepted") {
+      this.#onAccepted(dispatch.value);
+    } else if (dispatch?.kind === "overflow") {
+      this.#onOverflow();
+    }
   }
 
-  #handleResponse(response: CameraDecodeResponse<Result>): void {
+  #handleResponse(response: CameraDecodeResponse<Result>): CameraDispatch<Result> | null {
     if (response.kind === "empty") {
       this.#pendingFrame = null;
-      return;
+      return null;
     }
     if (response.kind === "overflow") {
       this.#pendingFrame = null;
       this.#advanceEpoch();
       this.#teardownStream();
-      this.#onOverflow();
-      return;
+      return { kind: "overflow" };
     }
 
     if (response.detections.length < 1 || response.detections.length > 8) {
       response.preview?.close();
       this.#pendingFrame = null;
-      return;
+      return null;
     }
 
     const current: DetectionFrame = {
@@ -860,14 +870,14 @@ export class CameraController<Result> {
     if (previous === null) {
       response.preview?.close();
       this.#pendingFrame = current;
-      return;
+      return null;
     }
 
     const match = matchConsecutiveFrames(previous, current);
     if (match.kind !== "accepted") {
       response.preview?.close();
       this.#pendingFrame = current;
-      return;
+      return null;
     }
 
     this.#pendingFrame = null;
@@ -879,12 +889,15 @@ export class CameraController<Result> {
     }
     this.#advanceEpoch();
     this.#teardownStream();
-    this.#onAccepted({
-      kind: isSelection ? "selection" : "single",
-      detections: ordered,
-      preview: isSelection ? response.preview : null,
-      epoch: acceptedEpoch,
-    });
+    return {
+      kind: "accepted",
+      value: {
+        kind: isSelection ? "selection" : "single",
+        detections: ordered,
+        preview: isSelection ? response.preview : null,
+        epoch: acceptedEpoch,
+      },
+    };
   }
 
   // A decode abandoned by an abort or deadline may settle long after its

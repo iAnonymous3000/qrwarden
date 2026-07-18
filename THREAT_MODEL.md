@@ -1,6 +1,6 @@
 # Threat model
 
-Last reviewed: 2026-07-16 · Applies to: v0.1.0 (pre-release)
+Last reviewed: 2026-07-18 · Applies to: v0.1.0 (pre-release)
 
 ## Security objective
 
@@ -16,7 +16,7 @@ QRWarden lets a person inspect untrusted QR input without that input causing nav
 
 ## Trust boundaries
 
-Hostile camera frames and validated image files enter one disposable decoder worker. Image files arrive by file selection, drag and drop, clipboard paste, or a service-worker share-target handoff that forwards the file to the page strictly in memory; every path passes the same validation before the worker. The worker owns file parsing, rasterization, scaling, WASM initialization, matrix-symbology decoding behind per-format canonical-verification profiles (QR Model 2, Micro QR, rMQR, ECC200 Data Matrix, Aztec), result filtering, ECI validation, and text transcoding under a single five-second deadline. The document receives bounded typed results. Pure classifiers and analyzers produce immutable reports, inert renderers display text, and explicit action brokers alone may copy or open a reviewed value.
+Hostile camera frames and validated image files enter one disposable decoder worker. Image files arrive by file selection, drag and drop, clipboard paste, or a service-worker share-target handoff that correlates each delivery with a one-time token and forwards the file to the page strictly in memory; every path passes the same validation before the worker. The worker owns file parsing, rasterization, scaling, WASM initialization, matrix-symbology decoding behind per-format canonical-verification profiles (QR Model 2, Micro QR, rMQR, ECC200 Data Matrix, Aztec), result filtering, ECI validation, and text transcoding under a single five-second deadline. The document receives bounded typed results. Pure classifiers and analyzers produce immutable reports, inert renderers display text, and explicit action brokers alone may copy or open a reviewed value.
 
 The application origin, service worker, browser, operating system, Cloudflare static host, GitHub, npm packages, pinned build container, release tooling, signing ceremony, and DNSSEC trust anchor are distinct boundaries. Deployment secrets and the signing secret key never enter application code or artifacts.
 
@@ -32,7 +32,7 @@ The application origin, service worker, browser, operating system, Cloudflare st
 | Click substitution or automatic navigation | Two-step object-bound confirmation where required, synchronous trusted click, exact revalidation immediately before navigation |
 | Camera or lifecycle leakage | Tracks/workers/bitmaps/buffers torn down on cancel, hidden, pagehide, replacement, update preparation, and generation invalidation |
 | Cache/update substitution | Hash-and-length allowlist, install/pre-commit verification, no fallible activation work, release-consistency gate, availability-preserving failure |
-| Supply-chain compromise | Exact pins and lockfile, decoder WASM hash, digest-pinned release image, two clean reproducible builds, SBOM/licenses, attestations, Minisign and DNSSEC |
+| Supply-chain compromise | Exact pins and lockfile, decoder WASM hash, digest-pinned release image, two clean reproducible builds, SBOM/licenses, hosted attestations with independent readback, Minisign and DNSSEC |
 | Deployment drift | Closed artifact/header/permissions contracts, static-assets-only Cloudflare baseline, captured version IDs, zero-percent override smoke, drift monitoring |
 
 ## Residual risks

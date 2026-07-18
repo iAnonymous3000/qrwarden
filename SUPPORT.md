@@ -4,7 +4,7 @@ QRWarden is pre-release software maintained on a volunteer basis. There is no se
 
 ## Questions and bug reports
 
-GitHub Issues are the intended place for questions, bug reports, and feature requests. **Issues are currently disabled** while the project is pre-release; they will be enabled when the repository is published for the first release. Once enabled, use the issue templates, keep to synthetic data, and never include real QR payloads, credentials, or personal data.
+GitHub Issues are the intended place for questions, bug reports, and feature requests. **Issues are currently disabled** while the project is pre-release; maintainers plan to enable them no earlier than the first signed public release, when a public support queue can be responsibly maintained. Once enabled, use the issue templates, keep to synthetic data, and never include real QR payloads, credentials, or personal data.
 
 ## Security vulnerabilities
 

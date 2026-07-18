@@ -453,7 +453,7 @@ describe("CameraController lifecycle", () => {
     expect(harness.mediaDevices.getUserMedia).not.toHaveBeenCalled();
   });
 
-  it("stops a stream that resolves after cancellation without surfacing a stale error", async () => {
+  it("settles cancellation before a late permission result and stops the late stream", async () => {
     const harness = createHarness();
     const lateTrack = new TrackDouble("late");
     const lateStream = streamFor(lateTrack);
@@ -462,13 +462,17 @@ describe("CameraController lifecycle", () => {
 
     const starting = harness.controller.start();
     harness.controller.cancel();
-    permission.resolve(lateStream);
     await starting;
 
-    expect(lateTrack.stop).toHaveBeenCalledOnce();
+    expect(lateTrack.stop).not.toHaveBeenCalled();
     expect(harness.controller.active).toBe(false);
     expect(harness.onProblem).not.toHaveBeenCalled();
     expect(harness.decoder.terminate).toHaveBeenCalledOnce();
+
+    permission.resolve(lateStream);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(lateTrack.stop).toHaveBeenCalledOnce();
   });
 
   it("bounds a camera request that never settles and stops a late stream", async () => {
@@ -779,6 +783,46 @@ describe("CameraController timeout and constraints", () => {
     expect(harness.track.stop).toHaveBeenCalledOnce();
     expect(harness.onProblem).toHaveBeenCalledExactlyOnceWith("reader-stopped");
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not restart the reader when an overflow observer throws", async () => {
+    const harness = createHarness();
+    const failure = new Error("overflow observer failed");
+    const rejections: unknown[] = [];
+    const capture = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+    const previous = process.listeners("unhandledRejection");
+    process.removeAllListeners("unhandledRejection");
+    process.on("unhandledRejection", capture);
+    try {
+      harness.onOverflow.mockImplementationOnce(() => {
+        throw failure;
+      });
+      harness.decoder.decodeCameraFrame.mockImplementationOnce(
+        async (bitmap: ImageBitmap, request: { readonly epoch: number; readonly width: number; readonly height: number }) => {
+          bitmap.close();
+          return { kind: "overflow", ...request };
+        },
+      );
+      await harness.controller.start();
+
+      await vi.advanceTimersToNextTimerAsync();
+      vi.useRealTimers();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(rejections).toEqual([failure]);
+      expect(harness.onOverflow).toHaveBeenCalledOnce();
+      expect(harness.decoder.restart).not.toHaveBeenCalled();
+      expect(harness.onProblem).not.toHaveBeenCalled();
+      expect(harness.controller.active).toBe(false);
+    } finally {
+      process.off("unhandledRejection", capture);
+      for (const listener of previous) {
+        process.on("unhandledRejection", listener);
+      }
+    }
   });
 
   it("waits beyond the frame deadline for a decoder that is not ready yet", async () => {

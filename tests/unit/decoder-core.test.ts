@@ -187,11 +187,14 @@ describe("bytesECI-owned decoding", () => {
       kind: "binary",
       reason: "unsupported-eci",
     });
-    const mixed = withEci(26, encoder.encode("x"));
-    mixed.bytesECI = Uint8Array.from([
-      ...mixed.bytesECI,
-      ...encoder.encode("\\000003y"),
-    ]);
+    const mixedBase = withEci(26, encoder.encode("x"));
+    const mixed = {
+      ...mixedBase,
+      bytesECI: Uint8Array.from([
+        ...mixedBase.bytesECI,
+        ...encoder.encode("\\000003y"),
+      ]),
+    };
     expect(decodeCapturedPayload(mixed)).toMatchObject({ kind: "binary", reason: "mixed-eci" });
     expect(
       decodeCapturedPayload(result({ bytesECI: encoder.encode("]Q2\\000026x"), hasECI: true })),

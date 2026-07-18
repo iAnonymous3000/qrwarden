@@ -7,7 +7,7 @@ function setup(writeText: (value: string) => Promise<void>) {
   vi.stubGlobal("navigator", { clipboard: { writeText } });
   const reports = new ReportStore<{
     readonly actionPolicy: "inspect-only";
-    readonly displayFields: readonly { readonly actionValue: string }[];
+    readonly displayFields: readonly { readonly value: string }[];
     readonly label: string;
   }>();
   const active = reports.activate({

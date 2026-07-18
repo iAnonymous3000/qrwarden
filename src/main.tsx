@@ -9,14 +9,17 @@ import { DecoderWorkerClient } from "./decoder";
 import { App, type AppStatusDetail, type RuntimeBridge } from "./render/App";
 import "./render/styles.css";
 import { createBrowserThemeController } from "./render/theme";
-import { shareRejectionReason } from "./app/shareIntake";
 import {
   replayServiceWorkerStatus,
   requestPendingShare,
   ServiceWorkerClient,
   type OfflineState,
 } from "./sw/client";
-import { sharePendingTokenFromUrl } from "./sw/shareToken";
+import { readShareDeliveryMessage } from "./sw/protocol";
+import {
+  shareAdmissionRejectionFromUrl,
+  sharePendingTokenFromUrl,
+} from "./sw/shareToken";
 
 declare const __QRWARDEN_RELEASE_ID__: string;
 declare const __QRWARDEN_SIGNING_PUBLIC_KEY__: string;
@@ -54,16 +57,11 @@ let serviceWorker: ServiceWorkerClient | null = null;
 // redirected document. The listener is installed before the first render so
 // browser-buffered messages cannot be dropped; App owns consumption gating.
 navigator.serviceWorker?.addEventListener("message", (event) => {
-  const data = event.data as {
-    readonly type?: string;
-    readonly file?: unknown;
-    readonly reason?: unknown;
-  };
-  if (data?.type === "SHARED_IMAGE" && data.file instanceof File) {
-    emit({ sharedImage: data.file });
-  }
-  if (data?.type === "SHARE_REJECTED") {
-    emit({ shareRejected: shareRejectionReason(data.reason) });
+  const message = readShareDeliveryMessage(event.data, __QRWARDEN_RELEASE_ID__);
+  if (message?.type === "SHARED_IMAGE") {
+    emit({ sharedImage: message.file });
+  } else if (message?.type === "SHARE_REJECTED") {
+    emit({ shareRejected: message.reason });
   }
 });
 // addEventListener alone never enables the client message queue; without this
@@ -79,6 +77,11 @@ navigator.serviceWorker?.startMessages();
 // redundant controller) keeps it for a reload within the parking deadline.
 const startupUrl = new URL(window.location.href);
 const pendingShareToken = sharePendingTokenFromUrl(startupUrl);
+const startupShareRejection = shareAdmissionRejectionFromUrl(startupUrl);
+if (startupShareRejection !== null) {
+  startupUrl.search = "";
+  history.replaceState(history.state, "", startupUrl);
+}
 if (pendingShareToken !== null) {
   if (
     requestPendingShare(
@@ -92,15 +95,16 @@ if (pendingShareToken !== null) {
 }
 
 const smokeDecoder = async (): Promise<boolean> => {
-  const client = new DecoderWorkerClient(workerFactory);
+  let client: DecoderWorkerClient | null = null;
   try {
+    client = new DecoderWorkerClient(workerFactory);
     await client.start();
     await client.smoke(0);
     return true;
   } catch {
     return false;
   } finally {
-    client.dispose("cancelled");
+    client?.dispose("cancelled");
   }
 };
 
@@ -142,6 +146,10 @@ render(
   />,
   root,
 );
+
+if (startupShareRejection !== null) {
+  queueMicrotask(() => emit({ shareRejected: startupShareRejection }));
+}
 
 // Render the locked shell before service-worker registration or state queries.
 // Slow mobile storage and lifecycle APIs must not leave a blank page, while no

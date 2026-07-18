@@ -6,10 +6,33 @@ import {
   ImageController,
   installDropNavigationGuard,
 } from "../../src/image/controller";
+import type {
+  DecoderRequest,
+  DecoderResponse,
+} from "../../src/decoder/workerProtocol";
 
 class IdleWorker extends EventTarget {
   readonly postMessage = vi.fn();
   readonly terminate = vi.fn();
+}
+
+class SuccessfulWorker extends EventTarget {
+  readonly terminate = vi.fn();
+  readonly postMessage = vi.fn((request: DecoderRequest) => {
+    if (request.type !== "decode-image") return;
+    queueMicrotask(() => {
+      this.emit({
+        type: "result",
+        jobId: request.jobId,
+        epoch: request.epoch,
+        outcome: { kind: "no-result" },
+      });
+    });
+  });
+
+  emit(response: DecoderResponse): void {
+    this.dispatchEvent(new MessageEvent("message", { data: response }));
+  }
 }
 
 function fileLike(size: number, type: string, name = "code.png"): File {
@@ -138,6 +161,43 @@ describe("image intake validation matrix", () => {
     expect(controller.busy).toBe(false);
   });
 
+  it("does not relabel a result-observer exception as a reader failure", async () => {
+    const worker = new SuccessfulWorker();
+    const failure = new Error("result observer failed");
+    const onProblem = vi.fn();
+    const rejections: unknown[] = [];
+    const capture = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+    const previous = process.listeners("unhandledRejection");
+    process.removeAllListeners("unhandledRejection");
+    process.on("unhandledRejection", capture);
+    try {
+      const controller = new ImageController({
+        workerFactory: () => worker as unknown as Worker,
+        onResult: () => {
+          throw failure;
+        },
+        onProblem,
+      });
+
+      controller.choose([fileLike(1, "image/png")]);
+      worker.emit({ type: "ready" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(rejections).toEqual([failure]);
+      expect(onProblem).not.toHaveBeenCalled();
+      expect(worker.terminate).toHaveBeenCalledOnce();
+      expect(controller.busy).toBe(false);
+    } finally {
+      process.off("unhandledRejection", capture);
+      for (const listener of previous) {
+        process.on("unhandledRejection", listener);
+      }
+    }
+  });
+
   it("filters drop items without reading strings or falling back from a nonempty item list", () => {
     const accepted = fileLike(1, "image/png", "accepted.png");
     const ignoredFallback = fileLike(1, "image/png", "fallback.png");
@@ -187,5 +247,17 @@ describe("image intake validation matrix", () => {
     remove();
     target.dispatchEvent(new Event("drop", { cancelable: true }));
     expect(onFiles).toHaveBeenCalledOnce();
+  });
+
+  it("prevents drag navigation without consuming files outside scanner views", () => {
+    const target = new EventTarget();
+    vi.stubGlobal("window", target);
+    const remove = installDropNavigationGuard(null);
+    const drop = new Event("drop", { cancelable: true });
+
+    target.dispatchEvent(drop);
+
+    expect(drop.defaultPrevented).toBe(true);
+    remove();
   });
 });
