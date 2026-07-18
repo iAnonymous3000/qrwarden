@@ -681,7 +681,6 @@ export function App(props: AppProps) {
   // A buffered share is pending work: an update must not reload this
   // document (discarding the in-memory file) while one waits to be consumed.
   props.bridge.isIdle = () =>
-    pendingShareRef.current.length === 0 &&
     isRuntimeIdle({
       viewKind: viewRef.current.kind,
       hasActiveReport: reports.active !== null,
@@ -690,6 +689,7 @@ export function App(props: AppProps) {
       cameraAttached: cameraRef.current !== null,
       cameraTaskBusy: cameraTaskCount.current > 0,
       clipboardBusy: clipboard.busy,
+      hasPendingShare: pendingShareRef.current.length > 0,
       hasRetainedResources: work.hasRetainedResources,
     });
   props.bridge.dropReport = () => {
@@ -1363,6 +1363,7 @@ export function App(props: AppProps) {
           const canRetryCamera = problem.primaryAction === "retry-camera";
           const canChooseImage = problem.imageFallback === true;
           const isRecovery = problem.tone === "recovery";
+          const dismissLabel = problem.dismissLabel ?? COPY.tryAnotherCode;
           return (
             <section
               class={`center-card ${isRecovery ? "recovery-card" : "error-card"}`}
@@ -1414,13 +1415,13 @@ export function App(props: AppProps) {
                     </>
                   ) : (
                     <button type="button" class="secondary-button" onClick={goHome}>
-                      {COPY.tryAnotherCode}
+                      {dismissLabel}
                     </button>
                   )}
                 </div>
               ) : (
                 <button type="button" class="primary-button" onClick={goHome}>
-                  {COPY.tryAnotherCode}
+                  {dismissLabel}
                 </button>
               )}
             </section>

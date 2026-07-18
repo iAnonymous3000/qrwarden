@@ -53,13 +53,13 @@ describe("share rejection reasons", () => {
     expect(shareRejectionReason(42)).toBe("unreadable");
   });
 
-  it("maps every reason onto existing localized intake problems", () => {
-    expect(shareRejectionProblem("multiple-files")).toBe("choose-one-image");
-    expect(shareRejectionProblem("too-large")).toBe("image-too-large");
+  it("maps every reason onto dedicated share recovery problems", () => {
+    expect(shareRejectionProblem("multiple-files")).toBe("share-multiple-files");
+    expect(shareRejectionProblem("too-large")).toBe("share-too-large");
     expect(shareRejectionProblem("unsupported-type")).toBe(
-      "unsupported-image-type",
+      "share-unsupported-type",
     );
-    expect(shareRejectionProblem("unreadable")).toBe("image-unreadable");
+    expect(shareRejectionProblem("unreadable")).toBe("share-unreadable");
   });
 });
 

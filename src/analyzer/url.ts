@@ -123,42 +123,19 @@ function materialBrowserRewrite(
 
 interface NameSummary {
   readonly names: string;
-  readonly reportNames: string;
   readonly count: number;
   readonly omitted: number;
 }
 
-function summarizeNames(parameters: URLSearchParams, raw: string): NameSummary {
+function summarizeNames(parameters: URLSearchParams): NameSummary {
   const names: string[] = [];
   let count = 0;
   for (const [name] of parameters) {
     if (names.length < ANALYZER_LIMITS.urlNames) names.push(name);
     count += 1;
   }
-  // A pair without "=" is all payload: the parser surfaces the whole token
-  // as a name, so the copied report treats it as a hidden value instead.
-  const listed: string[] = [];
-  let valueless = 0;
-  for (const pair of raw.split("&")) {
-    if (pair === "") continue;
-    if (!pair.includes("=")) {
-      valueless += 1;
-      continue;
-    }
-    for (const [name] of new URLSearchParams(pair)) {
-      if (listed.length < ANALYZER_LIMITS.urlNames) listed.push(name);
-    }
-  }
-  const valuelessNote =
-    valueless === 0
-      ? ""
-      : `(${valueless} valueless ${valueless === 1 ? "entry" : "entries"} hidden)`;
-  const reportNames = [listed.join(", "), valuelessNote]
-    .filter((part) => part !== "")
-    .join(" ");
   return {
     names: names.length === 0 ? "None" : names.join(", "),
-    reportNames: reportNames === "" ? "None" : reportNames,
     count,
     omitted: Math.max(0, count - names.length),
   };
@@ -299,20 +276,27 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
   const reportPath =
     pathSegments === 0
       ? parsed.pathname
-      : `/(${pathSegments} ${pathSegments === 1 ? "segment" : "segments"} hidden)`;
+      : "/";
   fields.add("path", "Path", parsed.pathname, {
     kind: "path",
     collapsed: true,
+    count: pathSegments,
+    // The renderer rebuilds the localized structural summary from the count.
+    // This analyzer-owned fallback is deliberately incapable of carrying a
+    // path segment if another report consumer is introduced later.
     reportValue: reportPath,
   });
 
-  const query = summarizeNames(parsed.searchParams, parsed.search.slice(1));
+  const query = summarizeNames(parsed.searchParams);
   fields.add("query-names", "Query names", query.names, {
     kind: "names",
     collapsed: true,
     count: query.count,
     omittedCount: query.omitted,
-    reportValue: query.reportNames,
+    // Parameter names are attacker-controlled and may themselves contain
+    // secrets or personal data. Whole-report copies retain only this count;
+    // the on-screen value and explicit per-field copy remain unchanged.
+    reportRedacted: true,
   });
 
   if (parsed.hash === "") {
@@ -320,13 +304,13 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
   } else {
     const fragmentText = parsed.hash.slice(1);
     if (fragmentText.includes("=") || fragmentText.includes("&")) {
-      const fragment = summarizeNames(new URLSearchParams(fragmentText), fragmentText);
+      const fragment = summarizeNames(new URLSearchParams(fragmentText));
       fields.add("fragment-names", "Fragment names", fragment.names, {
         kind: "names",
         collapsed: true,
         count: fragment.count,
         omittedCount: fragment.omitted,
-        reportValue: fragment.reportNames,
+        reportRedacted: true,
       });
     } else {
       fields.add("fragment", "Fragment", "Present", {
@@ -337,13 +321,10 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
   }
   fields.add("original", "Original QR content", original, {
     collapsed: true,
-    // The copied report keeps the structure but never the path, query, or
-    // fragment values, which routinely carry tokens and other secrets.
-    reportValue:
-      parsed.origin +
-      reportPath +
-      (parsed.search === "" ? "" : "?(query values hidden)") +
-      (parsed.hash === "" ? "" : "#(fragment hidden)"),
+    // Only the origin is safe as an analyzer-owned fallback. The report
+    // renderer reconstructs the localized path/query/fragment structure from
+    // canonicalHref without copying any of their contents.
+    reportValue: parsed.origin,
   });
 
   if (trailingDot) {

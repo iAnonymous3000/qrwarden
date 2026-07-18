@@ -213,8 +213,8 @@ describe("encoded image header boundary matrix", () => {
   it.each([
     [8_192, 1, true],
     [8_193, 1, false],
-    [5_000, 5_000, true],
-    [5_000, 5_001, false],
+    [4_096, 4_096, true],
+    [4_096, 4_097, false],
     [0, 1, false],
   ])("enforces PNG dimensions %d x %d", (width, height, accepted) => {
     const bytes = png(width, height);
@@ -320,7 +320,7 @@ describe("encoded image header boundary matrix", () => {
   });
 
   it("rejects oversized-axis and over-pixel WebP dimensions", () => {
-    for (const [width, height] of [[8_193, 1], [5_000, 5_001]]) {
+    for (const [width, height] of [[8_193, 1], [4_096, 4_097]]) {
       const bytes = webp(width, height);
       expectHeaderError(() => parseImageHeaderBytes(bytes, bytes.length), "invalid-dimensions");
     }

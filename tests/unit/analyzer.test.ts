@@ -584,6 +584,56 @@ describe("decoder trust boundary and report bounds", () => {
     expect(report.actionPolicy).toBe("inspect-only");
   });
 
+  it("surfaces only the no-ECI ISO-8859-1 fallback as context", () => {
+    const decodedText = "caf\u00e9";
+    const baseInput = {
+      rawBytes: { byteLength: 4, hex: "636166e9" },
+      contentType: "Text",
+    } as const;
+    const fallback = analyzeDecodeResult({
+      ...baseInput,
+      decoding: {
+        kind: "text",
+        text: decodedText,
+        encoding: "iso-8859-1",
+        eci: null,
+      },
+    });
+
+    expect(fallback.actionPolicy).toBe(analyzeText(decodedText).actionPolicy);
+    expect(fallback.signals).toContainEqual({
+      code: "assumed-iso-8859-1",
+      level: "context",
+      title: "ISO-8859-1 assumed (no ECI marker)",
+      detail:
+        "The symbol did not declare an ECI encoding, and its bytes were not valid UTF-8, so QRWarden interpreted them as ISO-8859-1.",
+    });
+
+    const declared = analyzeDecodeResult({
+      ...baseInput,
+      decoding: {
+        kind: "text",
+        text: decodedText,
+        encoding: "iso-8859-1",
+        eci: { assignment: 3 },
+      },
+    });
+    const utf8 = analyzeDecodeResult({
+      ...baseInput,
+      decoding: {
+        kind: "text",
+        text: decodedText,
+        encoding: "utf-8",
+        eci: null,
+      },
+    });
+
+    expect(declared.signals.some((item) => item.code === "assumed-iso-8859-1"))
+      .toBe(false);
+    expect(utf8.signals.some((item) => item.code === "assumed-iso-8859-1"))
+      .toBe(false);
+  });
+
   it("bounds fields by Unicode scalar values, not UTF-16 code units", () => {
     const report = analyzeText("😀".repeat(ANALYZER_LIMITS.fieldScalars + 5));
     const text = field(report, "text");

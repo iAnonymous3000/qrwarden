@@ -75,7 +75,7 @@ describe("bounded image headers", () => {
   it("rejects MIME mismatch, unknown input, bombs, and animation", async () => {
     expect(() => parseImageHeaderBytes(png(), png().length, "image/jpeg")).toThrow(ImageHeaderError);
     expect(() => parseImageHeaderBytes(new TextEncoder().encode("<svg/>"), 6, "image/svg+xml")).toThrow(ImageHeaderError);
-    const bomb = png(5_000, 5_001);
+    const bomb = png(4_096, 4_097);
     expect(() => parseImageHeaderBytes(bomb, bomb.length)).toThrowError("invalid-dimensions");
     const animated = png(1, 1, pngChunk("acTL", [0, 0, 0, 1, 0, 0, 0, 0]));
     await expect(

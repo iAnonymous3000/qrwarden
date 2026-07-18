@@ -43,6 +43,48 @@ async function expectThemeColor(page: Page, expected: string): Promise<void> {
     .toEqual([expected, expected]);
 }
 
+async function submitShareTargetFile(
+  page: Page,
+  baseURL: string,
+  file: {
+    readonly base64: string;
+    readonly name: string;
+    readonly type: string;
+  },
+): Promise<void> {
+  // A real share-target POST is issued by the browser itself, outside any
+  // document CSP. The app page's own form-action 'none' forbids submissions,
+  // so submit from a CSP-free blank document instead.
+  await page.goto("about:blank");
+  await page.evaluate(
+    async ({ action, base64, name, type }) => {
+      const binary = atob(base64);
+      const data = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        data[index] = binary.charCodeAt(index);
+      }
+      const sharedFile = new File([data], name, { type });
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = action;
+      form.enctype = "multipart/form-data";
+      const input = document.createElement("input");
+      input.type = "file";
+      input.name = "image";
+      const transfer = new DataTransfer();
+      transfer.items.add(sharedFile);
+      input.files = transfer.files;
+      form.append(input);
+      document.body.append(form);
+      form.submit();
+    },
+    {
+      action: new URL("/share-target", baseURL).href,
+      ...file,
+    },
+  );
+}
+
 test("matches the system theme color before JavaScript starts", async ({
   baseURL,
   browser,
@@ -1107,42 +1149,123 @@ test("delivers a shared image through the installed share target", async ({
   await expect
     .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null))
     .toBe(true);
-
-  // A real share-target POST is issued by the browser itself, outside any
-  // document CSP. The app page's own form-action 'none' forbids submissions,
-  // so the test submits from a CSP-free blank document instead.
-  await page.goto("about:blank");
   const bytes = await readFile(fixture);
-  await page.evaluate(
-    async ({ base64, action }) => {
-      const binary = atob(base64);
-      const data = new Uint8Array(binary.length);
-      for (let index = 0; index < binary.length; index += 1) {
-        data[index] = binary.charCodeAt(index);
-      }
-      const file = new File([data], "shared.png", { type: "image/png" });
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = action;
-      form.enctype = "multipart/form-data";
-      const input = document.createElement("input");
-      input.type = "file";
-      input.name = "image";
-      const transfer = new DataTransfer();
-      transfer.items.add(file);
-      input.files = transfer.files;
-      form.append(input);
-      document.body.append(form);
-      form.submit();
-    },
-    {
-      base64: bytes.toString("base64"),
-      action: new URL("/share-target", baseURL).href,
-    },
-  );
+  await submitShareTargetFile(page, baseURL, {
+    base64: bytes.toString("base64"),
+    name: "shared.png",
+    type: "image/png",
+  });
 
   await expect(
     page.getByRole("heading", { name: COPY.reviewHeading }),
   ).toBeVisible({ timeout: 20_000 });
   expect(new URL(page.url()).pathname).toBe("/");
+});
+
+test("defers a shared image received while hidden until visibility returns", async ({
+  baseURL,
+  browserName,
+  page,
+}) => {
+  test.skip(
+    browserName !== "chromium",
+    "The hidden share-target delivery contract is exercised in Chromium, where Web Share Target is supported.",
+  );
+  if (baseURL === undefined) throw new TypeError("Browser base URL is required");
+  await page.addInitScript(() => {
+    if (!new URL(window.location.href).searchParams.has("share-pending")) return;
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    Object.assign(window, { __qrwardenSharedImageMessages: 0 });
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      const data = event.data as { readonly type?: string };
+      if (data?.type === "SHARED_IMAGE") {
+        const state = window as unknown as {
+          __qrwardenSharedImageMessages: number;
+        };
+        state.__qrwardenSharedImageMessages += 1;
+      }
+    });
+  });
+  await page.goto("/");
+  await expect(page.getByText("Ready offline.", { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect
+    .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null))
+    .toBe(true);
+
+  const bytes = await readFile(fixture);
+  await submitShareTargetFile(page, baseURL, {
+    base64: bytes.toString("base64"),
+    name: "shared-hidden.png",
+    type: "image/png",
+  });
+
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __qrwardenSharedImageMessages?: number;
+            }
+          ).__qrwardenSharedImageMessages ?? 0,
+      ).catch(() => 0),
+    )
+    .toBe(1);
+  await expect(
+    page.getByRole("heading", { name: COPY.primaryMessage }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: COPY.reviewHeading }),
+  ).toHaveCount(0);
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(
+    page.getByRole("heading", { name: COPY.reviewHeading }),
+  ).toBeVisible({ timeout: 20_000 });
+});
+
+test("shows dedicated recovery copy for a rejected unsupported share", async ({
+  baseURL,
+  browserName,
+  page,
+}) => {
+  test.skip(
+    browserName !== "chromium",
+    "The real unsupported-type share-target path is a Chromium Web Share Target contract.",
+  );
+  if (baseURL === undefined) throw new TypeError("Browser base URL is required");
+  await page.goto("/");
+  await expect(page.getByText("Ready offline.", { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect
+    .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null))
+    .toBe(true);
+
+  await submitShareTargetFile(page, baseURL, {
+    base64: btoa("not an image"),
+    name: "shared.txt",
+    type: "text/plain",
+  });
+
+  await expect(
+    page.getByRole("heading", { name: COPY.unsupportedImageHeading }),
+  ).toBeVisible({ timeout: 20_000 });
+  await expect(
+    page.getByText(COPY.shareUnsupportedTypeBody, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: COPY.backToScanner }),
+  ).toBeVisible();
 });

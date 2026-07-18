@@ -185,6 +185,9 @@ const documentCsp = `${[
   "trusted-types qrwarden-script-url",
 ].join("; ")};`;
 const headers = `/*
+  ! NEL
+  ! Report-To
+  ! Reporting-Endpoints
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY

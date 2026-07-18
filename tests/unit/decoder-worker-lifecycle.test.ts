@@ -31,7 +31,7 @@ vi.mock("../../decoder-worker/imageHeaders", () => ({
 vi.mock("../../decoder-worker/raster", () => ({
   PASS_1_MAX_EDGE: 2_048,
   PASS_2_MAX_EDGE: 4_096,
-  PASS_2_MAX_PIXELS: 25_000_000,
+  PASS_2_MAX_PIXELS: 16_777_216,
   RasterError: class extends Error {},
   withCameraRaster: workerMocks.withCameraRaster,
   withRasterizedFile: workerMocks.withRasterizedFile,

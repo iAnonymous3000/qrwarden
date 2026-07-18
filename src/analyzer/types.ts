@@ -71,7 +71,8 @@ export type AnalysisSignalCode =
   | "material-browser-rewrite"
   | "userinfo"
   | "forbidden-authority-character"
-  | "malformed-web-url";
+  | "malformed-web-url"
+  | "assumed-iso-8859-1";
 
 export interface AnalysisSignal {
   readonly code: AnalysisSignalCode;

@@ -8,11 +8,13 @@ import {
   assertExpectedRelease,
   assertOrigin,
   buildRequestHeaders,
-  expectedHeadersForPath,
-  parseHeaderRules,
   verifyCloudflareLive,
   verifyProbeResponse,
 } from "../../scripts/release/verify-cloudflare-live.mjs";
+import {
+  expectedHeadersForPath,
+  parseHeaderRules,
+} from "../../scripts/release/header-rules.mjs";
 
 const release = "v0.1.0+0123456789abcdef0123456789abcdef01234567";
 const generatedHeadersFixture = path.join(
@@ -323,6 +325,12 @@ describe("Cloudflare live release verifier", () => {
   it("parses the generated _headers and matches the /assets/*.js suffix route", async () => {
     const rules = parseHeaderRules(await readFile(generatedHeadersFixture, "utf8"));
     expect(rules.map(({ pattern }: { pattern: string }) => pattern)).toContain("/assets/*.js");
+    const catchAll = rules.find(({ pattern }: { pattern: string }) => pattern === "/*");
+    expect(catchAll?.detachments).toEqual([
+      "nel",
+      "report-to",
+      "reporting-endpoints",
+    ]);
     const hashedScript = expectedHeadersForPath(rules, "/assets/app-abc123.js");
     expect(hashedScript.get("content-type")).toBe("text/javascript; charset=utf-8");
     expect(hashedScript.get("cache-control")).toBe("public, max-age=31536000, immutable");
@@ -346,7 +354,7 @@ describe("Cloudflare live release verifier", () => {
           probe: { pathname: "/", expectedStatus: 200 },
           response: new Response("ok\n", { status: 200, headers }),
         }),
-      ).rejects.toThrow("opt out of Network Error Logging in the Cloudflare dashboard");
+      ).rejects.toThrow("generated Pages detach rule did not remove it");
     }
     await expect(
       verifyProbeResponse({
@@ -367,6 +375,33 @@ describe("Cloudflare live release verifier", () => {
     }
   });
 
+  it("allows only reporting-header detachments and applies them in rule order", () => {
+    const detach = parseHeaderRules(
+      "/asset\n  ! NEL\n  ! Report-To\n  ! Reporting-Endpoints\n",
+    );
+    const inherited = {
+      pattern: "/*",
+      headers: [
+        ["nel", "injected"],
+        ["report-to", "injected"],
+        ["reporting-endpoints", "injected"],
+        ["x-test", "retained"],
+      ],
+      detachments: [],
+    };
+    const resolved = expectedHeadersForPath([inherited, ...detach], "/asset");
+    expect(resolved).toEqual(new Map([["x-test", "retained"]]));
+
+    for (const source of [
+      "/*\n  ! Content-Security-Policy\n",
+      "/*\n  !NEL\n",
+      "/*\n  ! NEL: value\n",
+      "/*\n  ! NEL\n  ! nel\n",
+    ]) {
+      expect(() => parseHeaderRules(source)).toThrow();
+    }
+  });
+
   it("rejects live reporting headers even when committed expectations declare them", async () => {
     const value = '{"report_to":"cf-nel","max_age":604800}';
     await expect(
@@ -378,7 +413,7 @@ describe("Cloudflare live release verifier", () => {
         },
         response: new Response("ok\n", { status: 200, headers: { NEL: value } }),
       }),
-    ).rejects.toThrow("opt out of Network Error Logging");
+    ).rejects.toThrow("generated Pages detach rule did not remove it");
   });
 
   it("fails the live run when Cloudflare injects reporting headers on a probe", async () => {
@@ -396,6 +431,6 @@ describe("Cloudflare live release verifier", () => {
           return Promise.resolve(response);
         },
       }),
-    ).rejects.toThrow("opt out of Network Error Logging");
+    ).rejects.toThrow("generated Pages detach rule did not remove it");
   });
 });

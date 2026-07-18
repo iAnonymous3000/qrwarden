@@ -6,6 +6,7 @@ export interface RuntimeIdleSnapshot {
   readonly cameraAttached: boolean;
   readonly cameraTaskBusy: boolean;
   readonly clipboardBusy: boolean;
+  readonly hasPendingShare: boolean;
   readonly hasRetainedResources: boolean;
 }
 
@@ -19,6 +20,7 @@ export function isRuntimeIdle(snapshot: RuntimeIdleSnapshot): boolean {
     !snapshot.cameraAttached &&
     !snapshot.cameraTaskBusy &&
     !snapshot.clipboardBusy &&
+    !snapshot.hasPendingShare &&
     !snapshot.hasRetainedResources
   );
 }

@@ -9,6 +9,10 @@ export type ProblemCode =
   | "image-unreadable"
   | "took-too-long"
   | "choose-one-image"
+  | "share-multiple-files"
+  | "share-too-large"
+  | "share-unsupported-type"
+  | "share-unreadable"
   | "image-stopped"
   | "reader-stopped"
   | "link-changed"
@@ -24,6 +28,7 @@ export interface ProblemCopy {
   readonly body: string;
   readonly primaryAction?: "resume-camera" | "retry-camera";
   readonly imageFallback?: boolean;
+  readonly dismissLabel?: string;
   readonly tone: "danger" | "recovery";
 }
 
@@ -67,6 +72,30 @@ export const PROBLEM_COPY: Readonly<Record<ProblemCode, ProblemCopy>> =
     "choose-one-image": {
       heading: COPY.chooseOneImageHeading,
       body: COPY.chooseOneImageBody,
+      tone: "recovery",
+    },
+    "share-multiple-files": {
+      heading: COPY.chooseOneImageHeading,
+      body: COPY.shareMultipleFilesBody,
+      dismissLabel: COPY.backToScanner,
+      tone: "recovery",
+    },
+    "share-too-large": {
+      heading: COPY.imageTooLargeHeading,
+      body: COPY.shareTooLargeBody,
+      dismissLabel: COPY.backToScanner,
+      tone: "recovery",
+    },
+    "share-unsupported-type": {
+      heading: COPY.unsupportedImageHeading,
+      body: COPY.shareUnsupportedTypeBody,
+      dismissLabel: COPY.backToScanner,
+      tone: "recovery",
+    },
+    "share-unreadable": {
+      heading: COPY.imageUnreadableHeading,
+      body: COPY.shareUnreadableBody,
+      dismissLabel: COPY.backToScanner,
       tone: "recovery",
     },
     "image-stopped": {

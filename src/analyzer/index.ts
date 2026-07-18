@@ -1,6 +1,6 @@
 import dataStatus from "../../release/data-status.json";
 import { hasValidFrozenBytes, ReportFields } from "./limits";
-import { createReport } from "./report";
+import { createReport, signal } from "./report";
 import { analyzeStructuredText } from "./structured";
 import type {
   AnalysisReport,
@@ -158,28 +158,69 @@ function ensureExactStructuredSource(
   });
 }
 
-/**
- * Pure decoder-to-report boundary. Decoder DecodeResult is structurally
- * compatible with AnalyzerInput, so the analyzer retains no worker object.
- */
-export function analyzeDecodeResult(input: AnalyzerInput): AnalysisReport {
-  if (input.decoding.kind !== "text") return binaryReport(input.rawBytes);
-
-  if (input.contentType === "GS1") {
-    return inertReaderText("gs1", input.decoding.text);
+function reportForDecodedText(
+  contentType: string,
+  text: string,
+  rawBytes: AnalyzerFrozenBytes,
+): AnalysisReport {
+  if (contentType === "GS1") {
+    return inertReaderText("gs1", text);
   }
-  if (input.contentType === "ISO15434") {
-    return inertReaderText("iso-15434", input.decoding.text);
+  if (contentType === "ISO15434") {
+    return inertReaderText("iso-15434", text);
   }
-  if (input.contentType !== "Text") return binaryReport(input.rawBytes);
+  if (contentType !== "Text") return binaryReport(rawBytes);
 
-  const text = input.decoding.text;
   const url = analyzeHttpUrl(text);
   if (url !== null) return url;
   const structured = analyzeStructuredText(text);
   if (structured !== null) return ensureExactStructuredSource(structured, text);
   if (text === "") return emptyReport();
   return textReport(text);
+}
+
+function appendAssumedIso88591Signal(
+  report: AnalysisReport,
+  decoding: Extract<AnalyzerInput["decoding"], { readonly kind: "text" }>,
+): AnalysisReport {
+  if (decoding.encoding !== "iso-8859-1" || decoding.eci !== null) {
+    return report;
+  }
+
+  return createReport({
+    kind: report.kind,
+    fields: report.displayFields,
+    signals: [
+      ...report.signals,
+      signal(
+        "assumed-iso-8859-1",
+        "context",
+        "ISO-8859-1 assumed (no ECI marker)",
+        "The symbol did not declare an ECI encoding, and its bytes were not valid UTF-8, so QRWarden interpreted them as ISO-8859-1.",
+      ),
+    ],
+    limitations: report.limitations,
+    actionPolicy: report.actionPolicy,
+    ...(report.canonicalHref === undefined
+      ? {}
+      : { canonicalHref: report.canonicalHref }),
+  });
+}
+
+/**
+ * Pure decoder-to-report boundary. Decoder DecodeResult is structurally
+ * compatible with AnalyzerInput, so the analyzer retains no worker object.
+ */
+export function analyzeDecodeResult(input: AnalyzerInput): AnalysisReport {
+  const { decoding } = input;
+  if (decoding.kind !== "text") return binaryReport(input.rawBytes);
+
+  const report = reportForDecodedText(
+    input.contentType,
+    decoding.text,
+    input.rawBytes,
+  );
+  return appendAssumedIso88591Signal(report, decoding);
 }
 
 function frozenBytesForText(text: string): AnalyzerFrozenBytes {

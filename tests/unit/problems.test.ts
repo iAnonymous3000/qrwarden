@@ -46,6 +46,19 @@ describe("problem recovery actions", () => {
     expect(COPY.tryAnotherCode).toBe("Try another code");
   });
 
+  it.each([
+    ["share-multiple-files", COPY.shareMultipleFilesBody],
+    ["share-too-large", COPY.shareTooLargeBody],
+    ["share-unsupported-type", COPY.shareUnsupportedTypeBody],
+    ["share-unreadable", COPY.shareUnreadableBody],
+  ] as const)("gives %s dedicated share copy and a scanner return", (problem, body) => {
+    expect(PROBLEM_COPY[problem]).toMatchObject({
+      body,
+      dismissLabel: COPY.backToScanner,
+      tone: "recovery",
+    });
+  });
+
   it("reserves danger styling for reader and link-integrity failures", () => {
     const dangerProblems = Object.entries(PROBLEM_COPY)
       .filter(([, copy]) => copy.tone === "danger")

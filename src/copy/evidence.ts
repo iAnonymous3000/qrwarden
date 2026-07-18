@@ -74,7 +74,7 @@ const PORT_DESCRIPTOR = /^(\d+) \((effective|explicit)\)$/u;
  * remain English marked lang="en" per the language-of-parts policy.
  */
 export function translateFieldValue(
-  field: Pick<DisplayField, "id" | "label" | "kind" | "value">,
+  field: Pick<DisplayField, "id" | "label" | "kind" | "value" | "count">,
 ): EvidenceText {
   if (APP_LOCALE === "en") return { text: field.value, lang: undefined };
   if (field.id === "port" && field.kind === "port") {
@@ -87,6 +87,15 @@ export function translateFieldValue(
           : COPY.portValueExplicit(match[1]!),
       lang: undefined,
     };
+  }
+  if (
+    (field.id === "query-names" || field.id === "fragment-names") &&
+    field.count === 0 &&
+    field.value === "None"
+  ) {
+    // The count distinguishes this synthesized empty-state value from a real
+    // attacker-controlled parameter whose literal name happens to be "None".
+    return translateEvidence(COPY.fieldValues, field.value);
   }
   if (
     SYNTHESIZED_VALUE_FIELD_IDS.has(field.id) ||

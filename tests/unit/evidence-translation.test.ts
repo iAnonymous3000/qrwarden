@@ -86,6 +86,16 @@ function fixtureReports() {
       contentType: "Text",
       decoding: { kind: "binary", reason: "no text decoding", eci: null },
     }),
+    analyzeDecodeResult({
+      rawBytes: { byteLength: 4, hex: "636166e9" },
+      contentType: "Text",
+      decoding: {
+        kind: "text",
+        text: "café",
+        encoding: "iso-8859-1",
+        eci: null,
+      },
+    }),
   ];
 }
 
@@ -130,6 +140,15 @@ describe("analyzer evidence translation", () => {
           // The parametric port descriptor must keep the exact shape the
           // locale formatters rebuild at render time.
           expect(field.value).toMatch(/^\d+ \((?:effective|explicit)\)$/u);
+          continue;
+        }
+        if (
+          (field.id === "query-names" || field.id === "fragment-names") &&
+          field.count === 0
+        ) {
+          expect(field.value).toBe("None");
+          expect(enValues.None).toBeDefined();
+          expect(esValues.None).toBeDefined();
           continue;
         }
         if (!synthesizedIds.has(field.id)) continue;
@@ -229,6 +248,26 @@ describe("analyzer evidence translation", () => {
         value: "Not available",
       }),
     ).toEqual({ text: "No disponible", lang: undefined });
+    // A zero count proves "None" is the analyzer's empty-state descriptor.
+    expect(
+      evidence.translateFieldValue({
+        id: "query-names",
+        label: "Query names",
+        kind: "names",
+        value: "None",
+        count: 0,
+      }),
+    ).toEqual({ text: ES_COPY.fieldValues.None, lang: undefined });
+    // A real parameter named "None" remains verbatim attacker-controlled data.
+    expect(
+      evidence.translateFieldValue({
+        id: "query-names",
+        label: "Query names",
+        kind: "names",
+        value: "None",
+        count: 1,
+      }),
+    ).toEqual({ text: "None", lang: undefined });
     expect(
       evidence.translateFieldValue({
         id: "registrable-domain",

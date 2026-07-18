@@ -1,6 +1,11 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  parseHeaderRules,
+  REPORTING_HEADER_NAMES,
+} from "./release/header-rules.mjs";
+
 const dist = path.resolve("dist");
 const contract = JSON.parse(
   await readFile(path.resolve("release/artifact-contract.json"), "utf8"),
@@ -77,6 +82,16 @@ if (
 }
 
 const headers = await readFile(path.join(dist, "_headers"), "utf8");
+const parsedHeaderRules = parseHeaderRules(headers);
+const catchAllRules = parsedHeaderRules.filter((rule) => rule.pattern === "/*");
+if (catchAllRules.length !== 1) {
+  throw new Error("production headers must contain exactly one catch-all rule");
+}
+for (const name of REPORTING_HEADER_NAMES) {
+  if (!catchAllRules[0].detachments.includes(name)) {
+    throw new Error(`catch-all rule must detach reporting header: ${name}`);
+  }
+}
 for (const expected of [
   "Referrer-Policy: no-referrer",
   "X-Content-Type-Options: nosniff",

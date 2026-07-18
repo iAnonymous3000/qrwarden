@@ -23,17 +23,17 @@ export function shareRejectionReason(value: unknown): ShareRejectionReason {
     : "unreadable";
 }
 
-/** Maps a rejected share onto the intake pipeline's existing error copy. */
+/** Maps a rejected share onto its source-specific recovery copy. */
 export function shareRejectionProblem(reason: ShareRejectionReason): ProblemCode {
   switch (reason) {
     case "multiple-files":
-      return "choose-one-image";
+      return "share-multiple-files";
     case "too-large":
-      return "image-too-large";
+      return "share-too-large";
     case "unsupported-type":
-      return "unsupported-image-type";
+      return "share-unsupported-type";
     case "unreadable":
-      return "image-unreadable";
+      return "share-unreadable";
   }
 }
 

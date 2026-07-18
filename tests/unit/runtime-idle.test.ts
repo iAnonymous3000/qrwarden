@@ -10,6 +10,7 @@ const IDLE: RuntimeIdleSnapshot = {
   cameraAttached: false,
   cameraTaskBusy: false,
   clipboardBusy: false,
+  hasPendingShare: false,
   hasRetainedResources: false,
 };
 
@@ -26,6 +27,7 @@ describe("update idle predicate", () => {
     ["cameraAttached", true],
     ["cameraTaskBusy", true],
     ["clipboardBusy", true],
+    ["hasPendingShare", true],
     ["hasRetainedResources", true],
   ] as const)("rejects a non-idle %s", (field, value) => {
     expect(isRuntimeIdle({ ...IDLE, [field]: value })).toBe(false);

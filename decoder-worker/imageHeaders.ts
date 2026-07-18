@@ -1,5 +1,5 @@
 export const MAX_ENCODED_FILE_BYTES = 25_000_000;
-export const MAX_ENCODED_PIXELS = 25_000_000;
+export const MAX_ENCODED_PIXELS = 16_777_216;
 export const MAX_ENCODED_AXIS = 8_192;
 export const MAX_HEADER_BYTES = 1_048_576;
 

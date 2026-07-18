@@ -63,7 +63,7 @@ export const EN_COPY = Object.freeze({
   timeoutBody: "Reading this image timed out. Try a smaller or clearer image.",
   imageTooLargeHeading: "Image too large.",
   imageTooLargeBody:
-    "This image is larger than QRWarden accepts. Use an image no larger than 25 MB or 25 megapixels, and no more than 8,192 pixels on a side.",
+    "This image is larger than QRWarden accepts. Use an image no larger than 25 MB or about 16.8 megapixels, and no more than 8,192 pixels on a side.",
   unsupportedImageHeading: "Unsupported image type.",
   unsupportedImageBody:
     "Use a screenshot or export this image as JPEG, PNG, or WebP.",
@@ -72,6 +72,14 @@ export const EN_COPY = Object.freeze({
     "QRWarden could not read this image. Try another JPEG, PNG, or WebP file.",
   chooseOneImageHeading: "Choose one image.",
   chooseOneImageBody: "Drop one JPEG, PNG, or WebP image at a time.",
+  shareMultipleFilesBody:
+    "More than one image was shared. Return to the app you shared from and share one JPEG, PNG, or WebP image at a time.",
+  shareTooLargeBody:
+    "The shared image is larger than 25 MB. Return to the app you shared from and share a smaller image.",
+  shareUnsupportedTypeBody:
+    "The shared file is not a JPEG, PNG, or WebP image. Return to the app you shared from and share a supported image.",
+  shareUnreadableBody:
+    "QRWarden could not read the shared image. Return to the app you shared from and share another JPEG, PNG, or WebP image.",
   imageStoppedHeading: "Image reading stopped.",
   imageStoppedBody:
     "Reading stopped when QRWarden went into the background. Choose the image again to continue.",
@@ -158,6 +166,12 @@ export const EN_COPY = Object.freeze({
   copyReportButton: "Copy report",
   reportTitle: "QRWarden inspection report",
   reportHiddenValue: "(hidden)",
+  reportPathSegmentsHidden: (count: number): string =>
+    `(${count} ${count === 1 ? "segment" : "segments"} hidden)`,
+  reportUrlEntriesHidden: (count: number): string =>
+    `(${count} ${count === 1 ? "entry" : "entries"}; names and values hidden)`,
+  reportQueryHidden: "(query hidden)",
+  reportFragmentHidden: "(fragment hidden)",
   reportKindLabel: "Kind",
   reportStatusLabel: "Status",
   reportSignalsLabel: "Signals",
@@ -356,6 +370,7 @@ export const EN_COPY = Object.freeze({
   // registry category names) fall back to the emitted English text marked
   // lang="en".
   fieldValues: Object.freeze({
+    "None": "None",
     "Present": "Present",
     "Not present": "Not present",
     "Not available": "Not available",
@@ -383,6 +398,8 @@ export const EN_COPY = Object.freeze({
   // the signal glossary. Signal details stay parametric English sentences
   // until the analyzer emits message identifiers.
   signalTitles: Object.freeze({
+    "ISO-8859-1 assumed (no ECI marker)":
+      "ISO-8859-1 assumed (no ECI marker)",
     "Internationalized domain name": "Internationalized domain name",
     "Trailing-dot host": "Trailing-dot host",
     "Unencrypted HTTP": "Unencrypted HTTP",
@@ -419,6 +436,11 @@ export const EN_COPY = Object.freeze({
     binary: "Raw bytes",
   }),
   signalGlossary: Object.freeze<Record<AnalysisSignalCode, SignalGlossaryCopy>>({
+    "assumed-iso-8859-1": {
+      title: "ISO-8859-1 assumed (no ECI marker)",
+      explanation:
+        "The symbol did not declare an ECI encoding and its bytes were not valid UTF-8, so QRWarden interpreted them as ISO-8859-1. This describes how the text was interpreted, not an encoding declared by the symbol.",
+    },
     "idn-hostname": {
       title: "Internationalized domain name",
       explanation:

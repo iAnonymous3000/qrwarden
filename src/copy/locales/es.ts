@@ -64,7 +64,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "La lectura de esta imagen agotó el tiempo. Prueba con una imagen más pequeña o más clara.",
   imageTooLargeHeading: "Imagen demasiado grande.",
   imageTooLargeBody:
-    "Esta imagen supera lo que QRWarden acepta. Usa una imagen de no más de 25 MB o 25 megapíxeles, y de no más de 8192 píxeles por lado.",
+    "Esta imagen supera lo que QRWarden acepta. Usa una imagen de no más de 25 MB o unos 16,8 megapíxeles, y de no más de 8192 píxeles por lado.",
   unsupportedImageHeading: "Tipo de imagen no compatible.",
   unsupportedImageBody:
     "Usa una captura de pantalla o exporta esta imagen como JPEG, PNG o WebP.",
@@ -73,6 +73,14 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "QRWarden no pudo leer esta imagen. Prueba con otro archivo JPEG, PNG o WebP.",
   chooseOneImageHeading: "Elige una sola imagen.",
   chooseOneImageBody: "Suelta una sola imagen JPEG, PNG o WebP a la vez.",
+  shareMultipleFilesBody:
+    "Se compartió más de una imagen. Vuelve a la aplicación desde la que compartiste y comparte una sola imagen JPEG, PNG o WebP a la vez.",
+  shareTooLargeBody:
+    "La imagen compartida supera los 25 MB. Vuelve a la aplicación desde la que compartiste y comparte una imagen más pequeña.",
+  shareUnsupportedTypeBody:
+    "El archivo compartido no es una imagen JPEG, PNG ni WebP. Vuelve a la aplicación desde la que compartiste y comparte una imagen compatible.",
+  shareUnreadableBody:
+    "QRWarden no pudo leer la imagen compartida. Vuelve a la aplicación desde la que compartiste y comparte otra imagen JPEG, PNG o WebP.",
   imageStoppedHeading: "La lectura de la imagen se detuvo.",
   imageStoppedBody:
     "La lectura se detuvo cuando QRWarden pasó a segundo plano. Vuelve a elegir la imagen para continuar.",
@@ -158,6 +166,12 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   copyReportButton: "Copiar informe",
   reportTitle: "Informe de inspección de QRWarden",
   reportHiddenValue: "(oculto)",
+  reportPathSegmentsHidden: (count: number): string =>
+    `(${count} ${count === 1 ? "segmento oculto" : "segmentos ocultos"})`,
+  reportUrlEntriesHidden: (count: number): string =>
+    `(${count} ${count === 1 ? "entrada" : "entradas"}; nombres y valores ocultos)`,
+  reportQueryHidden: "(consulta oculta)",
+  reportFragmentHidden: "(fragmento oculto)",
   reportKindLabel: "Tipo",
   reportStatusLabel: "Estado",
   reportSignalsLabel: "Señales",
@@ -346,6 +360,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "Unicode host": "Host Unicode",
   }),
   fieldValues: Object.freeze({
+    "None": "Ninguno",
     "Present": "Presente",
     "Not present": "No presente",
     "Not available": "No disponible",
@@ -369,6 +384,8 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   portValueEffective: (port: string): string => `${port} (efectivo)`,
   portValueExplicit: (port: string): string => `${port} (explícito)`,
   signalTitles: Object.freeze({
+    "ISO-8859-1 assumed (no ECI marker)":
+      "Codificación ISO-8859-1 asumida (sin marcador ECI)",
     "Internationalized domain name": "Nombre de dominio internacionalizado",
     "Trailing-dot host": "Host con punto final",
     "Unencrypted HTTP": "HTTP sin cifrar",
@@ -405,6 +422,11 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     binary: "Bytes sin procesar",
   }),
   signalGlossary: Object.freeze({
+    "assumed-iso-8859-1": {
+      title: "Codificación ISO-8859-1 asumida (sin marcador ECI)",
+      explanation:
+        "El símbolo no declaró una codificación ECI y sus bytes no eran UTF-8 válidos, por lo que QRWarden los interpretó como ISO-8859-1. Esto describe cómo se interpretó el texto, no una codificación declarada por el símbolo.",
+    },
     "idn-hostname": {
       title: "Nombre de dominio internacionalizado",
       explanation:

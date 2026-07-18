@@ -12,13 +12,13 @@ import { ES_COPY } from "../../src/copy/locales/es";
 const SOURCE_SHA256: Readonly<Record<string, string>> = {
   "index.ts": "e5a010ff1f36bef2fd5706ce201994e9496199cfbac96f410f598a0798a58a8c",
   "locale.ts": "25d5b29e629a58c0fe772b5ff97830fd68f0064b2fbeb79b0326ff170539055e",
-  "evidence.ts": "575740fface891a31e19d4c1ee98f8b5453155d196dfc189739ef89ef1ebc1cf",
-  "locales/en.ts": "c50c2870a788a4812e5c802aeb5feea4a651725db8624c5b531fc445ac66cc5e",
-  "locales/es.ts": "a8f79c57d800cea39dc9294744074aefa8f0332fa0e4dc9719818288db6278c8",
+  "evidence.ts": "5d5b37d4c57f33cfe2538f6d4c5c2471e6a2d6ab0ae6a5e5235d0712d95dd481",
+  "locales/en.ts": "5af57547f7c6515ece8da77dd3c78294a041fb129baf8ee2c451eccc3bfbf33e",
+  "locales/es.ts": "e18d1fe992735b64557ea1a950f14f62861fb5921e3131972679a5d9d969f861",
 };
 const RUNTIME_CONTRACT_SHA256 =
-  "9a5e59cc9114061d8a0ed5b3e9f02177af0949413f0ba7fb445f736ac3dd8b6d";
-const COPY_KEY_COUNT = 224;
+  "f7e6c29807d3db9755237484c0a163705d3a37d4e5cc28bb78874d4fda5eac73";
+const COPY_KEY_COUNT = 232;
 
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
@@ -51,6 +51,12 @@ function materialize(key: string, value: unknown): string {
     case "portValueEffective":
     case "portValueExplicit":
       return (value as (port: string) => string)("8080");
+    case "reportPathSegmentsHidden":
+    case "reportUrlEntriesHidden":
+      return [
+        (value as (count: number) => string)(1),
+        (value as (count: number) => string)(3),
+      ].join(" | ");
     case "omittedFromDisplay":
       return [
         (value as (omitted: number, total?: number) => string)(3),

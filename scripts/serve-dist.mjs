@@ -3,6 +3,11 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
+import {
+  expectedHeadersForPath,
+  parseHeaderRules,
+} from "./release/header-rules.mjs";
+
 const DIST = path.resolve("dist");
 const HOST = "127.0.0.1";
 const PORT = Number.parseInt(process.env.PORT ?? "4173", 10);
@@ -18,33 +23,6 @@ const mediaTypes = new Map([
   [".wasm", "application/wasm"],
   [".webmanifest", "application/manifest+json"],
 ]);
-
-function parseHeaderRules(source) {
-  const rules = [];
-  let current = null;
-  for (const line of source.split("\n")) {
-    if (line.length === 0) continue;
-    if (!/^\s/.test(line)) {
-      current = { pattern: line, headers: [] };
-      rules.push(current);
-      continue;
-    }
-    if (current === null) throw new Error("_headers begins with an orphan header");
-    const separator = line.indexOf(":");
-    if (separator < 1) throw new Error(`invalid _headers line: ${line}`);
-    current.headers.push([
-      line.slice(0, separator).trim(),
-      line.slice(separator + 1).trim(),
-    ]);
-  }
-  return rules;
-}
-
-function routeMatches(pattern, pathname) {
-  if (pattern === "/*") return true;
-  if (pattern.endsWith("*")) return pathname.startsWith(pattern.slice(0, -1));
-  return pathname === pattern;
-}
 
 function safeRelativePath(pathname) {
   let decoded;
@@ -69,9 +47,8 @@ const headerRules = parseHeaderRules(
 );
 
 function applyContractHeaders(response, pathname) {
-  for (const rule of headerRules) {
-    if (!routeMatches(rule.pattern, pathname)) continue;
-    for (const [name, value] of rule.headers) response.setHeader(name, value);
+  for (const [name, value] of expectedHeadersForPath(headerRules, pathname)) {
+    response.setHeader(name, value);
   }
 }
 
