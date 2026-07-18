@@ -16,6 +16,7 @@ import {
   ServiceWorkerClient,
   type OfflineState,
 } from "./sw/client";
+import { sharePendingTokenFromUrl } from "./sw/shareToken";
 
 declare const __QRWARDEN_RELEASE_ID__: string;
 declare const __QRWARDEN_SIGNING_PUBLIC_KEY__: string;
@@ -70,16 +71,21 @@ navigator.serviceWorker?.addEventListener("message", (event) => {
 navigator.serviceWorker?.startMessages();
 
 // A share whose redirected document the worker could not identify waits in
-// worker memory behind the static ?share-pending marker. The marker carries
-// no share data: it only tells this document to pull the parked share, which
-// the worker hands to the requesting client alone. The marker is removed
-// only once the pull was actually posted, so it neither persists in history
-// nor re-triggers after a delivered share — while a failed pull (missing or
-// redundant controller) keeps the marker for a reload to retry within the
-// worker's parking deadline, without aborting startup.
+// worker memory behind an unguessable, per-share ?share-pending token. The
+// token carries no share data: it correlates this document with exactly one
+// parked payload even when simultaneous multipart parses finish out of order.
+// It is removed only once the pull was actually posted, so it neither persists
+// in history nor re-triggers after delivery — while a failed pull (missing or
+// redundant controller) keeps it for a reload within the parking deadline.
 const startupUrl = new URL(window.location.href);
-if (startupUrl.searchParams.has("share-pending")) {
-  if (requestPendingShare(navigator.serviceWorker?.controller ?? null)) {
+const pendingShareToken = sharePendingTokenFromUrl(startupUrl);
+if (pendingShareToken !== null) {
+  if (
+    requestPendingShare(
+      navigator.serviceWorker?.controller ?? null,
+      pendingShareToken,
+    )
+  ) {
     startupUrl.searchParams.delete("share-pending");
     history.replaceState(history.state, "", startupUrl);
   }

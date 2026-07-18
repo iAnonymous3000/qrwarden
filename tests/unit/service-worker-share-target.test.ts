@@ -105,23 +105,35 @@ function dispatchShareForm(
   handler: WorkerHandler,
   form: FormData,
   ids: { readonly resultingClientId?: string; readonly clientId?: string } = {},
+  readForm?: () => Promise<FormData>,
 ): {
   readonly lifetime: readonly Promise<unknown>[];
   readonly respondWith: ReturnType<typeof vi.fn>;
+  readonly token: string;
 } {
   const lifetime: Promise<unknown>[] = [];
   const respondWith = vi.fn();
-  handler({
-    request: new Request("https://qrwarden.test/share-target", {
+  const request = new Request("https://qrwarden.test/share-target", {
       method: "POST",
       body: form,
-    }),
+  });
+  if (readForm !== undefined) {
+    vi.spyOn(request, "formData").mockImplementation(readForm);
+  }
+  handler({
+    request,
     resultingClientId: ids.resultingClientId ?? "",
     clientId: ids.clientId ?? "",
     respondWith,
     waitUntil: (promise) => lifetime.push(promise),
   });
-  return { lifetime, respondWith };
+  const response = respondWith.mock.calls[0]?.[0] as Response | undefined;
+  const location = response?.headers.get("Location") ?? "";
+  const token = new URL(location, "https://qrwarden.test").searchParams.get(
+    "share-pending",
+  );
+  if (token === null) throw new TypeError("Missing share-pending token");
+  return { lifetime, respondWith, token };
 }
 
 function dispatchSharePost(
@@ -134,6 +146,7 @@ function dispatchSharePost(
 ): {
   readonly lifetime: readonly Promise<unknown>[];
   readonly respondWith: ReturnType<typeof vi.fn>;
+  readonly token: string;
 } {
   const form = new FormData();
   form.append(
@@ -147,13 +160,39 @@ function dispatchSharePost(
   return dispatchShareForm(handler, form, ids);
 }
 
+function deferredForm(): {
+  readonly promise: Promise<FormData>;
+  readonly resolve: (form: FormData) => void;
+} {
+  let resolve!: (form: FormData) => void;
+  const promise = new Promise<FormData>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+function imageForm(fileName: string): FormData {
+  const form = new FormData();
+  form.append(
+    "image",
+    new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], fileName, {
+      type: "image/png",
+    }),
+  );
+  return form;
+}
+
 function messageClient(id: string): MessageClient {
   return { id, postMessage: vi.fn() };
 }
 
-function dispatchPull(handler: WorkerHandler, source: unknown): void {
+function dispatchPull(
+  handler: WorkerHandler,
+  source: unknown,
+  token: string,
+): void {
   handler({
-    data: { type: "PULL_SHARED_IMAGE" },
+    data: { type: "PULL_SHARED_IMAGE", token },
     source,
     waitUntil: () => undefined,
   });
@@ -191,18 +230,21 @@ afterEach(() => {
 });
 
 describe("service-worker share-target delivery", () => {
-  it("redirects the share POST to the static pending marker", async () => {
+  it("redirects the share POST to a strict per-share pending token", async () => {
     const harness = await loadWorker();
     const fetchHandler = harness.handlers.get("fetch");
     expect(fetchHandler).toBeDefined();
 
-    const { lifetime, respondWith } = dispatchSharePost(fetchHandler!);
+    const { lifetime, respondWith, token } = dispatchSharePost(fetchHandler!);
     await Promise.all(lifetime);
 
     expect(respondWith).toHaveBeenCalledOnce();
     const response = respondWith.mock.calls[0]?.[0] as Response;
     expect(response.status).toBe(303);
-    expect(response.headers.get("Location")).toBe("/?share-pending");
+    expect(token).toMatch(/^[0-9a-f]{32}$/);
+    expect(response.headers.get("Location")).toBe(
+      `/?share-pending=${token}`,
+    );
   });
 
   it("parks an id-less share instead of posting to an arbitrary window and serves exactly one pull", async () => {
@@ -212,7 +254,7 @@ describe("service-worker share-target delivery", () => {
     expect(fetchHandler).toBeDefined();
     expect(message).toBeDefined();
 
-    const { lifetime } = dispatchSharePost(fetchHandler!);
+    const { lifetime, token } = dispatchSharePost(fetchHandler!);
     await Promise.all(lifetime);
 
     expect(harness.clientsGet).not.toHaveBeenCalled();
@@ -220,7 +262,7 @@ describe("service-worker share-target delivery", () => {
     expect(harness.backgroundClient.postMessage).not.toHaveBeenCalled();
 
     const redirectedDocument = messageClient("redirected-document");
-    dispatchPull(message!, redirectedDocument);
+    dispatchPull(message!, redirectedDocument, token);
     const delivered = sharedImageMessages(redirectedDocument);
     expect(delivered).toHaveLength(1);
     expect(delivered[0]?.release).toBe(RELEASE);
@@ -228,8 +270,8 @@ describe("service-worker share-target delivery", () => {
     expect((delivered[0]?.file as File).name).toBe("shared.png");
 
     const latecomer = messageClient("latecomer");
-    dispatchPull(message!, latecomer);
-    dispatchPull(message!, redirectedDocument);
+    dispatchPull(message!, latecomer, token);
+    dispatchPull(message!, redirectedDocument, token);
     expect(sharedImageMessages(latecomer)).toHaveLength(0);
     expect(sharedImageMessages(redirectedDocument)).toHaveLength(1);
   });
@@ -239,11 +281,11 @@ describe("service-worker share-target delivery", () => {
     const fetchHandler = harness.handlers.get("fetch");
     const message = harness.handlers.get("message");
 
-    const { lifetime } = dispatchSharePost(fetchHandler!);
+    const { lifetime, token } = dispatchSharePost(fetchHandler!);
     // The redirected document's single pull can be processed while the
     // multipart body is still parsing; the share must not be dropped.
     const redirectedDocument = messageClient("redirected-document");
-    dispatchPull(message!, redirectedDocument);
+    dispatchPull(message!, redirectedDocument, token);
     expect(sharedImageMessages(redirectedDocument)).toHaveLength(0);
     await Promise.all(lifetime);
 
@@ -253,29 +295,81 @@ describe("service-worker share-target delivery", () => {
     expect((delivered[0]?.file as File).name).toBe("shared.png");
 
     const latecomer = messageClient("latecomer");
-    dispatchPull(message!, latecomer);
+    dispatchPull(message!, latecomer, token);
     expect(sharedImageMessages(latecomer)).toHaveLength(0);
   });
 
-  it("expires a parked pull so a later share is not misdelivered to it", async () => {
+  it("drops an unknown token so a later share cannot be misdelivered to it", async () => {
     const harness = await loadWorker();
     const fetchHandler = harness.handlers.get("fetch");
     const message = harness.handlers.get("message");
 
     const staleDocument = messageClient("stale-document");
-    dispatchPull(message!, staleDocument);
+    dispatchPull(message!, staleDocument, "a".repeat(32));
 
-    const nowSpy = vi
-      .spyOn(Date, "now")
-      .mockReturnValue(Date.now() + SHARE_TTL_MS);
-    const { lifetime } = dispatchSharePost(fetchHandler!);
+    const { lifetime, token } = dispatchSharePost(fetchHandler!);
     await Promise.all(lifetime);
-    nowSpy.mockRestore();
 
     expect(sharedImageMessages(staleDocument)).toHaveLength(0);
     const redirectedDocument = messageClient("redirected-document");
-    dispatchPull(message!, redirectedDocument);
+    dispatchPull(message!, redirectedDocument, token);
     expect(sharedImageMessages(redirectedDocument)).toHaveLength(1);
+  });
+
+  it("rejects malformed pull tokens without consuming a parked share", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+    const share = dispatchSharePost(fetchHandler!);
+    await Promise.all(share.lifetime);
+
+    const invalidDocument = messageClient("invalid-document");
+    for (const token of [
+      undefined,
+      null,
+      "",
+      "a".repeat(31),
+      "A".repeat(32),
+      `${"a".repeat(32)}x`,
+    ]) {
+      message!({
+        data: { type: "PULL_SHARED_IMAGE", token },
+        source: invalidDocument,
+        waitUntil: () => undefined,
+      });
+    }
+    expect(invalidDocument.postMessage).not.toHaveBeenCalled();
+
+    const redirectedDocument = messageClient("redirected-document");
+    dispatchPull(message!, redirectedDocument, share.token);
+    expect(sharedFileName(redirectedDocument)).toBe("shared.png");
+  });
+
+  it("expires a raced-ahead pull without losing its matching share", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+    const form = imageForm("delayed.png");
+    const parse = deferredForm();
+    const share = dispatchShareForm(
+      fetchHandler!,
+      form,
+      {},
+      () => parse.promise,
+    );
+    const staleDocument = messageClient("stale-document");
+    dispatchPull(message!, staleDocument, share.token);
+
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now + SHARE_TTL_MS);
+    parse.resolve(form);
+    await Promise.all(share.lifetime);
+    clock.mockRestore();
+    expect(staleDocument.postMessage).not.toHaveBeenCalled();
+
+    const redirectedDocument = messageClient("redirected-document");
+    dispatchPull(message!, redirectedDocument, share.token);
+    expect(sharedFileName(redirectedDocument)).toBe("delayed.png");
   });
 
   it("drops an unclaimed share once the pending deadline passes", async () => {
@@ -283,12 +377,12 @@ describe("service-worker share-target delivery", () => {
     const fetchHandler = harness.handlers.get("fetch");
     const message = harness.handlers.get("message");
 
-    const { lifetime } = dispatchSharePost(fetchHandler!);
+    const { lifetime, token } = dispatchSharePost(fetchHandler!);
     await Promise.all(lifetime);
 
     vi.spyOn(Date, "now").mockReturnValue(Date.now() + SHARE_TTL_MS);
     const redirectedDocument = messageClient("redirected-document");
-    dispatchPull(message!, redirectedDocument);
+    dispatchPull(message!, redirectedDocument, token);
     expect(redirectedDocument.postMessage).not.toHaveBeenCalled();
   });
 
@@ -301,7 +395,7 @@ describe("service-worker share-target delivery", () => {
       Promise.resolve(id === "resulting-1" ? resultingDocument : undefined),
     );
 
-    const { lifetime } = dispatchSharePost(fetchHandler!, {
+    const { lifetime, token } = dispatchSharePost(fetchHandler!, {
       resultingClientId: "resulting-1",
     });
     await Promise.all(lifetime);
@@ -312,7 +406,7 @@ describe("service-worker share-target delivery", () => {
     expect(delivered[0]?.release).toBe(RELEASE);
     expect((delivered[0]?.file as File).name).toBe("shared.png");
 
-    dispatchPull(message!, resultingDocument);
+    dispatchPull(message!, resultingDocument, token);
     expect(sharedImageMessages(resultingDocument)).toHaveLength(1);
   });
 
@@ -322,7 +416,7 @@ describe("service-worker share-target delivery", () => {
     const message = harness.handlers.get("message");
 
     vi.useFakeTimers({ toFake: ["setTimeout"] });
-    const { lifetime } = dispatchSharePost(fetchHandler!, {
+    const { lifetime, token } = dispatchSharePost(fetchHandler!, {
       resultingClientId: "resulting-9",
     });
     // Form parsing settles on real microtasks; only the bounded client
@@ -340,7 +434,7 @@ describe("service-worker share-target delivery", () => {
     expect(harness.backgroundClient.postMessage).not.toHaveBeenCalled();
 
     const redirectedDocument = messageClient("redirected-document");
-    dispatchPull(message!, redirectedDocument);
+    dispatchPull(message!, redirectedDocument, token);
     expect(sharedImageMessages(redirectedDocument)).toHaveLength(1);
   });
 
@@ -363,14 +457,14 @@ describe("service-worker share-target delivery", () => {
     // The redirected document posts its marker pull unconditionally, even
     // after a direct delivery. With nothing parked and nothing in flight the
     // pull must be dropped, not left waiting for the next share.
-    dispatchPull(message!, tabA);
+    dispatchPull(message!, tabA, first.token);
 
     const second = dispatchSharePost(fetchHandler!, { fileName: "second.png" });
     await Promise.all(second.lifetime);
 
     expect(sharedImageMessages(tabA)).toHaveLength(1);
     const tabB = messageClient("redirected-2");
-    dispatchPull(message!, tabB);
+    dispatchPull(message!, tabB, second.token);
     expect(sharedFileName(tabB)).toBe("second.png");
   });
 
@@ -389,7 +483,7 @@ describe("service-worker share-target delivery", () => {
     });
     // The marker pull can be processed while the multipart body still
     // parses; once the share settles directly, the parked pull is stale.
-    dispatchPull(message!, tabA);
+    dispatchPull(message!, tabA, first.token);
     await Promise.all(first.lifetime);
     expect(sharedFileName(tabA)).toBe("first.png");
 
@@ -398,7 +492,7 @@ describe("service-worker share-target delivery", () => {
 
     expect(sharedImageMessages(tabA)).toHaveLength(1);
     const tabB = messageClient("redirected-2");
-    dispatchPull(message!, tabB);
+    dispatchPull(message!, tabB, second.token);
     expect(sharedFileName(tabB)).toBe("second.png");
   });
 
@@ -416,7 +510,7 @@ describe("service-worker share-target delivery", () => {
       fileName: "first.png",
     });
     // Doc A's marker pull lands while share A still parses, so it parks.
-    dispatchPull(message!, tabA);
+    dispatchPull(message!, tabA, first.token);
     // Share B arrives before share A settles: the settled delivery cannot
     // clear the pull queue wholesale, so doc A's parked pull must be
     // dropped by its own direct delivery instead.
@@ -426,23 +520,78 @@ describe("service-worker share-target delivery", () => {
     expect(sharedImageMessages(tabA)).toHaveLength(1);
     expect(sharedFileName(tabA)).toBe("first.png");
     const tabB = messageClient("redirected-b");
-    dispatchPull(message!, tabB);
+    dispatchPull(message!, tabB, second.token);
     expect(sharedFileName(tabB)).toBe("second.png");
   });
 
-  it("queues overlapping id-less shares in arrival order instead of overwriting", async () => {
+  it("keeps simultaneous id-less shares correlated when parsing finishes in reverse", async () => {
     const harness = await loadWorker();
     const fetchHandler = harness.handlers.get("fetch");
     const message = harness.handlers.get("message");
 
-    const first = dispatchSharePost(fetchHandler!, { fileName: "first.png" });
-    const second = dispatchSharePost(fetchHandler!, { fileName: "second.png" });
-    await Promise.all([...first.lifetime, ...second.lifetime]);
+    const firstForm = imageForm("first.png");
+    const secondForm = imageForm("second.png");
+    const firstParse = deferredForm();
+    const secondParse = deferredForm();
+    const first = dispatchShareForm(
+      fetchHandler!,
+      firstForm,
+      {},
+      () => firstParse.promise,
+    );
+    const second = dispatchShareForm(
+      fetchHandler!,
+      secondForm,
+      {},
+      () => secondParse.promise,
+    );
+    expect(first.token).not.toBe(second.token);
+
+    // The second POST's body settles first. A completion-ordered FIFO parks
+    // second.png ahead of first.png and cross-wires the two redirect tabs.
+    secondParse.resolve(secondForm);
+    await Promise.all(second.lifetime);
+    firstParse.resolve(firstForm);
+    await Promise.all(first.lifetime);
 
     const docA = messageClient("doc-a");
     const docB = messageClient("doc-b");
-    dispatchPull(message!, docA);
-    dispatchPull(message!, docB);
+    dispatchPull(message!, docA, first.token);
+    dispatchPull(message!, docB, second.token);
+    expect(sharedFileName(docA)).toBe("first.png");
+    expect(sharedFileName(docB)).toBe("second.png");
+  });
+
+  it("matches raced-ahead pulls by token when parsing finishes in reverse", async () => {
+    const harness = await loadWorker();
+    const fetchHandler = harness.handlers.get("fetch");
+    const message = harness.handlers.get("message");
+    const firstForm = imageForm("first.png");
+    const secondForm = imageForm("second.png");
+    const firstParse = deferredForm();
+    const secondParse = deferredForm();
+    const first = dispatchShareForm(
+      fetchHandler!,
+      firstForm,
+      {},
+      () => firstParse.promise,
+    );
+    const second = dispatchShareForm(
+      fetchHandler!,
+      secondForm,
+      {},
+      () => secondParse.promise,
+    );
+    const docA = messageClient("doc-a");
+    const docB = messageClient("doc-b");
+    dispatchPull(message!, docA, first.token);
+    dispatchPull(message!, docB, second.token);
+
+    secondParse.resolve(secondForm);
+    await Promise.all(second.lifetime);
+    firstParse.resolve(firstForm);
+    await Promise.all(first.lifetime);
+
     expect(sharedFileName(docA)).toBe("first.png");
     expect(sharedFileName(docB)).toBe("second.png");
   });
@@ -466,7 +615,7 @@ describe("service-worker share-target delivery", () => {
     expect(sharedImageMessages(docA)).toHaveLength(1);
     expect(sharedFileName(docA)).toBe("first.png");
     const docB = messageClient("doc-b");
-    dispatchPull(message!, docB);
+    dispatchPull(message!, docB, second.token);
     expect(sharedFileName(docB)).toBe("second.png");
   });
 
@@ -482,13 +631,16 @@ describe("service-worker share-target delivery", () => {
       );
     }
 
-    const { lifetime, respondWith } = dispatchShareForm(fetchHandler!, form);
+    const { lifetime, respondWith, token } = dispatchShareForm(
+      fetchHandler!,
+      form,
+    );
     await Promise.all(lifetime);
 
     const response = respondWith.mock.calls[0]?.[0] as Response;
     expect(response.status).toBe(303);
     const doc = messageClient("redirected-document");
-    dispatchPull(message!, doc);
+    dispatchPull(message!, doc, token);
     expect(sharedImageMessages(doc)).toHaveLength(0);
     const rejections = shareRejectedMessages(doc);
     expect(rejections).toHaveLength(1);
@@ -534,11 +686,11 @@ describe("service-worker share-target delivery", () => {
       }),
     );
 
-    const { lifetime } = dispatchShareForm(fetchHandler!, form);
+    const { lifetime, token } = dispatchShareForm(fetchHandler!, form);
     await Promise.all(lifetime);
 
     const doc = messageClient("redirected-document");
-    dispatchPull(message!, doc);
+    dispatchPull(message!, doc, token);
     expect(shareRejectedMessages(doc)[0]?.reason).toBe("unsupported-type");
   });
 
@@ -549,15 +701,15 @@ describe("service-worker share-target delivery", () => {
     const form = new FormData();
     form.append("text", "not an image");
 
-    const { lifetime } = dispatchShareForm(fetchHandler!, form);
+    const { lifetime, token } = dispatchShareForm(fetchHandler!, form);
     await Promise.all(lifetime);
 
     const doc = messageClient("redirected-document");
-    dispatchPull(message!, doc);
+    dispatchPull(message!, doc, token);
     expect(shareRejectedMessages(doc)[0]?.reason).toBe("unreadable");
   });
 
-  it("serves the offline shell for the share marker navigation", async () => {
+  it("serves the offline shell only for an exact valid share marker", async () => {
     const harness = await loadWorker();
     const capture = harness.registerRoute.mock.calls
       .map((call) => call[0] as unknown)
@@ -575,14 +727,17 @@ describe("service-worker share-target delivery", () => {
     expect(
       matches({
         request: navigation,
-        url: new URL("https://qrwarden.test/?share-pending"),
+        url: new URL(`https://qrwarden.test/?share-pending=${"a".repeat(32)}`),
       }),
     ).toBe(true);
-    expect(
-      matches({
-        request: navigation,
-        url: new URL("https://qrwarden.test/?unrelated"),
-      }),
-    ).toBe(false);
+    for (const url of [
+      "https://qrwarden.test/?share-pending",
+      `https://qrwarden.test/?share-pending=${"A".repeat(32)}`,
+      `https://qrwarden.test/?share-pending=${"a".repeat(32)}&extra=1`,
+      `https://qrwarden.test/?share-pending=${"a".repeat(32)}&share-pending=${"b".repeat(32)}`,
+      "https://qrwarden.test/?unrelated",
+    ]) {
+      expect(matches({ request: navigation, url: new URL(url) })).toBe(false);
+    }
   });
 });

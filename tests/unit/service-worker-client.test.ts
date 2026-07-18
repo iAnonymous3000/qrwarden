@@ -876,22 +876,45 @@ describe("idle update checks", () => {
 
 describe("pending share marker pull", () => {
   it("reports a posted pull only for a live controller", () => {
-    expect(requestPendingShare(null)).toBe(false);
+    const token = "a".repeat(32);
+    expect(requestPendingShare(null, token)).toBe(false);
 
     const controller = new FakeWorker(null);
-    expect(requestPendingShare(controller as unknown as ServiceWorker)).toBe(
-      true,
-    );
-    expect(controller.messages).toContainEqual({ type: "PULL_SHARED_IMAGE" });
+    expect(
+      requestPendingShare(controller as unknown as ServiceWorker, token),
+    ).toBe(true);
+    expect(controller.messages).toContainEqual({
+      type: "PULL_SHARED_IMAGE",
+      token,
+    });
+  });
+
+  it("refuses malformed or ambiguous share capabilities", () => {
+    const controller = new FakeWorker(null);
+
+    for (const token of [
+      "",
+      "a".repeat(31),
+      "A".repeat(32),
+      `${"a".repeat(32)}x`,
+    ]) {
+      expect(
+        requestPendingShare(controller as unknown as ServiceWorker, token),
+      ).toBe(false);
+    }
+    expect(controller.messages).toHaveLength(0);
   });
 
   it("survives a redundant controller rejecting the pull", () => {
     const controller = new FakeWorker(null);
     controller.throwsOnPost = true;
 
-    expect(requestPendingShare(controller as unknown as ServiceWorker)).toBe(
-      false,
-    );
+    expect(
+      requestPendingShare(
+        controller as unknown as ServiceWorker,
+        "b".repeat(32),
+      ),
+    ).toBe(false);
   });
 });
 

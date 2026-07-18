@@ -1159,7 +1159,9 @@ test("delivers a shared image through the installed share target", async ({
   await expect(
     page.getByRole("heading", { name: COPY.reviewHeading }),
   ).toBeVisible({ timeout: 20_000 });
-  expect(new URL(page.url()).pathname).toBe("/");
+  const deliveredUrl = new URL(page.url());
+  expect(deliveredUrl.pathname).toBe("/");
+  expect(deliveredUrl.searchParams.has("share-pending")).toBe(false);
 });
 
 test("defers a shared image received while hidden until visibility returns", async ({

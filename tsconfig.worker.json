@@ -26,6 +26,7 @@
     "src/decoder/types.ts",
     "src/decoder/workerProtocol.ts",
     "src/sw/activationCommit.ts",
+    "src/sw/shareToken.ts",
     "src/sw/service-worker.ts"
   ]
 }

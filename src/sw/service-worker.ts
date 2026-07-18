@@ -6,6 +6,11 @@ import {
   PrecacheRoute,
 } from "workbox-precaching";
 import { requestActivationCommit } from "./activationCommit";
+import {
+  isSharePendingToken,
+  sharePendingLocation,
+  sharePendingTokenFromUrl,
+} from "./shareToken";
 
 declare const __QRWARDEN_RELEASE_ID__: string;
 declare const __QRWARDEN_PREVIOUS_CACHE__: string | null;
@@ -554,18 +559,13 @@ registerRoute(
   }),
 );
 
-// Static marker the share redirect appends so the redirected document knows
-// to pull a parked share from the worker. It carries no share data — it is a
-// fixed string — and main.tsx removes it via history.replaceState.
-const SHARE_TARGET_PENDING_SEARCH = "?share-pending";
-
 registerRoute(
   ({ request, url }) =>
     request.method === "GET" &&
     request.mode === "navigate" &&
     url.origin === self.location.origin &&
     url.pathname === "/" &&
-    (url.search === "" || url.search === SHARE_TARGET_PENDING_SEARCH),
+    (url.search === "" || sharePendingTokenFromUrl(url) !== null),
   async () => {
     const cache = await caches.open(CURRENT_CACHE);
     const response = await cache.match(cacheKey(rootEntry));
@@ -592,99 +592,103 @@ type SharePayload =
   | { readonly kind: "rejected"; readonly reason: ShareRejectionReason };
 
 interface ParkedShare {
+  readonly token: string;
   readonly payload: SharePayload;
   readonly expires: number;
 }
 
-// Shares whose resulting client cannot be identified wait here, oldest first,
-// for redirected documents to pull them. Rejections park through the same
-// bounded queue so an invalid share still reaches the user as an error
-// instead of vanishing. Redirected documents pull in navigation order, so
-// FIFO keeps overlapping shares paired with their own documents instead of
-// letting the newest share overwrite an older parked one. The deadline keeps
-// an unclaimed share from outliving the navigation that produced it.
+// Shares whose resulting client cannot be identified wait here under the
+// redirect's unguessable per-share token. Rejections use the same bounded
+// queue so an invalid share still reaches its own document as an error.
+// Token correlation, rather than multipart parse or navigation order, keeps
+// simultaneous id-less shares paired when their bodies settle out of order.
+// The deadline keeps an unclaimed share from outliving its navigation.
 const pendingShares: ParkedShare[] = [];
 
-function parkShare(payload: SharePayload): void {
-  while (pendingShares.length > 0 && Date.now() >= pendingShares[0]!.expires) {
-    pendingShares.shift();
+function pruneExpiredShares(): void {
+  const now = Date.now();
+  for (let index = pendingShares.length - 1; index >= 0; index -= 1) {
+    if (now >= pendingShares[index]!.expires) pendingShares.splice(index, 1);
   }
+}
+
+function parkShare(token: string, payload: SharePayload): void {
+  pruneExpiredShares();
   if (pendingShares.length >= SHARE_TARGET_MAX_PARKED) {
     // Fail closed: refusing the newest share beats overwriting an older one.
     return;
   }
   pendingShares.push({
+    token,
     payload,
     expires: Date.now() + SHARE_TARGET_PENDING_TTL_MS,
   });
 }
 
-function takePendingShare(): SharePayload | null {
-  while (pendingShares.length > 0) {
-    const parked = pendingShares.shift()!;
-    if (Date.now() < parked.expires) {
-      return parked.payload;
-    }
+function takePendingShare(token: string): SharePayload | null {
+  pruneExpiredShares();
+  const index = pendingShares.findIndex((share) => share.token === token);
+  if (index < 0) {
+    return null;
   }
-  return null;
+  return pendingShares.splice(index, 1)[0]!.payload;
 }
 
 interface PendingPull {
+  readonly token: string;
   readonly source: Client | ServiceWorker | MessagePort;
   readonly expires: number;
 }
 
 // The redirected document posts PULL_SHARED_IMAGE exactly once, and nothing
 // orders that message after the share's multipart parse. Pulls that arrive
-// before their share is parked wait here, oldest first, so every in-flight
-// delivery can still complete its rendezvous instead of silently dropping
-// the share.
+// before their share is parked wait here under the same token, so parse order
+// cannot cross-wire concurrent deliveries.
 const pendingPulls: PendingPull[] = [];
 
-function parkPull(source: PendingPull["source"]): void {
-  while (pendingPulls.length > 0 && Date.now() >= pendingPulls[0]!.expires) {
-    pendingPulls.shift();
+function pruneExpiredPulls(): void {
+  const now = Date.now();
+  for (let index = pendingPulls.length - 1; index >= 0; index -= 1) {
+    if (now >= pendingPulls[index]!.expires) pendingPulls.splice(index, 1);
   }
+}
+
+function parkPull(token: string, source: PendingPull["source"]): void {
+  pruneExpiredPulls();
   if (pendingPulls.length >= SHARE_TARGET_MAX_PARKED) {
     return;
   }
+  // A copied marker or duplicate startup message must not displace the first
+  // document already waiting on this single-use capability.
+  if (pendingPulls.some((pull) => pull.token === token)) return;
   pendingPulls.push({
+    token,
     source,
     expires: Date.now() + SHARE_TARGET_PENDING_TTL_MS,
   });
 }
 
-function takePendingPull(): PendingPull["source"] | null {
-  while (pendingPulls.length > 0) {
-    const waiting = pendingPulls.shift()!;
-    if (Date.now() < waiting.expires) {
-      return waiting.source;
-    }
+function takePendingPull(token: string): PendingPull["source"] | null {
+  pruneExpiredPulls();
+  const index = pendingPulls.findIndex((pull) => pull.token === token);
+  if (index < 0) {
+    return null;
   }
-  return null;
+  return pendingPulls.splice(index, 1)[0]!.source;
 }
 
-// A document served through the resulting-client push has no further use for
-// a pull it parked while its share was still parsing. While another share is
-// in flight the settled delivery's cleanup cannot clear the queue wholesale,
-// so the served document's own pull must go now — leaving it parked would
-// hand that overlapping share to this already-served document while the
-// share's real recipient finds nothing. Sources without a client id cannot
-// be attributed and stay parked: they are the id-less rendezvous itself.
-function dropPendingPullsFor(served: Client): void {
+function dropPendingPull(token: string): void {
   for (let index = pendingPulls.length - 1; index >= 0; index -= 1) {
-    const source = pendingPulls[index]!.source;
-    if ("id" in source && source.id === served.id) {
+    if (pendingPulls[index]!.token === token) {
       pendingPulls.splice(index, 1);
     }
   }
 }
 
-// Counts share POSTs whose delivery has not settled. A pull may only park
-// while a rendezvous is still possible; once every in-flight share settles
-// with nothing parked, a waiting pull can never be answered and is dropped
-// so a later, unrelated share cannot be misdelivered to a stale document.
-let sharesInFlight = 0;
+// Only a token issued for a currently parsing share may park a raced-ahead
+// pull. Unknown capabilities never consume the bounded queue or become able
+// to claim a later share.
+const sharesInFlight = new Set<string>();
 
 function postSharePayload(
   target: { postMessage(message: unknown): void },
@@ -759,15 +763,19 @@ async function resultingShareClient(event: FetchEvent): Promise<Client | null> {
  * Hands a shared image to the redirected document as an in-memory message.
  * Nothing is written to caches or storage: the share is parked in worker
  * memory behind a short deadline and dropped if no document claims it. The
- * resulting-client push and the marker-driven pull consume the same bounded
- * queue, so each share is delivered at most once and overlapping shares
- * resolve in arrival order. An invalid share travels the same rendezvous as
- * an explicit rejection so the user sees an error instead of silence.
+ * resulting-client push and the token-driven pull consume the same bounded
+ * state, so each share is delivered at most once and overlapping shares stay
+ * correlated even when multipart parsing completes in reverse order. An
+ * invalid share travels the same rendezvous as an explicit rejection so the
+ * user sees an error instead of silence.
  * Validation here only bounds transport; the image intake pipeline
  * re-validates type and size like any chosen file.
  */
-async function deliverSharedImage(event: FetchEvent): Promise<void> {
-  sharesInFlight += 1;
+async function deliverSharedImage(
+  event: FetchEvent,
+  token: string,
+): Promise<void> {
+  sharesInFlight.add(token);
   try {
     let payload: SharePayload;
     try {
@@ -783,28 +791,26 @@ async function deliverSharedImage(event: FetchEvent): Promise<void> {
     // The resulting client stays authoritative; a parked pull is the fallback
     // for engines that report no client id for the redirected document. The
     // payload stays local to this delivery, so a concurrent share can never
-    // replace it or suppress its push. A directly served document also
-    // surrenders any pull it parked, so an overlapping share cannot fall
-    // back onto a document that already has its image.
+    // replace it or suppress its push. A direct delivery also consumes the
+    // same token's raced-ahead pull; other shares' pulls remain untouched.
     const resulting = await resultingShareClient(event);
     if (resulting !== null) {
-      dropPendingPullsFor(resulting);
+      dropPendingPull(token);
       postSharePayload(resulting, payload);
       return;
     }
-    const waiting = takePendingPull();
+    const waiting = takePendingPull(token);
     if (waiting !== null) {
       postSharePayload(waiting, payload);
       return;
     }
-    parkShare(payload);
+    parkShare(token, payload);
   } finally {
-    sharesInFlight -= 1;
-    if (sharesInFlight === 0 && pendingShares.length === 0) {
-      // Every delivery settled with nothing parked: a still-waiting pull can
-      // never rendezvous, and keeping it alive would hand the next unrelated
-      // share to a stale document.
-      pendingPulls.length = 0;
+    sharesInFlight.delete(token);
+    if (!pendingShares.some((share) => share.token === token)) {
+      // A delivery that settled without a parked payload leaves no future
+      // producer for this token, so any duplicate/raced pull is stale.
+      dropPendingPull(token);
     }
   }
 }
@@ -816,13 +822,14 @@ self.addEventListener("fetch", (event) => {
     url.pathname === SHARE_TARGET_PATH
   ) {
     if (event.request.method === "POST") {
+      const token = nonce128();
       event.respondWith(
         new Response(null, {
           status: 303,
-          headers: { Location: `/${SHARE_TARGET_PENDING_SEARCH}` },
+          headers: { Location: sharePendingLocation(token) },
         }),
       );
-      event.waitUntil(deliverSharedImage(event));
+      event.waitUntil(deliverSharedImage(event, token));
       return;
     }
     if (event.request.method === "GET" && event.request.mode === "navigate") {
@@ -875,6 +882,7 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener("message", (event) => {
   const data = event.data as {
     readonly type?: string;
+    readonly token?: unknown;
     readonly nonce?: string;
     readonly release?: string;
   };
@@ -897,15 +905,18 @@ self.addEventListener("message", (event) => {
     return;
   }
 
-  if (data.type === "PULL_SHARED_IMAGE" && event.source !== null) {
-    const payload = takePendingShare();
+  if (
+    data.type === "PULL_SHARED_IMAGE" &&
+    isSharePendingToken(data.token) &&
+    event.source !== null
+  ) {
+    const payload = takePendingShare(data.token);
     if (payload === null) {
       // The share POST may still be parsing its multipart body; park the
-      // puller so delivery completes once the share settles. With no share
-      // parked and none in flight the pull is definitively unanswerable and
-      // is dropped, never left to claim a later, unrelated share.
-      if (sharesInFlight > 0) {
-        parkPull(event.source);
+      // matching puller so delivery completes once that share settles. An
+      // unknown or settled token is definitively unanswerable and is dropped.
+      if (sharesInFlight.has(data.token)) {
+        parkPull(data.token, event.source);
       }
       return;
     }

@@ -1,4 +1,5 @@
 import type { QrwardenTrustedScriptURL } from "../app/trustedScripts";
+import { isSharePendingToken } from "./shareToken";
 
 const QUERY_TIMEOUT_MS = 2_000;
 const QUERY_RETRY_MS = 500;
@@ -76,15 +77,19 @@ export function replayServiceWorkerStatus(
  * Asks the controlling worker for a parked share-target image. Returns true
  * only when the pull was actually posted: a missing controller cannot serve
  * the pull, and a redundant one throws from postMessage — in both cases the
- * caller must keep the ?share-pending marker so a reload under the replacing
- * worker can still claim the parked share, and startup must not abort.
+ * caller must keep the tokenized ?share-pending marker so a reload under the
+ * replacing worker can still claim its parked share, and startup must not
+ * abort. Invalid tokens never cross the worker boundary.
  */
-export function requestPendingShare(controller: ServiceWorker | null): boolean {
-  if (controller === null) {
+export function requestPendingShare(
+  controller: ServiceWorker | null,
+  token: string,
+): boolean {
+  if (controller === null || !isSharePendingToken(token)) {
     return false;
   }
   try {
-    controller.postMessage({ type: "PULL_SHARED_IMAGE" });
+    controller.postMessage({ type: "PULL_SHARED_IMAGE", token });
     return true;
   } catch {
     return false;
