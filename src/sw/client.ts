@@ -257,7 +257,7 @@ export class ServiceWorkerClient {
     }
     // Lifecycle callers must synchronously disable every report/action control
     // before the first asynchronous registration query can yield.
-    this.#options.onLockChange(true);
+    this.#publishLock(true);
     if (this.#gateInFlight !== null) {
       return this.#gateInFlight;
     }
@@ -490,7 +490,7 @@ export class ServiceWorkerClient {
     });
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       this.#resetRequiredQueryFailures();
-      this.#options.onLockChange(true);
+      this.#publishLock(true);
       void this.#handleControllerChange();
     });
     window.addEventListener("pageshow", (event) => {
@@ -755,7 +755,7 @@ export class ServiceWorkerClient {
       void this.#reconcileLease("unknown");
     }, PREPARE_LEASE_MS);
     this.#lease = lease;
-    this.#options.onLockChange(true);
+    this.#publishLock(true);
   }
 
   #releaseLease(failed: boolean): void {
@@ -763,7 +763,7 @@ export class ServiceWorkerClient {
       window.clearTimeout(this.#lease.timeout);
       this.#lease = null;
     }
-    this.#options.onLockChange(this.#reloadStarted);
+    this.#publishLock(this.#reloadStarted);
     if (failed) {
       this.#setState("update-failed");
     }
@@ -867,7 +867,7 @@ export class ServiceWorkerClient {
   }
 
   #guardedReload(expectedRelease: string): void {
-    this.#options.onLockChange(true);
+    this.#publishLock(true);
     this.#clearQueryRetry();
     if (this.#reloadStarted) {
       this.#options.dropReport();
@@ -885,6 +885,28 @@ export class ServiceWorkerClient {
 
   #setState(state: OfflineState): void {
     this.#options.onState(state);
+  }
+
+  // The gate proposes a lock state, but lease/reload/replay ownership is
+  // authoritative. Keeping that derivation here prevents one lifecycle path
+  // from publishing an unlock while another still owns the lock.
+  #publishLock(requestedLocked: boolean): void {
+    const lifecycleRequiresLock =
+      this.#lease !== null || this.#reloadStarted || this.#gateReplayRequested;
+    const locked = requestedLocked || lifecycleRequiresLock;
+    this.#assertLockInvariant(locked);
+    this.#options.onLockChange(locked);
+  }
+
+  #assertLockInvariant(locked: boolean): void {
+    if (!import.meta.env.DEV || locked) return;
+    if (
+      this.#lease !== null ||
+      this.#reloadStarted ||
+      this.#gateReplayRequested
+    ) {
+      throw new Error("Service worker lifecycle attempted an unsafe unlock");
+    }
   }
 
   #scheduleQueryRetry(milliseconds = QUERY_RETRY_MS): void {
@@ -958,7 +980,7 @@ export class ServiceWorkerClient {
     // terminal latching; only the UI publication waits for the replay.
     const publishedControlsEnabled =
       effectiveControlsEnabled && !this.#gateReplayRequested;
-    this.#options.onLockChange(!publishedControlsEnabled);
+    this.#publishLock(!publishedControlsEnabled);
     this.#setState(offlineState);
     return { controlsEnabled: effectiveControlsEnabled, offlineState };
   }
@@ -971,7 +993,7 @@ export class ServiceWorkerClient {
       );
       return;
     }
-    this.#options.onLockChange(true);
+    this.#publishLock(true);
     if (this.#gateInFlight !== null) {
       this.#gateReplayRequested = true;
       return;

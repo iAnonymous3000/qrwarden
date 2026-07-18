@@ -80,6 +80,10 @@ async function fixture(): Promise<{
         immutable: "public, max-age=31536000, immutable",
         infrastructure: null,
       },
+      cspClasses: {
+        document: "default-src 'none'",
+        none: null,
+      },
       entries: [
         {
           id: "document",
@@ -230,6 +234,32 @@ describe("Cloudflare live release verifier", () => {
         },
       }),
     ).rejects.toThrow("body differs from the verified dist bytes");
+  });
+
+  it("rejects a generated CSP that differs from the exact release contract", async () => {
+    const { dist, contract } = await fixture();
+    const headersFile = path.join(dist, "_headers");
+    const headers = await readFile(headersFile, "utf8");
+    await writeFile(
+      headersFile,
+      headers.replace(
+        "default-src 'none'",
+        "default-src 'none'; connect-src https://telemetry.example",
+      ),
+    );
+    await expect(
+      verifyCloudflareLive({
+        origin: "https://qrwarden.example",
+        distDirectory: dist,
+        contractFile: contract,
+        expectedRelease: release,
+        fetchImplementation: () => {
+          throw new Error("network must not be reached");
+        },
+      }),
+    ).rejects.toThrow(
+      "CSP for / does not match the exact document policy",
+    );
   });
 
   it("requires the redirect contract's exact raw Location value", async () => {

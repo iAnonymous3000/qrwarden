@@ -145,6 +145,7 @@ try {
       "fund=false",
       "audit=true",
       "ignore-scripts=true",
+      "strict-allow-scripts=true",
       "omit-lockfile-registry-resolved=false",
       "",
     ].join("\n"),
@@ -295,6 +296,26 @@ if (permissions) {
 const artifact = await json("release/artifact-contract.json");
 if (artifact) {
   closed(artifact, ["schemaVersion", "description", "unmatchedDistPolicy", "unmatchedPublicStatus", "cacheClasses", "cspClasses", "entries"], "artifact contract");
+  closed(
+    artifact.cspClasses,
+    ["document", "decoder-worker", "service-worker", "none"],
+    "artifact CSP classes",
+  );
+  if (
+    artifact.cspClasses?.none !== null ||
+    ["document", "decoder-worker", "service-worker"].some((cspClass) => {
+      const policy = artifact.cspClasses?.[cspClass];
+      return (
+        typeof policy !== "string" ||
+        policy.length === 0 ||
+        policy.includes("\n") ||
+        policy.includes("\r") ||
+        policy.trim().replace(/[\t ]+/gu, " ") !== policy
+      );
+    })
+  ) {
+    errors.push("artifact CSP classes must define normalized exact policies and a null none class");
+  }
   if (
     artifact.schemaVersion !== 1 ||
     artifact.unmatchedDistPolicy !== "reject" ||
@@ -342,7 +363,7 @@ if (artifact) {
         errors.push(`artifact entry ${entry.id} has an invalid sourcePattern`);
       }
       if (![200, 307, 404].includes(entry.expectedStatus)) errors.push(`artifact entry ${entry.id} has an invalid expectedStatus`);
-      if (!artifact.cspClasses.includes(entry.cspClass)) errors.push(`artifact entry ${entry.id} has an invalid CSP class`);
+      if (!Object.hasOwn(artifact.cspClasses ?? {}, entry.cspClass)) errors.push(`artifact entry ${entry.id} has an invalid CSP class`);
       if (!(entry.cacheClass in artifact.cacheClasses)) errors.push(`artifact entry ${entry.id} has an invalid cache class`);
       if (typeof entry.releaseMarker !== "boolean" || typeof entry.precache !== "boolean") {
         errors.push(`artifact entry ${entry.id} must classify releaseMarker and precache`);

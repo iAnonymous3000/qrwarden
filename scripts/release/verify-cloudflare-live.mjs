@@ -9,6 +9,7 @@ import {
   sha256,
 } from "./release-contract.mjs";
 import {
+  assertExactCspForPath,
   expectedHeadersForPath,
   normalizeHeaderValue,
   parseHeaderRules,
@@ -153,12 +154,12 @@ export async function loadLiveProbes({
     if (expectedCache !== null && headers.get("cache-control") !== expectedCache) {
       throw new Error(`cache contract for ${pathname} is not represented in _headers`);
     }
-    if (rule.cspClass !== "none" && !headers.has("content-security-policy")) {
-      throw new Error(`CSP contract for ${pathname} is not represented in _headers`);
-    }
-    if (rule.cspClass === "none" && headers.has("content-security-policy")) {
-      throw new Error(`CSP must be absent for ${pathname}`);
-    }
+    assertExactCspForPath({
+      headers,
+      pathname,
+      cspClasses: contract.cspClasses,
+      cspClass: rule.cspClass,
+    });
     probes.push({
       id: rule.id,
       pathname,

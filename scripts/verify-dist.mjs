@@ -2,6 +2,8 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  assertExactCspForPath,
+  expectedHeadersForPath,
   parseHeaderRules,
   REPORTING_HEADER_NAMES,
 } from "./release/header-rules.mjs";
@@ -105,20 +107,16 @@ for (const expected of [
     throw new Error(`missing common production header: ${expected}`);
   }
 }
-for (const [route, expected] of [
-  ["/", "require-trusted-types-for 'script'"],
-  ["/decoder-worker.js", "'wasm-unsafe-eval'"],
-  ["/sw.js", "script-src 'self'"],
-]) {
-  const start = headers.indexOf(`\n${route}\n`);
-  if (start < 0) throw new Error(`missing header route block ${route}`);
-  const tail = headers.slice(start + 1);
-  const blockEnd = tail.indexOf("\n\n");
-  const block = tail.slice(0, blockEnd < 0 ? undefined : blockEnd);
-  const cspCount = (block.match(/Content-Security-Policy:/g) ?? []).length;
-  if (cspCount !== 1 || !block.includes(expected)) {
-    throw new Error(`invalid CSP resolution for ${route}`);
-  }
+for (const file of files) {
+  const rule = rules.find((candidate) => candidate.pattern.test(file));
+  if (rule === undefined) throw new Error(`${file} lacks an artifact-contract class`);
+  const pathname = file === "index.html" ? "/" : `/${file}`;
+  assertExactCspForPath({
+    headers: expectedHeadersForPath(parsedHeaderRules, pathname),
+    pathname,
+    cspClasses: contract.cspClasses,
+    cspClass: rule.cspClass,
+  });
 }
 
 const sw = await readFile(path.join(dist, "sw.js"), "utf8");

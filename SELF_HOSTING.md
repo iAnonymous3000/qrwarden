@@ -15,7 +15,7 @@ npx playwright install chromium firefox webkit
 npm run test:browser
 ```
 
-Plain npm installs honor `.npmrc` and skip lifecycle scripts. The explicit install flags above enable only the exact reviewed hooks and reject an unclassified lifecycle script.
+Plain npm installs honor `.npmrc` and skip lifecycle scripts. The committed policy also keeps strict enforcement enabled if scripts are deliberately turned back on; under the exact pinned npm 11.16.0 runtime, the explicit install flags above enable only the exact reviewed hooks and reject an unclassified lifecycle script. Run `npm run validate:install-policy` to exercise the native approved, denied, and unreviewed-hook behavior with a synthetic local package.
 
 Serve only the verified `dist/` tree. The generated `_headers` file is deployment input for the canonical Cloudflare target, not a portable web-server standard. A non-Cloudflare operator must translate it without weakening the behavior and verify the result: the document, decoder worker, and service worker each receive exactly one intended CSP; common privacy/security headers apply to successful assets; fixed workers and the manifest revalidate; hashed assets are immutable; `_headers` and source maps return 404; `/index.html` redirects 307 to `/`; and unknown paths return 404. A host that merely copies `dist/` while ignoring `_headers` is not a compatible deployment.
 

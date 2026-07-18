@@ -132,8 +132,9 @@ function bracketPairs(units: readonly BidiUnit[]): readonly BracketPair[] {
     if (bracket === null) continue;
 
     if (bracket.type === "open") {
-      // BD16 requires an empty result after a 64th nested opening bracket.
-      if (stack.length === 63) return [];
+      // BD16 stops processing the isolating run sequence when a 64th nested
+      // opening bracket is encountered; pairs found before that point remain.
+      if (stack.length === 63) break;
       stack.push({ closingPoint: bracket.codePoint, position });
       continue;
     }

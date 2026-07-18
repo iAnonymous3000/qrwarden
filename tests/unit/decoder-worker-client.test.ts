@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  DEFAULT_DECODE_TIMEOUT_MS,
   DecoderFailure,
   DecoderWorkerClient,
   STARTUP_TIMEOUT_MS,
@@ -127,6 +128,39 @@ describe("decoder worker client startup deadline", () => {
 
     await expect(started).rejects.toMatchObject({ code: "reader-stopped" });
     await vi.advanceTimersByTimeAsync(STARTUP_TIMEOUT_MS);
+    expect(worker.terminate).toHaveBeenCalledOnce();
+  });
+});
+
+describe("decoder worker client request deadline", () => {
+  it("terminates a ready worker when a hostile image decode stays silent", async () => {
+    vi.useFakeTimers();
+    const worker = new FakeDecoderWorker();
+    const client = new DecoderWorkerClient(() => worker as unknown as Worker);
+    worker.emit({ type: "ready" });
+    await expect(client.start()).resolves.toBeUndefined();
+
+    const file = new File(["hostile"], "hostile.png", { type: "image/png" });
+    let decodeFailure: unknown = null;
+    const decode = client.decodeImage(file, 7).catch((error: unknown) => {
+      decodeFailure = error;
+    });
+    await Promise.resolve();
+
+    expect(worker.postMessage).toHaveBeenCalledWith({
+      type: "decode-image",
+      jobId: 1,
+      epoch: 7,
+      file,
+    });
+    await vi.advanceTimersByTimeAsync(DEFAULT_DECODE_TIMEOUT_MS - 1);
+    expect(decodeFailure).toBeNull();
+    expect(worker.terminate).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await decode;
+    expect(decodeFailure).toBeInstanceOf(DecoderFailure);
+    expect((decodeFailure as DecoderFailure).code).toBe("took-too-long");
     expect(worker.terminate).toHaveBeenCalledOnce();
   });
 });

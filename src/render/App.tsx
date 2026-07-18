@@ -12,8 +12,6 @@ import {
   type OpenConfirmation,
 } from "../action/navigation";
 import {
-  ANALYZER_DATA_STATUS,
-  ANALYZER_VERSION,
   analyzeDecodeResult,
   type AnalysisReport,
   type DisplayField,
@@ -32,7 +30,7 @@ import {
   selectionPositionLabel,
   type OwnedSelectionPreview,
 } from "../app/selectionPreview";
-import { PROBLEM_COPY, type ProblemCode } from "../app/problems";
+import type { ProblemCode } from "../app/problems";
 import { WorkState } from "../app/workState";
 import { CameraController, type CameraProblem } from "../camera/controller";
 import { CameraDecoderAdapter } from "../camera/decoderAdapter";
@@ -43,7 +41,6 @@ import {
   translateFieldValue,
   translateSignalTitle,
 } from "../copy/evidence";
-import { APP_LOCALE } from "../copy/locale";
 import type {
   DecoderOutcome,
   DetectionResult,
@@ -55,9 +52,10 @@ import {
   type ImageIntakeProblem,
 } from "../image/controller";
 import type { OfflineState, ServiceWorkerClient } from "../sw/client";
+import { AboutView } from "./AboutView";
 import { detectBraveIos } from "./braveGuidance";
 import { fieldLabelForSentence, presentFieldValue } from "./fieldPresentation";
-import { detectInstallGuidance } from "./installGuidance";
+import { ProblemView } from "./ProblemView";
 import { reportAsText, reviewedUrlSummary } from "./reportText";
 import { SIGNAL_GLOSSARY, SIGNAL_GLOSSARY_CODES } from "./signalGlossary";
 import type { ThemeController } from "./theme";
@@ -138,8 +136,6 @@ const EMPTY_CAMERA_UI: CameraUi = Object.freeze({
   starting: false,
 });
 
-const DEVELOPMENT_COMMIT = "0000000000000000000000000000000000000000";
-
 // Copy feedback names its target so the confirmation renders beside the
 // button that was clicked; the field namespace keeps ids from colliding
 // with the whole-report target.
@@ -154,33 +150,6 @@ interface CopyFeedback {
 
 function copyFeedbackText(status: ClipboardStatus): string {
   return status === "copied" ? COPY.copied : COPY.copyFailed;
-}
-
-function releaseValue(value: string): string {
-  return /^<SET_[A-Z0-9_]+>$/u.test(value) ? COPY.notConfiguredValue : value;
-}
-
-function sourceRepositorySegments(value: string): readonly string[] {
-  try {
-    const parsed = new URL(value);
-    const path = parsed.pathname
-      .split("/")
-      .filter((segment) => segment.length > 0)
-      .map((segment) => `/${segment}`);
-    return [
-      `${parsed.protocol}//${parsed.host}`,
-      ...path,
-      `${parsed.search}${parsed.hash}`,
-    ].filter((segment) => segment.length > 0);
-  } catch {
-    return [value];
-  }
-}
-
-function displayedReleaseId(value: string): string {
-  return value.endsWith(`+${DEVELOPMENT_COMMIT}`)
-    ? `${value.slice(0, -(DEVELOPMENT_COMMIT.length))}development`
-    : value;
 }
 
 function kindLabel(report: AnalysisReport): string {
@@ -433,6 +402,7 @@ function ConfirmationDialog({
   canonicalHref,
   locked,
   returnFocus,
+  fallbackFocus,
   onOpen,
   onCancel,
 }: {
@@ -440,6 +410,7 @@ function ConfirmationDialog({
   canonicalHref: string;
   locked: boolean;
   returnFocus: HTMLElement | null;
+  fallbackFocus: HTMLElement | null;
   onOpen: (event: MouseEvent) => void;
   onCancel: () => void;
 }) {
@@ -456,10 +427,21 @@ function ConfirmationDialog({
 
     return () => {
       if (dialog.open) dialog.close();
-      const focusTarget = returnFocus ?? previous;
-      if (focusTarget?.isConnected === true) focusTarget.focus();
+      // Locking disables the confirmation trigger in the same commit that
+      // removes the dialog. Restore focus after that commit, falling back to
+      // the current view heading when the trigger can no longer receive it.
+      queueMicrotask(() => {
+        const preferred = returnFocus ?? previous;
+        const focusTarget =
+          preferred?.isConnected === true && !preferred.matches(":disabled")
+            ? preferred
+            : fallbackFocus?.isConnected === true
+              ? fallbackFocus
+              : null;
+        focusTarget?.focus({ preventScroll: true });
+      });
     };
-  }, [returnFocus]);
+  }, [fallbackFocus, returnFocus]);
 
   return (
     <dialog
@@ -524,7 +506,6 @@ export function App(props: AppProps) {
   const [cameraUi, setCameraUi] = useState<CameraUi>(EMPTY_CAMERA_UI);
   const videoRef = useRef<HTMLVideoElement>(null);
   const confirmationTriggerRef = useRef<HTMLButtonElement>(null);
-  const recoveryImageInputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<CameraController<DetectionResult> | null>(null);
   const cameraTaskCount = useRef(0);
   const cameraTaskGeneration = useRef(0);
@@ -737,21 +718,34 @@ export function App(props: AppProps) {
     transitionView({ kind: "home" });
   };
 
-  // A buffered share is pending work: an update must not reload this
-  // document (discarding the in-memory file) while one waits to be consumed.
-  props.bridge.isIdle = () =>
-    isRuntimeIdle({
-      viewKind: viewRef.current.kind,
-      hasActiveReport: reports.active !== null,
-      hasOpenConfirmation: navigation.confirmation !== null,
-      imageBusy: imageController.busy,
-      cameraAttached: cameraRef.current !== null,
-      cameraTaskBusy: cameraTaskCount.current > 0,
-      clipboardBusy: clipboard.busy,
-      hasPendingShare: pendingShareRef.current.length > 0,
-      hasRetainedResources: work.hasRetainedResources,
-    });
-  props.bridge.dropReport = () => resetToHome(true);
+  useLayoutEffect(() => {
+    // A buffered share is pending work: an update must not reload this
+    // document (discarding the in-memory file) while one waits to be consumed.
+    const isIdle = (): boolean =>
+      isRuntimeIdle({
+        viewKind: viewRef.current.kind,
+        hasActiveReport: reports.active !== null,
+        hasOpenConfirmation: navigation.confirmation !== null,
+        imageBusy: imageController.busy,
+        cameraAttached: cameraRef.current !== null,
+        cameraTaskBusy: cameraTaskCount.current > 0,
+        clipboardBusy: clipboard.busy,
+        hasPendingShare: pendingShareRef.current.length > 0,
+        hasRetainedResources: work.hasRetainedResources,
+      });
+    const dropReport = (): void => resetToHome(true);
+    props.bridge.isIdle = isIdle;
+    props.bridge.dropReport = dropReport;
+
+    return () => {
+      // An unmounted App cannot authoritatively declare the document idle or
+      // mutate its former report state. Do not overwrite a newer App's bridge.
+      if (props.bridge.isIdle === isIdle) props.bridge.isIdle = () => false;
+      if (props.bridge.dropReport === dropReport) {
+        props.bridge.dropReport = () => undefined;
+      }
+    };
+  }, [clipboard, imageController, navigation, props.bridge, reports, work]);
 
   useLayoutEffect(() => {
     const handler = (event: Event): void => {
@@ -1170,29 +1164,38 @@ export function App(props: AppProps) {
             </button>
           ) : null}
         </div>
-        {updateInstall.message !== null ? (
-          <p id="update-feedback" class="strip-feedback" role="status">
-            {updateInstall.message}
-          </p>
-        ) : null}
-        {locked ? (
-          <div class="version-lock-banner" role="status">
-            <span class="lock-glyph" aria-hidden="true" />
-            <div>
-              <strong>{COPY.checkingVersionHeading}</strong>
-              <p>{COPY.checkingVersionBody}</p>
+        <div class="update-feedback-region" role="status" aria-live="polite">
+          {updateInstall.message !== null ? (
+            <p id="update-feedback" class="strip-feedback">
+              {updateInstall.message}
+            </p>
+          ) : null}
+        </div>
+        <div
+          class="version-lock-region"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {locked ? (
+            <div class="version-lock-banner">
+              <span class="lock-glyph" aria-hidden="true" />
+              <div>
+                <strong>{COPY.checkingVersionHeading}</strong>
+                <p>{COPY.checkingVersionBody}</p>
+              </div>
+              {offlineState === "update-failed" ? (
+                <button
+                  type="button"
+                  class="compact-button"
+                  onClick={() => location.reload()}
+                >
+                  {COPY.reloadApp}
+                </button>
+              ) : null}
             </div>
-            {offlineState === "update-failed" ? (
-              <button
-                type="button"
-                class="compact-button"
-                onClick={() => location.reload()}
-              >
-                {COPY.reloadApp}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+          ) : null}
+        </div>
 
         {view.kind === "home" ? (
           <section class="hero" aria-labelledby="hero-title">
@@ -1299,17 +1302,24 @@ export function App(props: AppProps) {
             <p class="camera-search-status" role="status">
               {cameraUi.starting ? COPY.startingCamera : COPY.lookingForCode}
             </p>
-            {cameraUi.notice !== null ? (
-              <p class="camera-notice" role="status">
-                <span key={cameraUi.noticeNonce}>
-                  {cameraUi.notice === "torch-unavailable"
-                    ? COPY.torchUnavailableBody
-                    : cameraUi.notice === "zoom-unavailable"
-                      ? COPY.zoomUnavailableBody
-                      : COPY.switchUnavailableBody}
-                </span>
-              </p>
-            ) : null}
+            <div
+              class="camera-notice-region"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {cameraUi.notice !== null ? (
+                <p class="camera-notice">
+                  <span key={cameraUi.noticeNonce}>
+                    {cameraUi.notice === "torch-unavailable"
+                      ? COPY.torchUnavailableBody
+                      : cameraUi.notice === "zoom-unavailable"
+                        ? COPY.zoomUnavailableBody
+                        : COPY.switchUnavailableBody}
+                  </span>
+                </p>
+              ) : null}
+            </div>
             <div class="camera-controls">
               {cameraUi.devices.length > 1 ? (
                 <label>
@@ -1340,7 +1350,10 @@ export function App(props: AppProps) {
               {cameraUi.zoom !== null ? (
                 <label>
                   <span class="camera-control-label">
-                    {COPY.zoomLabel} <output>{Math.round(cameraUi.zoomValue * 10) / 10}×</output>
+                    {COPY.zoomLabel}{" "}
+                    <output aria-hidden="true">
+                      {Math.round(cameraUi.zoomValue * 10) / 10}×
+                    </output>
                   </span>
                   <input
                     type="range"
@@ -1427,6 +1440,8 @@ export function App(props: AppProps) {
                     <li key={entry.detection.originalIndex}>
                       <div
                         class="selection-option selection-option-unavailable"
+                        role="group"
+                        aria-disabled="true"
                         aria-label={`${label}, ${COPY.selectionUnavailable}`}
                       >
                         <span class="number-badge">{index + 1}</span>
@@ -1458,75 +1473,17 @@ export function App(props: AppProps) {
           </section>
         ) : null}
 
-        {view.kind === "error" ? (() => {
-          const problem = PROBLEM_COPY[view.problem];
-          const canResumeCamera = problem.primaryAction === "resume-camera";
-          const canRetryCamera = problem.primaryAction === "retry-camera";
-          const canChooseImage = problem.imageFallback === true;
-          const isRecovery = problem.tone === "recovery";
-          const dismissLabel = problem.dismissLabel ?? COPY.tryAnotherCode;
-          return (
-            <section
-              class={`center-card ${isRecovery ? "recovery-card" : "error-card"}`}
-              role="alert"
-            >
-              <span class={isRecovery ? "recovery-glyph" : "error-glyph"} aria-hidden="true">
-                {canResumeCamera ? "↻" : isRecovery ? "i" : "!"}
-              </span>
-              <h1 ref={viewHeadingRef} tabIndex={-1}>{problem.heading}</h1>
-              <p>{problem.body}</p>
-              {view.problem === "camera-access-needed" && braveIos ? (
-                <p>{COPY.braveIosCameraBody}</p>
-              ) : null}
-              {canResumeCamera || canRetryCamera ? (
-                <div class="recovery-actions">
-                  <button
-                    type="button"
-                    class="primary-button"
-                    disabled={locked}
-                    onClick={resumeCamera}
-                  >
-                    {canResumeCamera ? COPY.resumeScanning : COPY.retryCamera}
-                  </button>
-                  {canChooseImage ? (
-                    <>
-                      <button
-                        type="button"
-                        class="secondary-button"
-                        disabled={locked}
-                        onClick={() => recoveryImageInputRef.current?.click()}
-                      >
-                        {COPY.chooseImage}
-                      </button>
-                      <input
-                        ref={recoveryImageInputRef}
-                        class="visually-hidden"
-                        type="file"
-                        tabIndex={-1}
-                        aria-hidden="true"
-                        accept="image/jpeg,image/png,image/webp"
-                        disabled={locked}
-                        onChange={(event) => {
-                          const files = Array.from(event.currentTarget.files ?? []);
-                          event.currentTarget.value = "";
-                          chooseImages(files);
-                        }}
-                      />
-                    </>
-                  ) : (
-                    <button type="button" class="secondary-button" onClick={goHome}>
-                      {dismissLabel}
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <button type="button" class="primary-button" onClick={goHome}>
-                  {dismissLabel}
-                </button>
-              )}
-            </section>
-          );
-        })() : null}
+        {view.kind === "error" ? (
+          <ProblemView
+            problemCode={view.problem}
+            braveIos={braveIos}
+            locked={locked}
+            headingRef={viewHeadingRef}
+            onResumeCamera={resumeCamera}
+            onChooseImages={chooseImages}
+            onDismiss={goHome}
+          />
+        ) : null}
 
         {view.kind === "result" ? (() => {
           const report = view.active.report;
@@ -1721,6 +1678,7 @@ export function App(props: AppProps) {
                   canonicalHref={destination.href}
                   locked={locked}
                   returnFocus={confirmationTriggerRef.current}
+                  fallbackFocus={viewHeadingRef.current}
                   onOpen={(event) => {
                     navigation.openReviewedLink(event, view.active, confirmation);
                     setConfirmation(null);
@@ -1759,90 +1717,27 @@ export function App(props: AppProps) {
           </article>
         ) : null}
 
-        {view.kind === "about" ? (() => {
-          // The installed-app window shares the browser tab's user agent, so
-          // installed state comes from the display mode instead of sniffing.
-          const alreadyInstalled =
-            window.matchMedia?.("(display-mode: standalone)").matches === true ||
-            (navigator as Navigator & { standalone?: boolean }).standalone === true;
-          const guidance = detectInstallGuidance(navigator.userAgent, alreadyInstalled);
-          return (
-            <article class="prose-card">
-              <p class="eyebrow">{COPY.aboutEyebrow}</p>
-              <h1 ref={viewHeadingRef} tabIndex={-1}>
-                {COPY.aboutTitle}
-              </h1>
-              <p class="lead">{COPY.aboutLead}</p>
-              <p>
-                <button
-                  type="button"
-                  class="text-button"
-                  onClick={() => navigateInfo("glossary")}
-                >
-                  {COPY.glossaryLink}
-                </button>
-              </p>
-              {APP_LOCALE === "en" ? null : (
-                <p class="microcopy">{COPY.aboutEnglishEvidenceNote}</p>
-              )}
-              <section class="install-card">
-                <h2>{guidance.heading}</h2>
-                <p>{guidance.body}</p>
-              </section>
-              <section class="appearance-card" aria-labelledby="appearance-title">
-                <h2 id="appearance-title">{COPY.appearanceHeading}</h2>
-                <p>
-                  {followsSystemTheme
-                    ? COPY.appearanceFollowing(theme)
-                    : COPY.appearanceUsing(theme)}
-                </p>
-                <button
-                  type="button"
-                  class="secondary-button"
-                  disabled={followsSystemTheme}
-                  onClick={() => {
-                    props.themeController.useSystemTheme();
-                    setFollowsSystemTheme(true);
-                  }}
-                >
-                  {followsSystemTheme ? COPY.usingDeviceSetting : COPY.useDeviceSetting}
-                </button>
-              </section>
-              <details class="technical-details">
-                <summary>{COPY.technicalDetails}</summary>
-                <dl class="about-grid">
-                  <div><dt>{COPY.aboutReleaseLabel}</dt><dd>{displayedReleaseId(props.releaseId)}</dd></div>
-                  <div><dt>{COPY.analyzerLabel}</dt><dd>{ANALYZER_VERSION}</dd></div>
-                  <div><dt>{COPY.aboutPslSnapshotLabel}</dt><dd>{ANALYZER_DATA_STATUS.publicSuffix.captured}</dd></div>
-                  <div><dt>{COPY.aboutIanaSnapshotLabel}</dt><dd>{ANALYZER_DATA_STATUS.ianaSpecialPurpose.captured}</dd></div>
-                  <div><dt>{COPY.aboutUnicodeLabel}</dt><dd>{ANALYZER_DATA_STATUS.unicodeSecurity.unicodeVersion}</dd></div>
-                  <div><dt>{COPY.aboutCodeLicenseLabel}</dt><dd>AGPL-3.0-or-later</dd></div>
-                  <div><dt>{COPY.aboutDataLicensesLabel}</dt><dd>MPL-2.0 · CC0-1.0 · Unicode-3.0</dd></div>
-                  <div><dt>{COPY.aboutFingerprintLabel}</dt><dd><bdi>{releaseValue(props.signingFingerprint)}</bdi></dd></div>
-                  <div><dt>{COPY.aboutPublicKeyLabel}</dt><dd><bdi>{releaseValue(props.signingPublicKey)}</bdi></dd></div>
-                  <div><dt>{COPY.aboutDnsAnchorLabel}</dt><dd><bdi>{releaseValue(props.dnsKeyOwner)}</bdi></dd></div>
-                  <div>
-                    <dt>{COPY.aboutSourceLabel}</dt>
-                    <dd class="source-repository">
-                      {props.sourceRepository === null ? (
-                        COPY.notConfiguredValue
-                      ) : (
-                        <bdi>
-                          {sourceRepositorySegments(props.sourceRepository).map((segment) => (
-                            <span class="repository-segment" key={segment}>
-                              {segment}<wbr />
-                            </span>
-                          ))}
-                        </bdi>
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-              </details>
-              <button type="button" class="primary-button" onClick={returnFromInfo}>{infoBackLabel}</button>
-            </article>
-          );
-        })() : null}
+        {view.kind === "about" ? (
+          <AboutView
+            headingRef={viewHeadingRef}
+            theme={theme}
+            followsSystemTheme={followsSystemTheme}
+            release={{
+              releaseId: props.releaseId,
+              signingPublicKey: props.signingPublicKey,
+              signingFingerprint: props.signingFingerprint,
+              dnsKeyOwner: props.dnsKeyOwner,
+              sourceRepository: props.sourceRepository,
+            }}
+            backLabel={infoBackLabel}
+            onOpenGlossary={() => navigateInfo("glossary")}
+            onUseSystemTheme={() => {
+              props.themeController.useSystemTheme();
+              setFollowsSystemTheme(true);
+            }}
+            onBack={returnFromInfo}
+          />
+        ) : null}
 
         {view.kind === "glossary" ? (
           <article class="prose-card">

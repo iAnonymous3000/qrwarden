@@ -176,6 +176,13 @@ describe("UTS 39 LTR bidi skeleton reordering", () => {
     expect(reorderUts46LabelForLtrSkeleton("אב(גד)")).toBe("(דג)בא");
   });
 
+  it("retains pairs found before BD16's bracket-stack overflow", () => {
+    const overflow = "(".repeat(64);
+    expect(reorderUts46LabelForLtrSkeleton(`אב(גד)A${overflow}`)).toBe(
+      `(דג)באA${overflow}`,
+    );
+  });
+
   it("moves right-to-left combining marks back after their base", () => {
     expect(reorderUts46LabelForLtrSkeleton("Aש\u05C2")).toBe("Aש\u05C2");
   });

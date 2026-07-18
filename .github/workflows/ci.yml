@@ -32,6 +32,9 @@ jobs:
       - name: Install the locked npm runtime
         run: npm install --global --ignore-scripts npm@11.16.0
 
+      - name: Prove the native install-script policy fails closed
+        run: node scripts/validate-install-script-policy.mjs
+
       - name: Install from the lockfile
         run: npm ci --ignore-scripts=false --strict-allow-scripts
 
@@ -62,6 +65,9 @@ jobs:
 
       - name: Install the locked npm runtime
         run: npm install --global --ignore-scripts npm@11.16.0
+
+      - name: Prove the native install-script policy fails closed
+        run: node scripts/validate-install-script-policy.mjs
 
       - name: Install from the lockfile
         run: npm ci --ignore-scripts=false --strict-allow-scripts

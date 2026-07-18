@@ -34,8 +34,33 @@ export function validateActionPins(text, label = "workflow") {
   return errors;
 }
 
+export function validateInstallScriptPolicy(text, label = "workflow") {
+  const errors = [];
+  const lines = text.split("\n");
+  let lastProof = -1;
+  let lastScriptsEnabledInstall = -1;
+  if (/dangerously[-_]allow[-_]all[-_]scripts/iu.test(text)) {
+    errors.push(`${label} must never bypass the dependency install-script allowlist`);
+  }
+  for (const [index, line] of lines.entries()) {
+    if (line.includes("node scripts/validate-install-script-policy.mjs")) lastProof = index;
+    if (!line.includes("npm ci") || !line.includes("--ignore-scripts=false")) continue;
+    if (!line.includes("--strict-allow-scripts")) {
+      errors.push(`${label}:${index + 1} scripts-enabled npm ci must explicitly enable strict allowlist enforcement`);
+    }
+    if (lastProof <= lastScriptsEnabledInstall) {
+      errors.push(`${label}:${index + 1} must prove install-script enforcement before scripts-enabled npm ci`);
+    }
+    lastScriptsEnabledInstall = index;
+  }
+  return errors;
+}
+
 export function validateReleaseWorkflow(text) {
-  const errors = [...validateActionPins(text, "release.yml")];
+  const errors = [
+    ...validateActionPins(text, "release.yml"),
+    ...validateInstallScriptPolicy(text, "release.yml"),
+  ];
   const requireText = (fragment, message) => {
     if (!text.includes(fragment)) errors.push(message);
   };
@@ -75,6 +100,10 @@ export function validateReleaseWorkflow(text) {
     "npm ci --ignore-scripts=false --strict-allow-scripts",
     "independent builds must explicitly enable reviewed scripts and fail on unreviewed scripts",
   );
+  requireText(
+    "node scripts/validate-install-script-policy.mjs",
+    "independent builds must prove the pinned npm install-script policy before dependency installation",
+  );
   requireText("scripts/release/assemble-release-candidate.mjs", "locked release artifact assembly is missing");
   requireText("SOURCE_DATE_EPOCH", "release build must derive SOURCE_DATE_EPOCH");
   requireText("NPM_CONFIG_CACHE: /tmp/qrwarden-npm-cache", "release build must use an isolated npm cache");
@@ -104,6 +133,7 @@ async function main() {
   for (const name of names) {
     const text = await readFile(path.join(workflowDirectory, name), "utf8");
     errors.push(...validateActionPins(text, name));
+    errors.push(...validateInstallScriptPolicy(text, name));
     if (name === "release.yml") errors.push(...validateReleaseWorkflow(text).filter((error) => !errors.includes(error)));
   }
   if (!names.includes("release.yml")) errors.push("release.yml is missing");

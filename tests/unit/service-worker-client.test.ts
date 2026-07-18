@@ -243,6 +243,41 @@ describe("service-worker release gate races", () => {
     await vi.waitFor(() => expect(locks.at(-1)).toBe(false));
   });
 
+  it("keeps a released update lease locked while a lifecycle replay is pending", async () => {
+    vi.useFakeTimers();
+    const active = new FakeWorker(readyState());
+    const waiting = new FakeWorker(waitingState());
+    const harness = installHarness(active);
+    harness.registration.waiting = waiting;
+    const locks: boolean[] = [];
+    const client = createClient({
+      onLockChange: (locked) => locks.push(locked),
+    });
+    const nonce = "9".repeat(32);
+    const release = waitingState().releaseId;
+
+    await client.gate();
+    const message = harness.workerHandlers.get("message");
+    message?.({
+      data: { type: "PREPARE_UPDATE", nonce, release },
+      source: waiting,
+    });
+    locks.length = 0;
+    active.responseDelayMs = 1_000;
+    waiting.responseDelayMs = 1_000;
+
+    harness.windowHandlers.get("pageshow")?.({ persisted: true });
+    harness.windowHandlers.get("pageshow")?.({ persisted: true });
+    message?.({
+      data: { type: "RELEASE_UPDATE_PREPARE", nonce, release },
+      source: waiting,
+    });
+
+    expect(locks).not.toContain(false);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.waitFor(() => expect(locks.at(-1)).toBe(false));
+  });
+
   it("keeps controls usable when registration lookup is blocked", async () => {
     const harness = installHarness(null);
     harness.serviceWorkers.getRegistration.mockRejectedValueOnce(

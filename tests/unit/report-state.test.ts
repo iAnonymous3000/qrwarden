@@ -101,6 +101,28 @@ describe("active report identity", () => {
     expect(failed).not.toHaveBeenCalled();
   });
 
+  it("fails closed for inspect-only reports even when they carry a canonical URL", () => {
+    vi.stubGlobal("navigator", { userActivation: { isActive: true } });
+    const createElement = vi.fn();
+    vi.stubGlobal("document", { createElement });
+    const reports = new ReportStore<{
+      actionPolicy: "inspect-only";
+      canonicalHref: string;
+    }>();
+    const active = reports.activate({
+      actionPolicy: "inspect-only",
+      canonicalHref: "https://example.com/must-not-open",
+    });
+    const failed = vi.fn();
+    const broker = new NavigationBroker(reports, failed, () => false);
+
+    broker.openReviewedLink({ isTrusted: true } as MouseEvent, active, null);
+
+    expect(createElement).not.toHaveBeenCalled();
+    expect(failed).toHaveBeenCalledExactlyOnceWith("link-changed");
+    expect(broker.confirmation).toBeNull();
+  });
+
   it("cannot revive an old activation by reusing the same report object", () => {
     const reports = new ReportStore<{
       actionPolicy: "open-web";

@@ -8,6 +8,45 @@ export function normalizeHeaderValue(value) {
   return value.trim().replace(/[\t ]+/gu, " ");
 }
 
+/** Resolves one exact CSP class from the authoritative artifact contract. */
+export function expectedCspForClass(cspClasses, cspClass) {
+  if (
+    cspClasses === null ||
+    typeof cspClasses !== "object" ||
+    Array.isArray(cspClasses) ||
+    typeof cspClass !== "string" ||
+    !Object.hasOwn(cspClasses, cspClass)
+  ) {
+    throw new Error(`unknown CSP class: ${String(cspClass)}`);
+  }
+  const expected = cspClasses[cspClass];
+  if (expected === null) return null;
+  if (
+    typeof expected !== "string" ||
+    expected.length === 0 ||
+    expected.includes("\n") ||
+    expected.includes("\r") ||
+    normalizeHeaderValue(expected) !== expected
+  ) {
+    throw new Error(`invalid exact CSP policy for class: ${cspClass}`);
+  }
+  return expected;
+}
+
+/** Requires one route's effective CSP to equal its committed class exactly. */
+export function assertExactCspForPath({
+  headers,
+  pathname,
+  cspClasses,
+  cspClass,
+}) {
+  const expected = expectedCspForClass(cspClasses, cspClass);
+  const actual = headers.get("content-security-policy") ?? null;
+  if (actual !== expected) {
+    throw new Error(`CSP for ${pathname} does not match the exact ${cspClass} policy`);
+  }
+}
+
 /** Parses the supported Cloudflare Pages _headers subset fail-closed. */
 export function parseHeaderRules(source) {
   if (source.charCodeAt(0) === 0xfeff || source.includes("\r")) {

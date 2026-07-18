@@ -35,7 +35,7 @@ npm ci --ignore-scripts=false --strict-allow-scripts
 npm run dev
 ```
 
-The committed `.npmrc` makes plain installs skip lifecycle scripts. The explicit flags above enable scripts only for the exact reviewed `allowScripts` entries in `package.json` and fail closed on an unclassified hook. Do not install with different flags and do not add overrides to make an install pass.
+The committed `.npmrc` makes plain installs skip lifecycle scripts and keeps strict allowlist enforcement enabled if scripts are deliberately turned back on. The pinned npm 11.16.0 runtime natively reads the exact reviewed `allowScripts` entries in `package.json`; the explicit flags above fail closed on an unclassified hook. Run `npm run validate:install-policy` to exercise approved, denied, and unreviewed synthetic hooks. Do not install with different flags and do not add overrides to make an install pass.
 
 ## Validation ladder
 
@@ -101,7 +101,7 @@ Analyzer evidence strings inside reports intentionally remain English for now; a
 ## Security-sensitive expectations
 
 - **Fail closed.** Verification scripts reject rather than warn. Do not convert a hard failure into a warning or a default.
-- **Pinned strings live in multiple places.** Headers, artifact lists, and similar contracts are duplicated deliberately across `scripts/finalize-dist.mjs`, `scripts/verify-dist.mjs`, `SELF_HOSTING.md`, and `tests/release/`. When you change one occurrence, grep for every other occurrence, update them consistently, and prove it with `npm run validate` and `npm run build`.
+- **Pinned strings live in reviewed contracts.** Exact CSP policies live authoritatively in `release/artifact-contract.json`; generation and verification consume that contract, while `tests/release/fixtures/_headers` deliberately mirrors it as an independent review pin. Other headers, artifact lists, and similar expectations may still be duplicated across scripts, docs, and `tests/release/`. When you change a pinned value, grep for projections and fixtures, update them consistently, and prove it with `npm run validate` and `npm run build`.
 - **No new dependencies without review.** Dependencies are exact pins with a reviewed lifecycle-script allowlist. A dependency addition or update is its own pull request following the procedure in [DEPENDENCIES.md](DEPENDENCIES.md), including provenance, license, SBOM fixture, and lockfile-integrity updates. Never bundle a dependency change into a feature change.
 - **No egress, no telemetry.** Inspection must not fetch decoded destinations or anything derived from them, and the app must not gain analytics, logging of decoded content, or external assets. See [PRIVACY.md](PRIVACY.md) and [THREAT_MODEL.md](THREAT_MODEL.md) for the boundaries a change must not cross.
 - **Docs never overclaim.** Prose in this repository is honest and specific. Do not describe planned behavior as existing, and do not label destinations or the project itself "safe" or "verified".

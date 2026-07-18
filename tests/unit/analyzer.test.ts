@@ -75,6 +75,16 @@ describe("normative URL corpus", () => {
     ).toBe(false);
   });
 
+  it("surfaces a non-global IPv4 destination embedded in the NAT64 prefix", () => {
+    const report = analyzeText("https://[64:ff9b::a9fe:a9fe]/");
+    expect(field(report, "destination-category").value).toBe(
+      "NAT64: Link Local",
+    );
+    expect(report.signals.map((item) => item.code)).toContain(
+      "local-or-special-destination",
+    );
+  });
+
   it("counts all query entries but renders only the first 64 names", () => {
     const query = Array.from({ length: 70 }, (_, index) => `name${index}=hidden`).join("&");
     const report = analyzeText(`https://example.com/?${query}`);

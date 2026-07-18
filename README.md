@@ -47,7 +47,7 @@ npm ci --ignore-scripts=false --strict-allow-scripts
 npm run dev
 ```
 
-The committed `.npmrc` makes plain npm installs skip lifecycle scripts. The explicit flags above enable scripts only for the exact reviewed `allowScripts` entries and fail closed on an unclassified hook.
+The committed `.npmrc` makes plain npm installs skip lifecycle scripts and keeps strict allowlist enforcement enabled if scripts are intentionally turned back on. The pinned npm 11.16.0 runtime natively reads the exact reviewed `allowScripts` entries; CI exercises approved, denied, and unreviewed synthetic hooks before installing the repository graph, and the explicit flags above fail closed on an unclassified hook.
 
 **Toolchain:** `engine-strict` is enabled, so any other Node or npm version fails the install. [CONTRIBUTING.md](CONTRIBUTING.md) shows the exact `nvm` and `fnm` commands for installing the pinned Node 24.18.0 and npm 11.16.0.
 

@@ -39,6 +39,33 @@ describe("complete IANA special-purpose snapshot", () => {
       globallyReachable: true,
     });
   });
+
+  it("classifies the IPv4 address embedded in the NAT64 well-known prefix", () => {
+    expect(classifyIp("[64:ff9b::a9fe:a9fe]")).toMatchObject({
+      version: 6,
+      special: true,
+      globallyReachable: false,
+      category: "NAT64: Link Local",
+      mappedIpv4: {
+        version: 4,
+        canonical: "169.254.169.254",
+        special: true,
+        globallyReachable: false,
+        category: "Link Local",
+      },
+    });
+
+    expect(classifyIp("64:ff9b::808:808")).toMatchObject({
+      special: true,
+      globallyReachable: true,
+      category: "IPv4-IPv6 Translat.",
+      mappedIpv4: {
+        canonical: "8.8.8.8",
+        special: false,
+        globallyReachable: true,
+      },
+    });
+  });
 });
 
 describe("special-use hostname classification", () => {

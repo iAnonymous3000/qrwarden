@@ -259,6 +259,46 @@
     "actionPolicy": "confirm-web"
   },
   {
+    "id": "soft-hyphen-outside-authority",
+    "original": "https://openai.com/pay\u00ADpal",
+    "parseOutcome": true,
+    "canonicalHref": "https://openai.com/pay%C2%ADpal",
+    "kind": "web-url",
+    "displayFields": { "original": "https://openai.com/pay[U+00AD]pal" },
+    "signals": ["hidden-character", "material-browser-rewrite"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "tag-character-outside-authority",
+    "original": "https://openai.com/path\uDB40\uDC61",
+    "parseOutcome": true,
+    "canonicalHref": "https://openai.com/path%F3%A0%81%A1",
+    "kind": "web-url",
+    "displayFields": { "original": "https://openai.com/path[U+E0061]" },
+    "signals": ["hidden-character", "material-browser-rewrite"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "variation-selector-outside-authority",
+    "original": "https://openai.com/path\uFE0F",
+    "parseOutcome": true,
+    "canonicalHref": "https://openai.com/path%EF%B8%8F",
+    "kind": "web-url",
+    "displayFields": { "original": "https://openai.com/path[U+FE0F]" },
+    "signals": ["hidden-character", "material-browser-rewrite"],
+    "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "visible-format-character-outside-authority",
+    "original": "https://openai.com/\u0600123",
+    "parseOutcome": true,
+    "canonicalHref": "https://openai.com/%D8%80123",
+    "kind": "web-url",
+    "displayFields": { "original": "https://openai.com/\u0600123" },
+    "signals": ["material-browser-rewrite"],
+    "actionPolicy": "confirm-web"
+  },
+  {
     "id": "control-in-authority",
     "original": "https://exa\tmple.com",
     "parseOutcome": true,

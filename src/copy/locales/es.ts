@@ -15,7 +15,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "Los escaneos se quedan en este navegador. QRWarden no sube imágenes ni el contenido de los códigos.",
   noReviewHeading: "Sin señales que revisar.",
   noReviewBody:
-    "QRWarden no encontró los patrones de URL sin conexión que requieren confirmación adicional. No visitó ni verificó este sitio web.",
+    "El análisis sin conexión de QRWarden no encontró patrones de URL que requieran confirmación adicional. QRWarden no visitó ni verificó este sitio web.",
   reviewHeading: "Revisa antes de abrir.",
   reviewBody: (count: number): string =>
     `QRWarden encontró ${count} ${count === 1 ? "detalle" : "detalles"} para revisar. Estas señales no demuestran que el sitio sea dañino.`,
@@ -247,8 +247,8 @@ export const ES_COPY: CopyDictionary = Object.freeze({
   hideField: (label: string): string => `Ocultar ${label}`,
   omittedFromDisplay: (omitted: number, total?: number): string =>
     total === undefined
-      ? `${omitted} omitidos de la vista.`
-      : `${omitted} omitidos de la vista (${total} en total).`,
+      ? `${omitted} ${omitted === 1 ? "omitido" : "omitidos"} de la vista.`
+      : `${omitted} ${omitted === 1 ? "omitido" : "omitidos"} de la vista (${total} en total).`,
   truncatedNote: "Valor truncado para mostrarlo.",
   lockedFieldDetails:
     "Detalles no disponibles mientras se comprueba la versión de la aplicación.",
@@ -414,7 +414,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "Mixed writing systems": "Sistemas de escritura mezclados",
     "ASCII-like internationalized label": "Etiqueta internacionalizada similar a ASCII",
     "Hidden or control character": "Carácter oculto o de control",
-    "Material browser rewrite": "Reescritura material del navegador",
+    "Material browser rewrite": "Reescritura significativa del navegador",
     "Text before @ is not the destination": "El texto antes de @ no es el destino",
     "Forbidden character in the address authority":
       "Carácter prohibido en la autoridad de la dirección",
@@ -496,9 +496,9 @@ export const ES_COPY: CopyDictionary = Object.freeze({
         "El código contiene caracteres invisibles o de control fuera de la autoridad de la dirección. Los caracteres ocultos pueden hacer que el texto se lea distinto de cómo se comporta.",
     },
     "material-browser-rewrite": {
-      title: "Reescritura material del navegador",
+      title: "Reescritura significativa del navegador",
       explanation:
-        "Un navegador reescribiría materialmente esta dirección al analizarla, así que lo que lees en el código no es exactamente lo que se abriría. QRWarden muestra el destino analizado que verificó.",
+        "Un navegador reescribiría esta dirección de forma significativa al analizarla, así que lo que lees en el código no es exactamente lo que se abriría. QRWarden muestra el destino analizado que verificó.",
     },
     userinfo: {
       title: "El texto antes de @ no es el destino",

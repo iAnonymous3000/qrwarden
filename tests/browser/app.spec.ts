@@ -418,6 +418,9 @@ test("preserves a reviewed result across an unchanged-release re-gate", async ({
   await expect(
     page.getByRole("heading", { name: "Review before opening." }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Review before opening." }),
+  ).toBeFocused();
   await expect(continueButton).toBeEnabled({ timeout: 20_000 });
 });
 
@@ -757,6 +760,12 @@ test("shows and switches from the camera that is actually active", async ({
 
   const zoom = page.getByRole("slider", { name: "Zoom" });
   const torch = page.getByRole("button", { name: "Turn torch on" });
+  await expect(page.locator(".camera-notice-region")).toHaveCount(1);
+  await expect(page.locator(".camera-notice-region")).toBeEmpty();
+  await expect(page.locator(".camera-control-label output")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
   await zoom.evaluate((input: HTMLInputElement) => {
     input.value = "2";
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1113,6 +1122,11 @@ test("renders a locked shell and bounds a pending service-worker lookup", async 
     page.getByRole("heading", { name: COPY.primaryMessage }),
   ).toBeVisible();
   await expect(page.getByText(COPY.preparingOfflineHeading, { exact: true })).toBeVisible();
+  await expect(page.locator(".update-feedback-region[role='status']")).toHaveCount(1);
+  await expect(page.locator(".version-lock-region[role='status']")).toHaveCount(1);
+  await expect(page.locator(".version-lock-banner")).toContainText(
+    COPY.checkingVersionHeading,
+  );
   await expect(page.getByRole("button", { name: "Scan with camera" })).toBeDisabled();
   await expect(page.locator('input[type="file"]')).toBeDisabled();
   await expect(
@@ -1120,6 +1134,8 @@ test("renders a locked shell and bounds a pending service-worker lookup", async 
   ).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "Scan with camera" })).toBeEnabled();
   await expect(page.locator('input[type="file"]')).toBeEnabled();
+  await expect(page.locator(".version-lock-region[role='status']")).toHaveCount(1);
+  await expect(page.locator(".version-lock-banner")).toHaveCount(0);
 });
 
 test("keeps scanner controls usable when service-worker storage is blocked", async ({ page }) => {
@@ -1238,7 +1254,13 @@ test("reaches a controlled offline-ready shell", async ({ page }) => {
     timeout: 20_000,
   });
   await expect
-    .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null))
+    .poll(
+      () =>
+        page
+          .evaluate(() => navigator.serviceWorker.controller !== null)
+          .catch(() => false),
+      { timeout: 20_000 },
+    )
     .toBe(true);
 });
 
@@ -1257,7 +1279,13 @@ test("cold-launches the verified query-string shell while offline", async ({
     timeout: 20_000,
   });
   await expect
-    .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null))
+    .poll(
+      () =>
+        page
+          .evaluate(() => navigator.serviceWorker.controller !== null)
+          .catch(() => false),
+      { timeout: 20_000 },
+    )
     .toBe(true);
   await page.close();
   await context.setOffline(true);
@@ -1308,6 +1336,82 @@ test("delivers a shared image through the installed share target", async ({
   const deliveredUrl = new URL(page.url());
   expect(deliveredUrl.pathname).toBe("/");
   expect(deliveredUrl.searchParams.has("share-pending")).toBe(false);
+});
+
+test("keeps a shared image buffered across a synchronous release re-gate", async ({
+  page,
+}) => {
+  await gotoControlled(page);
+  const bytes = await readFile(fixture);
+
+  await page.evaluate(async (base64) => {
+    const controller = navigator.serviceWorker.controller;
+    if (controller === null) throw new Error("Missing controlled service worker");
+    const release = await new Promise<string>((resolve, reject) => {
+      const channel = new MessageChannel();
+      const timeout = window.setTimeout(() => {
+        channel.port1.close();
+        reject(new Error("Worker-state query timed out"));
+      }, 2_000);
+      channel.port1.onmessage = (event: MessageEvent<unknown>) => {
+        const data = event.data as { readonly releaseId?: unknown };
+        window.clearTimeout(timeout);
+        channel.port1.close();
+        if (typeof data.releaseId !== "string") {
+          reject(new Error("Worker-state response omitted the release"));
+          return;
+        }
+        resolve(data.releaseId);
+      };
+      controller.postMessage({ type: "QUERY_WORKER_STATE" }, [channel.port2]);
+    });
+
+    const binary = atob(base64);
+    const data = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      data[index] = binary.charCodeAt(index);
+    }
+    const shell = document.querySelector<HTMLElement>(".app-shell");
+    if (shell === null) throw new Error("Missing app shell");
+    const transitions = { reading: 0 };
+    let wasReading = shell.classList.contains("view-reading");
+    new MutationObserver(() => {
+      const reading = shell.classList.contains("view-reading");
+      if (reading && !wasReading) transitions.reading += 1;
+      wasReading = reading;
+    }).observe(shell, { attributes: true, attributeFilter: ["class"] });
+    Object.assign(window, { __qrwardenShareTransitions: transitions });
+
+    navigator.serviceWorker.dispatchEvent(new MessageEvent("message", {
+      data: {
+        type: "SHARED_IMAGE",
+        release,
+        file: new File([data], "regate-race.png", { type: "image/png" }),
+      },
+    }));
+
+    // Preact has committed the share revision by this frame, but its passive
+    // consumption effect has not run yet. Locking here reproduces the stale
+    // state window that used to dequeue and then drop the in-memory file.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    navigator.serviceWorker.dispatchEvent(new Event("controllerchange"));
+  }, bytes.toString("base64"));
+
+  await expect(
+    page.getByRole("heading", { name: COPY.reviewHeading }),
+  ).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __qrwardenShareTransitions: { readonly reading: number };
+            }
+          ).__qrwardenShareTransitions.reading,
+      ),
+    )
+    .toBe(1);
 });
 
 test("defers a shared image received while hidden until visibility returns", async ({

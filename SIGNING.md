@@ -48,6 +48,6 @@ Sign any required transition/recovery statement first, then the source archive, 
 
 ## Rotation and recovery
 
-The closed `release/key-transition-input.schema.json` and recovery schema define operator inputs, and `scripts/release/validate-key-input.mjs` validates those inputs. Deterministic statement generation, frozen-commit injection, candidate assembly, and complete transition/recovery signature-set verification are not implemented yet, so those release paths are not operationally ready.
+The closed `release/key-transition-input.schema.json` and recovery schema define operator inputs, and `scripts/validate-key-input.mjs` validates those inputs. Deterministic statement generation, frozen-commit injection, candidate assembly, and complete transition/recovery signature-set verification are not implemented yet, so those release paths are not operationally ready.
 
 Before a planned major-version rotation, implement and review the missing path for the deterministic statement, dual DNS values for 30 days, and predecessor/successor signatures. Before emergency recovery, implement and review the parallel path for an independently established last-trusted release, successor-only signatures, a permanent incident advisory, DNSSEC replacement, and approval by at least two hardware-backed GitHub maintainers. Never cross-sign with a compromised key or mutate an existing release.

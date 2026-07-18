@@ -22,14 +22,12 @@ export function isForbiddenCharacter(value: string): boolean {
   return (
     point <= 0x1f ||
     (point >= 0x7f && point <= 0x9f) ||
-    point === 0x061c ||
-    point === 0x200e ||
-    point === 0x200f ||
-    (point >= 0x2028 && point <= 0x202e) ||
-    (point >= 0x2066 && point <= 0x2069) ||
-    (point >= 0x200b && point <= 0x200d) ||
-    point === 0x2060 ||
-    point === 0xfeff
+    (point >= 0xd800 && point <= 0xdfff) ||
+    (point >= 0x2028 && point <= 0x2029) ||
+    // Unicode intentionally excludes these annotation controls from
+    // Default_Ignorable_Code_Point, but they remain unsafe to render inline.
+    (point >= 0xfff9 && point <= 0xfffb) ||
+    isDefaultIgnorable(point)
   );
 }
 

@@ -15,6 +15,7 @@ import { assertGitHubRepository } from "../../scripts/release/verify-release-con
 import {
   RELEASE_IMAGE,
   validateActionPins,
+  validateInstallScriptPolicy,
   validateReleaseWorkflow,
 } from "../../scripts/release/validate-workflows.mjs";
 
@@ -68,6 +69,7 @@ describe("release workflow policy", () => {
       if (!/\.ya?ml$/u.test(name)) continue;
       const text = await readFile(path.join(workflowDirectory, name), "utf8");
       expect(validateActionPins(text, name)).toEqual([]);
+      expect(validateInstallScriptPolicy(text, name)).toEqual([]);
     }
     const release = await readFile(path.join(workflowDirectory, "release.yml"), "utf8");
     expect(release).toContain(`image: ${RELEASE_IMAGE}`);
@@ -125,6 +127,21 @@ describe("release workflow policy", () => {
     ).toContain(
       "release workflow must rely on GitHub signature preflight without a local keyring",
     );
+    expect(
+      validateInstallScriptPolicy(
+        release.replace("--strict-allow-scripts", "--dangerously-allow-all-scripts"),
+        "release.yml",
+      ),
+    ).toEqual(expect.arrayContaining([
+      expect.stringContaining("must never bypass"),
+      expect.stringContaining("must explicitly enable strict"),
+    ]));
+    expect(
+      validateInstallScriptPolicy(
+        release.replace("node scripts/validate-install-script-policy.mjs", "node scripts/skip-install-policy.mjs"),
+        "release.yml",
+      ),
+    ).toContainEqual(expect.stringContaining("must prove install-script enforcement"));
   });
 
   it("keeps local release validation fail-closed on an unverifiable commit", async () => {

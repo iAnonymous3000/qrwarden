@@ -1,6 +1,6 @@
 # Dependencies and provenance
 
-All package versions are exact pins. The reviewed `package-lock.json` is the normative package-integrity graph. The committed `.npmrc` makes plain installs skip lifecycle scripts; `npm ci --ignore-scripts=false --strict-allow-scripts` is the only CI/release installation path and enables only the exact hooks classified by `allowScripts`.
+All package versions are exact pins. The reviewed `package-lock.json` is the normative package-integrity graph. The committed `.npmrc` makes plain installs skip lifecycle scripts and persists strict enforcement for any scripts-on override; `npm ci --ignore-scripts=false --strict-allow-scripts` is the only CI/release installation path and uses npm 11.16.0's native policy to enable only the exact hooks classified by `allowScripts`.
 
 | Component | Version | License | Source |
 |---|---:|---|---|
@@ -37,7 +37,7 @@ All package versions are exact pins. The reviewed `package-lock.json` is the nor
 
 The build verifies lockfile integrity and the reader hash before copying the unchanged, self-hosted artifact. Updating decoder provenance requires an isolated security-reviewed dependency change.
 
-The root `allowScripts` policy narrowly approves only the exact versions of the four transitive packages whose lifecycle scripts are required by the pinned build/release toolchain (`esbuild`, `libxmljs2`, `sharp`, and `workerd`). The optional hooks for `fsevents@2.3.2` and `fsevents@2.3.3` are explicit version-scoped denials, not approvals. Every registry package in `package-lock.json` carries its resolved URL and integrity digest, and CI/release installation enables strict script enforcement so a newly introduced or upgraded lifecycle-script package fails until it is reviewed and explicitly classified.
+The root `allowScripts` policy narrowly approves only the exact versions of the four transitive packages whose lifecycle scripts are required by the pinned build/release toolchain (`esbuild`, `libxmljs2`, `sharp`, and `workerd`). The optional hooks for `fsevents@2.3.2` and `fsevents@2.3.3` are explicit version-scoped denials, not approvals. Every registry package in `package-lock.json` carries its resolved URL and integrity digest, and CI/release installation enables strict script enforcement so a newly introduced or upgraded lifecycle-script package fails before dependency installation until it is reviewed and explicitly classified. `npm run validate:install-policy` uses a packed local marker fixture to prove that unreviewed hooks fail before installation, approved hooks run, and denied hooks remain skipped under the pinned runtime.
 
 Some exact npm artifacts, especially platform-native optional packages, declare a valid SPDX license but publish no package-root `LICENSE*`, `COPYING*`, or `NOTICE*` file. `release/license-overrides.json` enumerates those exact purls and uses empty selected-text lists only for that verified absence. The release generator still rejects an unlisted omission, a stale non-optional override, a checker/package identity mismatch, and any incompatible or unreviewed SPDX expression; optional platform overrides must resolve to an exact package-lock entry.
 

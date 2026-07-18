@@ -133,6 +133,7 @@ jobs:
         run: |
           set -euo pipefail
           test ! -e "$NPM_CONFIG_CACHE"
+          node scripts/validate-install-script-policy.mjs
           npm ci --ignore-scripts=false --strict-allow-scripts
 
       - name: Run source and release-readiness gates

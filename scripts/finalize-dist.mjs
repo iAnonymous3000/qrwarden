@@ -11,6 +11,8 @@ import process from "node:process";
 import { gzipSync } from "node:zlib";
 import { injectManifest } from "workbox-build";
 
+import { expectedCspForClass } from "./release/header-rules.mjs";
+
 const DIST = path.resolve("dist");
 const EXPECTED_WASM_SHA256 =
   "6a858c01e076bab3a1bd413e4f2cf5e5e45f819a0d9441d83c66993bc48ed38f";
@@ -166,24 +168,15 @@ const permissions = permissionRegistry.directives
 const releaseId = `v${process.env.npm_package_version ?? "0.1.0"}+${
   process.env.QRWARDEN_COMMIT ?? "0000000000000000000000000000000000000000"
 }`;
-const documentCsp = `${[
-  "default-src 'none'",
-  "script-src 'self'",
-  "script-src-attr 'none'",
-  "style-src 'self'",
-  "style-src-elem 'self'",
-  "style-src-attr 'none'",
-  "img-src 'self'",
-  "connect-src 'none'",
-  "worker-src 'self'",
-  "manifest-src 'self'",
-  "object-src 'none'",
-  "base-uri 'none'",
-  "form-action 'none'",
-  "frame-ancestors 'none'",
-  "require-trusted-types-for 'script'",
-  "trusted-types qrwarden-script-url",
-].join("; ")};`;
+function requiredCsp(cspClass) {
+  const policy = expectedCspForClass(artifactContract.cspClasses, cspClass);
+  if (policy === null) throw new Error(`CSP class ${cspClass} must define a policy`);
+  return policy;
+}
+
+const documentCsp = requiredCsp("document");
+const decoderWorkerCsp = requiredCsp("decoder-worker");
+const serviceWorkerCsp = requiredCsp("service-worker");
 const headers = `/*
   ! NEL
   ! Report-To
@@ -203,12 +196,12 @@ const headers = `/*
   Cache-Control: no-cache, must-revalidate
 
 /decoder-worker.js
-  Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'
+  Content-Security-Policy: ${decoderWorkerCsp}
   Cache-Control: no-cache, must-revalidate
   Content-Type: text/javascript; charset=utf-8
 
 /sw.js
-  Content-Security-Policy: default-src 'none'; script-src 'self'; connect-src 'self'
+  Content-Security-Policy: ${serviceWorkerCsp}
   Cache-Control: no-cache, must-revalidate
   Content-Type: text/javascript; charset=utf-8
 

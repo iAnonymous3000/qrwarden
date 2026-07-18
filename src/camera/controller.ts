@@ -522,11 +522,7 @@ export class CameraController<Result> {
         USER_MEDIA_TIMEOUT_MS,
         startupAbort.signal,
       );
-      if (
-        epoch !== this.#epoch ||
-        this.#suspended ||
-        document.visibilityState !== "visible"
-      ) {
+      if (this.#isStale(epoch) || document.visibilityState !== "visible") {
         throw new DOMException("Stale camera start", "AbortError");
       }
 
@@ -542,12 +538,7 @@ export class CameraController<Result> {
 
       await this.#video.play();
       await waitForMetadata(this.#video, startupAbort.signal);
-      if (
-        startupAbort.signal.aborted ||
-        epoch !== this.#epoch ||
-        this.#stream !== stream ||
-        this.#suspended
-      ) {
+      if (startupAbort.signal.aborted || this.#isStale(epoch, stream)) {
         throw new DOMException("Stale camera playback", "AbortError");
       }
       // createImageBitmap has no abort support, so bound the wait; a stalled
@@ -558,16 +549,11 @@ export class CameraController<Result> {
         PROBE_TIMEOUT_MS,
         startupAbort.signal,
       );
-      if (
-        startupAbort.signal.aborted ||
-        epoch !== this.#epoch ||
-        this.#stream !== stream ||
-        this.#suspended
-      ) {
+      if (startupAbort.signal.aborted || this.#isStale(epoch, stream)) {
         throw new DOMException("Stale camera probe", "AbortError");
       }
 
-      if (epoch !== this.#epoch || this.#stream !== stream || this.#suspended) {
+      if (this.#isStale(epoch, stream)) {
         throw new DOMException("Stale camera publication", "AbortError");
       }
       track.addEventListener(
@@ -582,13 +568,13 @@ export class CameraController<Result> {
         { once: true },
       );
       this.#publishCapabilities(track);
-      if (epoch !== this.#epoch || this.#stream !== stream || this.#suspended) {
+      if (this.#isStale(epoch, stream)) {
         throw new DOMException("Stale camera listener", "AbortError");
       }
       // Hide choices from the previous stream until fresh enumeration completes,
       // while synchronously publishing which camera is actually active.
       this.#onDevices(EMPTY_DEVICES, this.#activeDeviceId);
-      if (epoch !== this.#epoch || this.#stream !== stream || this.#suspended) {
+      if (this.#isStale(epoch, stream)) {
         throw new DOMException("Stale camera device publication", "AbortError");
       }
       this.#installDeviceChange();
@@ -621,6 +607,14 @@ export class CameraController<Result> {
     bitmap.close();
     canvas.width = 0;
     canvas.height = 0;
+  }
+
+  #isStale(epoch: number, stream?: MediaStream): boolean {
+    return (
+      epoch !== this.#epoch ||
+      this.#suspended ||
+      (stream !== undefined && this.#stream !== stream)
+    );
   }
 
   #publishCapabilities(track: MediaStreamTrack): void {
@@ -658,7 +652,7 @@ export class CameraController<Result> {
     const stream = this.#stream;
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      if (epoch !== this.#epoch || stream === null || this.#stream !== stream || this.#suspended) {
+      if (stream === null || this.#isStale(epoch, stream)) {
         return;
       }
       const seen = new Set<string>();
@@ -675,7 +669,7 @@ export class CameraController<Result> {
       });
       this.#onDevices(Object.freeze(cameras), this.#activeDeviceId);
     } catch {
-      if (epoch === this.#epoch && stream !== null && this.#stream === stream && !this.#suspended) {
+      if (stream !== null && !this.#isStale(epoch, stream)) {
         this.#onDevices(EMPTY_DEVICES, this.#activeDeviceId);
       }
     }

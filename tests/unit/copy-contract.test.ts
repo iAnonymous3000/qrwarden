@@ -14,10 +14,10 @@ const SOURCE_SHA256: Readonly<Record<string, string>> = {
   "locale.ts": "25d5b29e629a58c0fe772b5ff97830fd68f0064b2fbeb79b0326ff170539055e",
   "evidence.ts": "1307803b3c27a93131567b6a0b2efca539d034c1438920979935927895ca9ce0",
   "locales/en.ts": "ec0ceb3b5868599452eae1eecc6f23a78c43de2cd82f7bf90773ca27c834f15b",
-  "locales/es.ts": "c17c9e9b05902814837ce97643986efc1c9a1ab36085cb7ad094e893fac3b8eb",
+  "locales/es.ts": "d720fd33671ccfbf047aed57525edae0a31b192e2ea4ca09db9da0bff1c6a54f",
 };
 const RUNTIME_CONTRACT_SHA256 =
-  "255285100f0594c53fdb4d833b2b588adc7d079203bc3c5305988f3be902a866";
+  "80fd4a9c9b6247499e79744f8cfd71e2856e8bd187ea9ff4b0215a5cbbedd4e3";
 const COPY_KEY_COUNT = 235;
 
 function sha256(value: string | Uint8Array): string {
@@ -88,6 +88,9 @@ describe("reviewed copy contract", () => {
     expect(EN_COPY.reviewBody(2)).toContain("2 details to review");
     expect(ES_COPY.reviewBody(1)).toContain("1 detalle");
     expect(ES_COPY.reviewBody(2)).toContain("2 detalles");
+    expect(ES_COPY.omittedFromDisplay(1)).toContain("1 omitido de la vista");
+    expect(ES_COPY.omittedFromDisplay(2)).toContain("2 omitidos de la vista");
+    expect(ES_COPY.omittedFromDisplay(1, 12)).toContain("1 omitido de la vista");
   });
 
   it("resolves supported locales and defaults to English", () => {

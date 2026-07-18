@@ -246,6 +246,7 @@ export function reportAsText(input: ReportTextInput): string {
   lines.push(`${COPY.contentsHeading}:`);
   for (const field of report.displayFields) {
     const value = reportFieldValue(report, field);
+    const displayedValue = translateFieldValue(field).text;
     lines.push(`- ${translateFieldLabel(field.label).text}: ${value}`);
     if (
       !isUrlNamesField(report, field) &&
@@ -256,7 +257,15 @@ export function reportAsText(input: ReportTextInput): string {
       // report must disclose it too rather than read as complete evidence.
       lines.push(`  ${COPY.omittedFromDisplay(field.omittedCount, field.count)}`);
     }
-    if (field.truncated && value !== COPY.reportHiddenValue) {
+    // `truncated` describes the bounded on-screen field. A copied report may
+    // instead contain a complete analyzer-owned replacement or reconstructed
+    // URL summary, so attach this note only when that bounded display value is
+    // the value actually exported.
+    if (
+      field.truncated &&
+      value !== COPY.reportHiddenValue &&
+      value === displayedValue
+    ) {
       lines.push(`  ${COPY.reportTruncatedNote}`);
     }
   }

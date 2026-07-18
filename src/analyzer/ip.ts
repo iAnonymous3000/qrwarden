@@ -123,6 +123,8 @@ const IPV6_RANGES = IANA_SPECIAL_PURPOSE_SNAPSHOT.ipv6
   }))
   .sort((left, right) => right.bits - left.bits);
 
+const NAT64_WELL_KNOWN_PREFIX = parsePinnedIpv6("64:ff9b::");
+
 function classifyIpv4(value: number): IpClassification {
   const match = IPV4_RANGES.find((range) => matches(BigInt(value), range.prefix, range.bits, 32));
   return {
@@ -152,6 +154,25 @@ export function classifyIp(hostname: string): IpClassification | null {
       ...(mapped.category === undefined
         ? {}
         : { category: `IPv4-mapped: ${mapped.category}` }),
+      mappedIpv4: mapped,
+    };
+  }
+
+  // RFC 6052's well-known /96 prefix carries an IPv4 address in the low
+  // 32 bits. Preserve the IPv6 registry classification for ordinary public
+  // destinations, but let a non-global embedded IPv4 address make the
+  // translated destination non-global as well.
+  if (matches(v6, NAT64_WELL_KNOWN_PREFIX, 96, 128)) {
+    const mapped = classifyIpv4(Number(v6 & 0xffff_ffffn));
+    return {
+      version: 6,
+      canonical: unbracketed,
+      special: true,
+      globallyReachable: mapped.globallyReachable,
+      category:
+        mapped.category === undefined
+          ? "IPv4-IPv6 Translat."
+          : `NAT64: ${mapped.category}`,
       mappedIpv4: mapped,
     };
   }

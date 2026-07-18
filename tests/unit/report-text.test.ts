@@ -392,7 +392,7 @@ describe("report text rendering", () => {
     expect(binary).toContain(`- Hexadecimal preview: ${COPY.reportHiddenValue}`);
   });
 
-  it("marks truncated values with the localized truncation note", () => {
+  it("does not mark a complete redacted URL summary as truncated", () => {
     const report = analyzeText(`https://example.com/${"a".repeat(3000)}`);
     expect(report.displayFields.some((field) => field.truncated)).toBe(true);
     const text = reportAsText({
@@ -400,7 +400,36 @@ describe("report text rendering", () => {
       kindLabel: "Web link",
       statusHeading: COPY.noReviewHeading,
     });
+    expect(text).not.toContain(COPY.reportTruncatedNote);
+    expect(text).toContain(COPY.reportPathSegmentsHidden(1));
+  });
+
+  it("marks a bounded display value when that exact value is exported", () => {
+    const fields = new ReportFields();
+    fields.add("bounded", "Bounded", "a".repeat(ANALYZER_LIMITS.fieldScalars + 1), {
+      reportPolicy: "safe",
+    });
+    const text = reportAsText({
+      report: createReport({ kind: "text", fields: fields.value }),
+      kindLabel: "Text",
+      statusHeading: COPY.inspectOnlyHeading,
+    });
     expect(text).toContain(`  ${COPY.reportTruncatedNote}`);
+  });
+
+  it("does not transfer display truncation to a complete report replacement", () => {
+    const fields = new ReportFields();
+    fields.add("bounded", "Bounded", "a".repeat(ANALYZER_LIMITS.fieldScalars + 1), {
+      reportPolicy: "safe",
+      reportValue: "Complete structural summary",
+    });
+    const text = reportAsText({
+      report: createReport({ kind: "text", fields: fields.value }),
+      kindLabel: "Text",
+      statusHeading: COPY.inspectOnlyHeading,
+    });
+    expect(text).toContain("- Bounded: Complete structural summary");
+    expect(text).not.toContain(COPY.reportTruncatedNote);
   });
 
   it("does not disclose truncation metadata for a hidden field", () => {
