@@ -80,6 +80,8 @@ test("renders the Spanish locale end to end at narrow mobile width", async ({ pa
   // English for now.
   await page.getByRole("button", { name: ES_COPY.navAbout }).click();
   await expect(page.getByText(ES_COPY.aboutEnglishEvidenceNote)).toBeVisible();
+  await expect(page.locator(".theme-toggle-label")).toBeHidden();
+  await expect(page.locator(".theme-toggle-icon")).toBeVisible();
   const installHeading = page.locator(".install-card h2");
   await expect(installHeading).toBeVisible();
   expect([

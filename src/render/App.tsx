@@ -813,7 +813,21 @@ export function App(props: AppProps) {
   }, [imageController, work]);
 
   useEffect(() => {
-    if (!canConsumeShare(locked, view.kind, document.visibilityState)) return;
+    // Lifecycle listeners can synchronously begin a release re-gate before
+    // Preact has committed the matching `locked` state. Consult the
+    // authoritative ref at effect time so a just-visible share cannot be
+    // removed from the in-memory queue, handed to the decoder, and then lost
+    // when that same re-gate cancels active work. The state dependency below
+    // still re-runs this effect once verification unlocks the document.
+    if (
+      !canConsumeShare(
+        lockedRef.current,
+        view.kind,
+        document.visibilityState,
+      )
+    ) {
+      return;
+    }
     const [entry, ...rest] = pendingShareRef.current;
     if (entry === undefined) return;
     pendingShareRef.current = rest;

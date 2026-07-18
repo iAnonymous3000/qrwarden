@@ -218,6 +218,31 @@ describe("service-worker release gate races", () => {
     });
   });
 
+  it("does not unlock between an in-flight gate and its lifecycle replay", async () => {
+    vi.useFakeTimers();
+    const worker = new FakeWorker(readyState());
+    worker.responseDelayMs = 1_000;
+    const harness = installHarness(worker);
+    const locks: boolean[] = [];
+    const client = createClient({
+      onLockChange: (locked) => locks.push(locked),
+    });
+
+    const firstGate = client.gate();
+    harness.windowHandlers.get("pageshow")?.({ persisted: true });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(firstGate).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "ready",
+    });
+    expect(harness.serviceWorkers.getRegistration).toHaveBeenCalledTimes(2);
+    expect(locks).not.toContain(false);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() => expect(locks.at(-1)).toBe(false));
+  });
+
   it("keeps controls usable when registration lookup is blocked", async () => {
     const harness = installHarness(null);
     harness.serviceWorkers.getRegistration.mockRejectedValueOnce(

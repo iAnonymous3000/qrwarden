@@ -951,7 +951,14 @@ export class ServiceWorkerClient {
   ): ReleaseGateResult {
     const effectiveControlsEnabled =
       controlsEnabled && this.#lease === null && !this.#reloadStarted;
-    this.#options.onLockChange(!effectiveControlsEnabled);
+    // A lifecycle event that arrives during this gate requests one fresh pass
+    // over worker state. Do not publish a transient unlock between those two
+    // passes: App could otherwise consume in-memory work and have the replay's
+    // immediate lock cancel it. Preserve the effective result for callers and
+    // terminal latching; only the UI publication waits for the replay.
+    const publishedControlsEnabled =
+      effectiveControlsEnabled && !this.#gateReplayRequested;
+    this.#options.onLockChange(!publishedControlsEnabled);
     this.#setState(offlineState);
     return { controlsEnabled: effectiveControlsEnabled, offlineState };
   }

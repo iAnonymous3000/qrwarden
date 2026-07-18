@@ -1138,9 +1138,17 @@ test("keeps scanner controls usable when service-worker storage is blocked", asy
 });
 
 test("locks scanning and offers recovery when decoder worker construction is blocked", async ({
+  context,
   page,
 }) => {
-  await page.addInitScript(() => {
+  test.setTimeout(90_000);
+  // Establish a controlled release before blocking Worker construction. A
+  // first-install page is allowed to degrade to online-only mode while its
+  // worker activates, which would test that fallback rather than the decoder
+  // smoke gate this case is meant to exercise.
+  await gotoControlled(page);
+  const blockedPage = await context.newPage();
+  await blockedPage.addInitScript(() => {
     Object.defineProperty(globalThis, "Worker", {
       configurable: true,
       value: function BlockedWorker(): never {
@@ -1149,14 +1157,18 @@ test("locks scanning and offers recovery when decoder worker construction is blo
     });
   });
 
-  await page.goto("/");
+  await blockedPage.goto("/");
 
   await expect(
-    page.getByText(COPY.updateFailedHeading, { exact: true }),
+    blockedPage.getByText(COPY.updateFailedHeading, { exact: true }),
   ).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole("button", { name: "Scan with camera" })).toBeDisabled();
-  await expect(page.locator('input[type="file"]')).toBeDisabled();
-  await expect(page.getByRole("button", { name: COPY.reloadApp })).toBeVisible();
+  await expect(
+    blockedPage.getByRole("button", { name: "Scan with camera" }),
+  ).toBeDisabled();
+  await expect(blockedPage.locator('input[type="file"]')).toBeDisabled();
+  await expect(
+    blockedPage.getByRole("button", { name: COPY.reloadApp }),
+  ).toBeVisible();
 });
 
 test("offers reload when a controlled release cannot be verified", async ({ page }) => {

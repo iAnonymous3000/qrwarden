@@ -346,6 +346,13 @@ footer p { margin: 0; }
 }
 
 @media (max-width: 319px) {
+  /* A classic vertical scrollbar leaves about 262px of content width in the
+     280px reflow target. Keep the accessible icon-only toggle here so the
+     Spanish information navigation never extends beneath that scrollbar. */
+  .theme-toggle { width: 44px; min-width: 44px; justify-content: center; padding: .4rem; }
+  .theme-toggle-label { display: none; }
+  .theme-toggle-icon { display: inline; }
+  .theme-toggle-track { display: none; }
   .selection-option { grid-template-columns: auto minmax(0, 1fr) auto; gap: .55rem; padding: .75rem; }
   .selection-list .number-badge { grid-row: 1 / span 2; }
   .selection-list .kind-chip { grid-column: 2; grid-row: 2; justify-self: start; }
