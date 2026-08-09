@@ -43,6 +43,10 @@ The root `allowScripts` policy narrowly approves only the exact versions of the 
 
 Some exact npm artifacts, especially platform-native optional packages, declare a valid SPDX license but publish no package-root `LICENSE*`, `COPYING*`, or `NOTICE*` file. `release/license-overrides.json` enumerates those exact purls and uses empty selected-text lists only for that verified absence. The release generator still rejects an unlisted omission, a stale non-optional override, a checker/package identity mismatch, and any incompatible or unreviewed SPDX expression; optional platform overrides must resolve to an exact package-lock entry.
 
+## Browser-test runtime
+
+`release/playwright-runtime.json` is the reviewed CI browser contract. It binds the exact `@playwright/test`, `playwright`, and `playwright-core` versions to the Playwright Noble image's manifest digest, `linux/amd64`, `/ms-playwright`, and the Chromium, headless-shell, Firefox, WebKit, and FFmpeg revisions. CI rejects stale or missing installed revision directories before running browser tests and does not download browsers or OS packages at job runtime. A Playwright update must move the package and lockfile pins, runtime manifest, matching image tag and digest, browser revisions, workflow projection, and full browser evidence together in one reviewed change.
+
 ## Data provenance
 
 | Data | License or terms | Required source and scope | Current implementation state |

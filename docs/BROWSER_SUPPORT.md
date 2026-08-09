@@ -51,3 +51,9 @@ Windows 11, macOS (current and previous), Android (current and previous),
 iOS (current and previous), iPadOS (current and previous), and Ubuntu LTS,
 including tab and installed modes where listed. Exact build numbers are
 recorded for every release.
+
+Automated CI separately exercises the Chromium, Firefox, and WebKit revisions
+locked in `release/playwright-runtime.json` inside its digest-pinned
+`linux/amd64` Playwright image. The Android and iOS Playwright projects are
+desktop-engine emulations for responsive and interaction regressions; they do
+not replace the physical-platform release matrix above.

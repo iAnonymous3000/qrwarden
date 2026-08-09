@@ -755,6 +755,91 @@ describe("service-worker release gate races", () => {
     expect(worker.queryCount).toBe(2);
   });
 
+  it("resumes an existing installing first worker without re-registering", async () => {
+    const installing = new FakeWorker(null);
+    installing.state = "installing";
+    const harness = installHarness(null);
+    harness.registration.installing = installing;
+    const states: OfflineState[] = [];
+    const client = createClient({ onState: (state) => states.push(state) });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "preparing",
+    });
+    expect(harness.serviceWorkers.register).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(installing.stateListenerAdds).toBe(1));
+
+    installing.response = readyState();
+    harness.registration.installing = null;
+    harness.registration.active = installing;
+    harness.serviceWorkers.controller = installing;
+    installing.transition("activated");
+
+    await vi.waitFor(() => expect(states.at(-1)).toBe("ready"));
+  });
+
+  it("resumes an existing waiting first worker without re-registering", async () => {
+    const waiting = new FakeWorker(readyState());
+    waiting.state = "installed";
+    const harness = installHarness(null);
+    harness.registration.waiting = waiting;
+    const reload = vi.fn();
+    const client = createClient({ reload });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "preparing",
+    });
+    expect(harness.serviceWorkers.register).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(waiting.stateListenerAdds).toBe(1));
+    expect(reload).not.toHaveBeenCalled();
+
+    harness.registration.waiting = null;
+    harness.registration.active = waiting;
+    waiting.transition("activated");
+
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(harness.storage.get("qrwarden-update-check")).toBe(RELEASE);
+  });
+
+  it("resumes an existing activating first worker without re-registering", async () => {
+    const activating = new FakeWorker(readyState());
+    activating.state = "activating";
+    const harness = installHarness(null);
+    harness.registration.active = activating;
+    const reload = vi.fn();
+    const client = createClient({ reload });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "preparing",
+    });
+    expect(harness.serviceWorkers.register).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(activating.stateListenerAdds).toBe(1));
+    expect(reload).not.toHaveBeenCalled();
+
+    activating.transition("activated");
+
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
+  });
+
+  it("keeps an existing active registration with a waiting worker on the update path", async () => {
+    const active = new FakeWorker(readyState());
+    const waiting = new FakeWorker(waitingState());
+    const harness = installHarness(active);
+    harness.registration.waiting = waiting;
+    const client = createClient();
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "update-ready",
+    });
+    expect(harness.serviceWorkers.register).not.toHaveBeenCalled();
+    expect(active.stateListenerAdds).toBe(0);
+    expect(waiting.stateListenerAdds).toBe(0);
+  });
+
   it("publishes first-install readiness after the non-blocking preparing result", async () => {
     const installing = new FakeWorker(null);
     installing.state = "installing";
@@ -777,6 +862,111 @@ describe("service-worker release gate races", () => {
     harness.serviceWorkers.controller = active;
     installing.transition("activated");
     await vi.waitFor(() => expect(states).toContain("ready"));
+  });
+
+  it("waits for an installed first worker to activate before publishing readiness", async () => {
+    const installing = new FakeWorker(null);
+    installing.state = "installing";
+    const harness = installHarness(null);
+    harness.serviceWorkers.getRegistration.mockResolvedValueOnce(undefined);
+    harness.registration.installing = installing;
+    const states: OfflineState[] = [];
+    const reload = vi.fn();
+    const client = createClient({
+      reload,
+      onState: (state) => states.push(state),
+    });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "preparing",
+    });
+    await vi.waitFor(() => expect(installing.stateListenerAdds).toBe(1));
+
+    harness.registration.installing = null;
+    harness.registration.waiting = installing;
+    installing.transition("installed");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(states.at(-1)).toBe("preparing");
+    expect(reload).not.toHaveBeenCalled();
+
+    installing.response = readyState();
+    harness.registration.waiting = null;
+    harness.registration.active = installing;
+    harness.serviceWorkers.controller = installing;
+    installing.transition("activated");
+
+    await vi.waitFor(() => expect(states.at(-1)).toBe("ready"));
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("reloads after a waiting first worker activates without claiming the page", async () => {
+    const waiting = new FakeWorker(readyState());
+    waiting.state = "installed";
+    const harness = installHarness(null);
+    harness.serviceWorkers.getRegistration.mockResolvedValueOnce(undefined);
+    harness.registration.waiting = waiting;
+    const reload = vi.fn();
+    const client = createClient({ reload });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "preparing",
+    });
+    await vi.waitFor(() => expect(waiting.stateListenerAdds).toBe(1));
+    expect(reload).not.toHaveBeenCalled();
+
+    harness.registration.waiting = null;
+    harness.registration.active = waiting;
+    waiting.transition("activated");
+
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(harness.storage.get("qrwarden-update-check")).toBe(RELEASE);
+  });
+
+  it("waits for an activating first worker before using the reload fallback", async () => {
+    const activating = new FakeWorker(readyState());
+    activating.state = "activating";
+    const harness = installHarness(null);
+    harness.serviceWorkers.getRegistration.mockResolvedValueOnce(undefined);
+    harness.serviceWorkers.register.mockImplementationOnce(() => {
+      harness.registration.active = activating;
+      return Promise.resolve(harness.registration);
+    });
+    const reload = vi.fn();
+    const client = createClient({ reload });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "preparing",
+    });
+    await vi.waitFor(() => expect(activating.stateListenerAdds).toBe(1));
+    expect(reload).not.toHaveBeenCalled();
+
+    activating.transition("activated");
+
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
+  });
+
+  it("keeps the immediate fallback for a first registration already activated", async () => {
+    const active = new FakeWorker(readyState());
+    const harness = installHarness(null);
+    harness.serviceWorkers.getRegistration.mockResolvedValueOnce(undefined);
+    harness.serviceWorkers.register.mockImplementationOnce(() => {
+      harness.registration.active = active;
+      return Promise.resolve(harness.registration);
+    });
+    const reload = vi.fn();
+    const client = createClient({ reload });
+
+    await expect(client.gate()).resolves.toEqual({
+      controlsEnabled: true,
+      offlineState: "preparing",
+    });
+
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(active.stateListenerAdds).toBe(0);
   });
 
   it("defers the uncontrolled first-install reload until the runtime is idle", async () => {

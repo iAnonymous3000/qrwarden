@@ -16,7 +16,9 @@ npm run build
 
 The committed `.npmrc` defaults to `ignore-scripts=true` and `strict-allow-scripts=true`, so an unqualified install skips lifecycle scripts and any deliberate scripts-on override remains fail-closed. Release builds retain the explicit strict flag for review visibility, use npm 11.16.0's native exact `allowScripts` policy, and exercise approved, denied, and unreviewed synthetic hooks before installing the release graph.
 
-Playwright browser executables downloaded by the browser-test job are test-runner inputs, not release inputs: they are never copied into `dist/`, the release archives, the SBOM, or the attested candidate. The exact `@playwright/test` pin selects the browser revisions, but those fetched executables remain outside the byte-reproducible release boundary.
+The CI browser job runs on `linux/amd64` in the exact Playwright v1.61.1 Noble image pinned to manifest digest `sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48`; a repository contract checks that image reference and platform, the installed package graph and browser registry, and the expected browser artifact directories before tests start. This pins the browser-test userspace input, not the runner host, kernel, hypervisor, or hardware, and therefore is browser evidence rather than whole-host bit reproducibility. Local developers may continue to install the exact package-selected revisions with `npx playwright install chromium firefox webkit`.
+
+The image and its Playwright browser executables are test-runner inputs, not release inputs: they are never copied into `dist/`, the release archives, the SBOM, or the attested seven-file candidate. They remain outside the byte-reproducible release boundary.
 
 Builds contain no current time, random identifier, locale ordering, host/user/runner name, temporary or absolute path, production source map, or environment noise. Content hashes and chunk order are deterministic. Generated SBOM, license report, changelog, archives, and manifests follow the normalized formats in `RELEASE.md`.
 

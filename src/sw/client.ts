@@ -306,6 +306,14 @@ export class ServiceWorkerClient {
         );
       } else {
         registration = existing;
+        // getRegistration() can expose a first install while its worker is
+        // still installing, waiting, or activating. With no activated worker
+        // controlling the page, resume that lifecycle instead of treating it
+        // as an update or registering the same script again.
+        const existingActive = existing.active;
+        this.#firstInstall =
+          navigator.serviceWorker.controller === null &&
+          (existingActive === null || existingActive.state === "activating");
       }
     } catch (error) {
       this.#registration = null;
@@ -558,11 +566,20 @@ export class ServiceWorkerClient {
     registration: ServiceWorkerRegistration,
   ): Promise<void> {
     try {
-      const installing = registration.installing;
-      if (installing !== null) {
+      // During a first install, the worker can leave `installing` and occupy
+      // `waiting` before the registration exposes it as `active`. Reaching
+      // `installed` is therefore not completion: keep following that worker
+      // until activation, while preserving the existing already-activated path.
+      const activeWorker = registration.active;
+      const firstInstallWorker = activeWorker?.state === "activating"
+        ? activeWorker
+        : activeWorker === null
+          ? registration.installing ?? registration.waiting
+          : null;
+      if (firstInstallWorker !== null) {
         const state = await waitForState(
-          installing,
-          ["activated", "redundant", "installed"],
+          firstInstallWorker,
+          ["activated", "redundant"],
           30_000,
         );
         if (state === "redundant") {

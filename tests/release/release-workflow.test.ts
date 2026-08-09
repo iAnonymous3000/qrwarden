@@ -14,6 +14,9 @@ import { verifyLocalReleaseCommit } from "../../scripts/release/verify-local-rel
 import { assertGitHubRepository } from "../../scripts/release/verify-release-context.mjs";
 import {
   ACTIONS,
+  GH_CLI_SHA256,
+  GH_CLI_VERSION,
+  PLAYWRIGHT_IMAGE,
   RELEASE_IMAGE,
   validateActionPins,
   validateCiWorkflow,
@@ -105,9 +108,27 @@ describe("release workflow policy", () => {
     // suite a release is gated on could vanish silently.
     const ci = await readFile(path.join(root, ".github/workflows/ci.yml"), "utf8");
     expect(validateCiWorkflow(ci)).toEqual([]);
+    expect(ci).toContain(`image: ${PLAYWRIGHT_IMAGE}`);
     expect(validateCiWorkflow(ci.replace(/ {2}browser:[\s\S]*/u, ""))).toContain(
       "CI must run the production-serving browser suite",
     );
+    expect(
+      validateCiWorkflow(ci.replace(PLAYWRIGHT_IMAGE, PLAYWRIGHT_IMAGE.replace(/[0-9a-f]$/u, "0"))),
+    ).toContain("the browser job must use the reviewed digest-pinned Playwright image exactly once");
+    expect(
+      validateCiWorkflow(
+        ci.replace(
+          "npm run validate:playwright-runtime -- --installed-root \"$PLAYWRIGHT_BROWSERS_PATH\"",
+          "npx playwright install --with-deps chromium firefox webkit",
+        ),
+      ),
+    ).toEqual(expect.arrayContaining([
+      "CI must validate the installed Playwright runtime before the browser suite",
+      "CI must not download Playwright browsers or OS dependencies at runtime",
+    ]));
+    expect(
+      validateCiWorkflow(ci.replace("if: ${{ !cancelled() }}", "if: failure()")),
+    ).toContain("CI must retain failed first-attempt browser evidence even when a retry passes");
     expect(
       validateCiWorkflow(ci.replace("npm audit --omit=dev --audit-level=high", "true")),
     ).toContain(
@@ -147,6 +168,71 @@ describe("release workflow policy", () => {
     expect(validateReleaseWorkflow(release.replace(/\n\s+sbom-path:.*\n/u, "\n"))).toContain(
       "CycloneDX SBOM attestation is missing",
     );
+    expect(release).toContain(`QRWARDEN_GH_VERSION: ${GH_CLI_VERSION}`);
+    expect(release).toContain(`QRWARDEN_GH_SHA256: ${GH_CLI_SHA256}`);
+    expect(
+      validateReleaseWorkflow(
+        release.replace(
+          "scripts/release/verify-attestations.mjs",
+          "scripts/release/skip-attestation-readback.mjs",
+        ),
+      ),
+    ).toContain("release attestation readback verifier is missing");
+    const verifierStepStart = release.indexOf(
+      "      - name: Require both replicas' provenance and CycloneDX attestations",
+    );
+    const verifierStepEnd = release.indexOf("\n  finalize:", verifierStepStart);
+    expect(verifierStepStart).toBeGreaterThanOrEqual(0);
+    expect(verifierStepEnd).toBeGreaterThan(verifierStepStart);
+    const disabledVerifier =
+      `${release.slice(0, verifierStepStart)}` +
+      "      - name: Require both replicas' provenance and CycloneDX attestations\n" +
+      "        run: true # scripts/release/verify-attestations.mjs\n" +
+      "        # --version '${{ inputs.release_version }}'\n" +
+      "        # --commit '${{ inputs.release_commit }}'\n" +
+      "        # --run-id '${{ github.run_id }}'\n" +
+      "        # --run-attempt '${{ github.run_attempt }}'\n" +
+      release.slice(verifierStepEnd);
+    expect(disabledVerifier).not.toBe(release);
+    expect(validateReleaseWorkflow(disabledVerifier)).toContain(
+      "release attestation readback must execute the exact verifier command",
+    );
+    expect(
+      validateReleaseWorkflow(
+        release.replace(
+          "          set -euo pipefail\n          node scripts/release/verify-attestations.mjs \\",
+          "          set -euo pipefail\n          exit 0\n          node scripts/release/verify-attestations.mjs \\",
+        ),
+      ),
+    ).toContain("release attestation readback must execute the exact verifier command");
+    expect(
+      validateReleaseWorkflow(
+        release.replace("needs: [build, verify-attestations]", "needs: build"),
+      ),
+    ).toContain("candidate finalization must depend on successful attestation readback");
+    expect(
+      validateReleaseWorkflow(
+        release.replace(GH_CLI_SHA256, "0".repeat(64)),
+      ),
+    ).toContain("attestation readback must checksum the reviewed GitHub CLI archive");
+    expect(
+      validateReleaseWorkflow(
+        release.replace("name: unsigned-release-first", "name: unsigned-release-other"),
+      ),
+    ).toContain("attestation readback and finalization must each download the first replica");
+    expect(
+      validateReleaseWorkflow(
+        release.replace("digest-mismatch: error", "digest-mismatch: warn"),
+      ),
+    ).toContain("every workflow artifact download must reject digest mismatch");
+    expect(
+      validateReleaseWorkflow(
+        release.replace(
+          "      - name: Require both replicas' provenance and CycloneDX attestations",
+          "      - name: Require both replicas' provenance and CycloneDX attestations\n        continue-on-error: true",
+        ),
+      ),
+    ).toContain("release gates must not be marked continue-on-error");
     expect(validateReleaseWorkflow(release.replace("path: candidates/second", "path: candidates/first"))).toContain(
       "second replica must download to an isolated directory",
     );

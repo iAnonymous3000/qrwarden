@@ -17,16 +17,17 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: true,
   // Every test starts from a fresh context and performs a real service-worker
-  // first install before its flow can begin, which can exceed the 30s default
-  // on 2-core CI runners and loaded development machines.
+  // first install before its flow can begin. Keep the outer test budget above
+  // the helper's bounded controller checks so those checks can fail with their
+  // own retained trace and diagnostic state instead of being killed first.
   //
-  // This must stay above the sum of gotoControlled's own budgets (a 75s
-  // control poll plus a 20s first-control check), or a test is killed here
-  // while its install is still legitimately progressing and the inner budgets
-  // never apply. At 60s that sum was already unreachable.
+  // This does not classify a long install as healthy: the helper's deadline is
+  // still a failure, and CI uploads the failed first attempt even if retrying
+  // with a fresh browser process recovers.
   timeout: 120_000,
-  // Linux Firefox can occasionally stall at the browser/context boundary. A
-  // single clean-context retry keeps CI sensitive to persistent regressions.
+  // A single clean-browser retry preserves the original failed attempt as
+  // evidence while distinguishing a transient process/context/service-worker
+  // state from a persistent regression.
   retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: "line",

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "packages": {
+    "@playwright/test": "1.61.1",
+    "playwright": "1.61.1",
+    "playwright-core": "1.61.1"
+  },
+  "container": {
+    "image": "mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48",
+    "platform": "linux/amd64",
+    "browsersPath": "/ms-playwright"
+  },
+  "artifacts": [
+    {
+      "name": "chromium",
+      "registryName": "chromium",
+      "revision": "1228"
+    },
+    {
+      "name": "chromium_headless_shell",
+      "registryName": "chromium-headless-shell",
+      "revision": "1228"
+    },
+    {
+      "name": "firefox",
+      "registryName": "firefox",
+      "revision": "1532"
+    },
+    {
+      "name": "webkit",
+      "registryName": "webkit",
+      "revision": "2311"
+    },
+    {
+      "name": "ffmpeg",
+      "registryName": "ffmpeg",
+      "revision": "1011"
+    }
+  ]
+}

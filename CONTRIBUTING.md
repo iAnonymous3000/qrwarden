@@ -58,7 +58,7 @@ npx playwright install chromium firefox webkit   # one-time browser download
 npm run test:browser
 ```
 
-`npm run test:browser` fails until the Playwright browsers are installed; the `npx playwright install` step is required once per machine (and after Playwright version bumps).
+`npm run test:browser` fails until the Playwright browsers are installed; the `npx playwright install` step is required once per machine (and after Playwright version bumps). CI instead runs these tests in the exact Playwright v1.61.1 Noble `linux/amd64` image pinned by digest and validates its expected installed revisions before testing. The local downloads and the CI image are test inputs, not shipped release bytes.
 
 `scripts/lint-source.mjs` enforces project-specific bans in `src/` and `decoder-worker/`: `innerHTML`-style sinks, inline `style` attributes and Preact style props, console output, `window.open`, dynamic `href`/`src` attribute bindings, and `javascript:` URLs. These are not style preferences; do not add suppressions.
 

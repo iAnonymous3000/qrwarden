@@ -36,7 +36,7 @@ The current source implements the local inspection pipeline, report and action b
 
 The first signed public release is still blocked on real operator-controlled facts and external evidence: name/domain clearance, canonical domain and DNS release-key owner, two maintainer identities, an offline Minisign key, final privacy/operator details, protected release settings, a dated version changelog, independent review, physical-device evidence, the signing ceremony, and a successful deployment/rollback rehearsal. Placeholder values in `release/constants.json` are deliberate development sentinels; they keep ordinary development builds possible, while the release gate rejects them.
 
-Release automation currently stops at an approved unsigned candidate. Offline signing, independent signed-set and attestation verification, draft upload/readback, deployment, and publication are operator-run gates. An automated signed-set finalizer and the deterministic key-transition/recovery statement path are not implemented yet; [RELEASE.md](RELEASE.md) and [SIGNING.md](SIGNING.md) state the current boundary.
+Release automation currently stops at an approved unsigned candidate. Before approval, it reads back and fail-closed verifies both SLSA provenance and CycloneDX attestations for the exact seven-file candidate, requiring at least two distinct matching bundles for each predicate. Offline signing, independent signed-set verification, draft upload/readback, deployment, and publication remain operator-run gates. An automated signed-set finalizer and the deterministic key-transition/recovery statement path are not implemented yet; [RELEASE.md](RELEASE.md) and [SIGNING.md](SIGNING.md) state the current boundary.
 
 ## Quick start
 
@@ -75,7 +75,7 @@ npm run release:validate
 
 The development constants check intentionally accepts the committed sentinel values. The release constants check and `release:validate` reject every placeholder; the latter also requires a locally verifiable signed commit and the complete automated source, artifact, and browser gates.
 
-The production build verifies the reader WASM hash, emits fixed same-origin workers, verifies precache integrity and size, generates route-specific security headers, rejects source maps, and enforces a closed artifact contract. The dispatch-only release workflow adds two independent digest-pinned builds, normalized archives and manifests, an SBOM, a license report, attestations, and byte-for-byte candidate comparison. Deployment, verification, and rollback follow [RELEASE.md](RELEASE.md) and [docs/DEPLOY_CLOUDFLARE.md](docs/DEPLOY_CLOUDFLARE.md); artifact signing follows [SIGNING.md](SIGNING.md).
+The production build verifies the reader WASM hash, emits fixed same-origin workers, verifies precache integrity and size, generates route-specific security headers, rejects source maps, and enforces a closed artifact contract. The dispatch-only release workflow adds two independent digest-pinned builds, normalized archives and manifests, an SBOM, a license report, fail-closed attestation readback, and byte-for-byte candidate comparison. Deployment, verification, and rollback follow [RELEASE.md](RELEASE.md) and [docs/DEPLOY_CLOUDFLARE.md](docs/DEPLOY_CLOUDFLARE.md); artifact signing follows [SIGNING.md](SIGNING.md).
 
 ## Documentation
 
