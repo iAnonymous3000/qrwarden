@@ -1,6 +1,10 @@
 import { createHash, webcrypto } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const precacheInstall = vi.hoisted(() => ({
+  current: (): Promise<void> => Promise.resolve(),
+}));
+
 vi.mock("workbox-routing", () => ({ registerRoute: vi.fn() }));
 vi.mock("workbox-precaching", () => ({
   PrecacheController: class {
@@ -9,7 +13,7 @@ vi.mock("workbox-precaching", () => ({
       return url;
     }
     install(): Promise<void> {
-      return Promise.resolve();
+      return precacheInstall.current();
     }
   },
   PrecacheRoute: class {},
@@ -34,8 +38,16 @@ interface WorkerHarness {
     readonly keys: ReturnType<typeof vi.fn>;
     readonly match: ReturnType<typeof vi.fn>;
     readonly put: ReturnType<typeof vi.fn>;
+    readonly delete: ReturnType<typeof vi.fn>;
   };
   readonly cachesOpen: ReturnType<typeof vi.fn>;
+  readonly cachesDelete: ReturnType<typeof vi.fn>;
+  readonly claim: ReturnType<typeof vi.fn>;
+  readonly registration: {
+    active: unknown;
+    installing: unknown;
+    waiting: unknown;
+  };
   readonly skipWaiting: ReturnType<typeof vi.fn>;
 }
 
@@ -54,6 +66,7 @@ interface HarnessClient {
 async function loadWorker(
   keys: () => Promise<readonly Request[]>,
   extraClients: readonly HarnessClient[] = [],
+  match?: () => Promise<Response | undefined>,
 ): Promise<WorkerHarness> {
   vi.resetModules();
   const handlers = new Map<string, WorkerHandler>();
@@ -80,21 +93,25 @@ async function loadWorker(
   };
   const cache = {
     keys: vi.fn(keys),
-    match: vi.fn(() => Promise.resolve(new Response(SHELL, {
+    match: vi.fn(match ?? (() => Promise.resolve(new Response(SHELL, {
       status: 200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-    }))),
+    })))),
     put: vi.fn(() => Promise.resolve()),
+    delete: vi.fn(() => Promise.resolve(true)),
   };
+  const registration = { active: null, installing: null, waiting: null };
   const cachesOpen = vi.fn(() => Promise.resolve(cache));
+  const cachesDelete = vi.fn(() => Promise.resolve(true));
+  const claim = vi.fn(() => Promise.resolve());
   const skipWaiting = vi.fn(() => Promise.resolve());
   const workerGlobal = {
     __WB_MANIFEST: [{ url: "/", revision: REVISION, integrity: INTEGRITY }],
     location: { origin: "https://qrwarden.test" },
-    registration: { active: null, installing: null, waiting: null },
+    registration,
     clients: {
       matchAll: vi.fn(() => Promise.resolve([client, ...extraClients])),
-      claim: vi.fn(() => Promise.resolve()),
+      claim,
     },
     skipWaiting,
     addEventListener(type: string, handler: WorkerHandler): void {
@@ -114,7 +131,7 @@ async function loadWorker(
   vi.stubGlobal("caches", {
     open: cachesOpen,
     keys: vi.fn(() => Promise.resolve([])),
-    delete: vi.fn(() => Promise.resolve(true)),
+    delete: cachesDelete,
   });
   vi.stubGlobal("crypto", webcrypto);
 
@@ -125,6 +142,9 @@ async function loadWorker(
     clientMessages,
     cache,
     cachesOpen,
+    cachesDelete,
+    claim,
+    registration,
     skipWaiting,
   };
 }
@@ -143,14 +163,17 @@ function invokeWithLifetime(
 
 afterEach(() => {
   vi.useRealTimers();
+  precacheInstall.current = () => Promise.resolve();
 });
 
 describe("service-worker state contract", () => {
   it("replies immediately and runs one background verification for concurrent queries", async () => {
-    let resolveKeys!: (keys: readonly Request[]) => void;
+    let resolveMatch!: (response: Response | undefined) => void;
     const harness = await loadWorker(
+      () => Promise.resolve([]),
+      [],
       () => new Promise((resolve) => {
-        resolveKeys = resolve;
+        resolveMatch = resolve;
       }),
     );
     const message = harness.handlers.get("message");
@@ -177,9 +200,9 @@ describe("service-worker state contract", () => {
     }));
     await Promise.resolve();
     expect(harness.cachesOpen).toHaveBeenCalledOnce();
-    expect(harness.cache.keys).toHaveBeenCalledOnce();
+    expect(harness.cache.match).toHaveBeenCalledOnce();
 
-    resolveKeys([]);
+    resolveMatch(undefined);
     await Promise.all([...firstLifetime, ...secondLifetime]);
     expect(harness.clientMessages).toContainEqual({
       type: "CACHE_VERIFICATION_COMPLETE",
@@ -196,7 +219,7 @@ describe("service-worker state contract", () => {
       cacheVerification: "failed",
     }));
     expect(completedLifetime).toHaveLength(0);
-    expect(harness.cache.keys).toHaveBeenCalledOnce();
+    expect(harness.cachesOpen).toHaveBeenCalledOnce();
   });
 
   it("commits activation without waiting on a same-origin non-shell window", async () => {
@@ -303,5 +326,112 @@ describe("service-worker state contract", () => {
       cacheVerified: true,
       cacheVerification: "verified",
     }));
+  });
+
+  it("stays verified when a same-release sibling deployment's keys share the cache", async () => {
+    // A self-hosted rebuild without QRWARDEN_COMMIT reuses this release id
+    // and cache name, so its install writes foreign revision keys next to
+    // ours while this worker is still active. Those keys are unservable by
+    // this worker and must not fail its verification.
+    const harness = await loadWorker(() => Promise.resolve([
+      new Request("https://qrwarden.test/"),
+      new Request("https://qrwarden.test/?__WB_REVISION__=sibling"),
+      new Request("https://qrwarden.test/assets/app-sibling.js?__WB_REVISION__=f00d"),
+    ]));
+    const install = harness.handlers.get("install");
+    expect(install).toBeDefined();
+
+    await Promise.all(invokeWithLifetime(install!, {}));
+
+    const statePort = { postMessage: vi.fn() };
+    invokeWithLifetime(harness.handlers.get("message")!, {
+      data: { type: "QUERY_WORKER_STATE" },
+      ports: [statePort],
+    });
+    expect(statePort.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      cacheVerified: true,
+      cacheVerification: "verified",
+    }));
+    expect(harness.cache.delete).not.toHaveBeenCalled();
+    expect(harness.cachesDelete).not.toHaveBeenCalled();
+  });
+
+  it("never deletes the shared cache when precache install fails", async () => {
+    // An active sibling worker may still be serving from CURRENT_CACHE; a
+    // failed install must not turn into an outage for its open tabs. With
+    // every cached manifest entry still valid there is nothing to remove.
+    precacheInstall.current = () => Promise.reject(new Error("fetch failed"));
+    const harness = await loadWorker(() => Promise.resolve([
+      new Request("https://qrwarden.test/"),
+    ]));
+    const install = harness.handlers.get("install");
+    expect(install).toBeDefined();
+
+    const lifetime = invokeWithLifetime(install!, {});
+    await expect(Promise.all(lifetime)).rejects.toThrow("fetch failed");
+
+    expect(harness.cachesDelete).not.toHaveBeenCalled();
+    expect(harness.cache.delete).not.toHaveBeenCalled();
+  });
+
+  it("drops only its own invalid entries when install verification fails", async () => {
+    // A truncated or tampered cached response must be evicted so the retried
+    // install refetches it — without touching the rest of the shared cache.
+    const harness = await loadWorker(
+      () => Promise.resolve([new Request("https://qrwarden.test/")]),
+      [],
+      () => Promise.resolve(new Response("tampered bytes", {
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      })),
+    );
+    const install = harness.handlers.get("install");
+    expect(install).toBeDefined();
+
+    const lifetime = invokeWithLifetime(install!, {});
+    await expect(Promise.all(lifetime)).rejects.toThrow("Precache verification failed");
+
+    expect(harness.cache.delete).toHaveBeenCalledExactlyOnceWith("/");
+    expect(harness.cachesDelete).not.toHaveBeenCalled();
+  });
+
+  it("defers pruning while a sibling deployment is still installing", async () => {
+    // The installing sibling's freshly written entries are indistinguishable
+    // from a superseded build's leftovers; deleting them would fail its
+    // install for no reason.
+    const harness = await loadWorker(() => Promise.resolve([
+      new Request("https://qrwarden.test/"),
+      new Request("https://qrwarden.test/?__WB_REVISION__=sibling"),
+    ]));
+    harness.registration.installing = {};
+    const activate = harness.handlers.get("activate");
+    expect(activate).toBeDefined();
+
+    await Promise.all(invokeWithLifetime(activate!, {}));
+
+    expect(harness.cache.delete).not.toHaveBeenCalled();
+    expect(harness.claim).toHaveBeenCalledOnce();
+  });
+
+  it("prunes foreign cache keys at activation and still claims clients", async () => {
+    // Activation makes this worker the cache's sole owner: sibling leftovers
+    // are deleted here, where no other worker can still be serving them.
+    const foreignShell = new Request("https://qrwarden.test/?__WB_REVISION__=sibling");
+    const foreignAsset = new Request("https://qrwarden.test/assets/app-sibling.js?__WB_REVISION__=f00d");
+    const harness = await loadWorker(() => Promise.resolve([
+      new Request("https://qrwarden.test/"),
+      foreignShell,
+      foreignAsset,
+    ]));
+    const activate = harness.handlers.get("activate");
+    expect(activate).toBeDefined();
+
+    await Promise.all(invokeWithLifetime(activate!, {}));
+
+    expect(harness.cache.delete).toHaveBeenCalledTimes(2);
+    expect(harness.cache.delete).toHaveBeenCalledWith(foreignShell);
+    expect(harness.cache.delete).toHaveBeenCalledWith(foreignAsset);
+    expect(harness.cachesDelete).not.toHaveBeenCalled();
+    expect(harness.claim).toHaveBeenCalledOnce();
   });
 });

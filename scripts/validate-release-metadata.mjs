@@ -50,6 +50,8 @@ if (packageJson) {
     "zxing-wasm": "3.1.1"
   };
   const expectedDevDependencies = {
+    "@axe-core/playwright": "4.11.0",
+    "axe-core": "4.11.0",
     "@cyclonedx/cyclonedx-npm": "6.0.0",
     "@cyclonedx/cyclonedx-library": "10.1.0",
     "@playwright/test": "1.61.1",

@@ -8,7 +8,10 @@ export const ACTIONS = Object.freeze({
   attest: "actions/attest@a1948c3f048ba23858d222213b7c278aabede763",
   upload: "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
   download: "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+  setupNode: "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
 });
+
+const ALLOWED_ACTIONS = Object.freeze(new Set(Object.values(ACTIONS)));
 export const RELEASE_IMAGE = "node:24.18.0-bookworm-slim@sha256:d45d78e7929b46875bbd4e29bea672d5bc48186c6c3588306521c815e78352d6";
 
 function occurrences(text, fragment) {
@@ -29,6 +32,17 @@ export function validateActionPins(text, label = "workflow") {
     if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_./-]*@[0-9a-f]{40}$/u.test(reference) &&
         !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[0-9a-f]{40}$/u.test(reference)) {
       errors.push(`${label}:${index + 1} action reference is not a full commit SHA: ${reference}`);
+      continue;
+    }
+    // A well-formed SHA only proves the reference is immutable, not that it is
+    // one of ours: any owner/repo pinned to any forty hex characters satisfies
+    // the shape. Every third-party action must be a reviewed member of
+    // ACTIONS, so adding or re-pinning one is a deliberate, visible edit here
+    // rather than a silent change inside a workflow file.
+    if (!ALLOWED_ACTIONS.has(reference)) {
+      errors.push(
+        `${label}:${index + 1} action is not in the reviewed allowlist: ${reference}`,
+      );
     }
   }
   return errors;
@@ -125,6 +139,59 @@ export function validateReleaseWorkflow(text) {
   return errors;
 }
 
+// Without this, deleting the entire browser job — or quietly dropping the
+// reproducibility or audit step — leaves `npm run validate` green, so the
+// checks a release is gated on could disappear without anything noticing.
+export function validateCiWorkflow(text) {
+  const errors = [];
+  // Comments must not satisfy a requirement: a commented-out step would
+  // otherwise keep every check below green while doing nothing.
+  const effective = text
+    .split("\n")
+    .filter((line) => !/^\s*#/u.test(line))
+    .join("\n");
+  const requireText = (fragment, message) => {
+    if (!effective.includes(fragment)) errors.push(message);
+  };
+  // A blocking gate annotated continue-on-error still reports, but no longer
+  // gates, and the substring checks below cannot see the difference.
+  const AUDIT = "npm audit --omit=dev --audit-level=high";
+  const steps = effective.split(/^ {6}- (?=name:|uses:|run:)/mu);
+  const auditStep = steps.find((step) => step.includes(AUDIT));
+  if (auditStep !== undefined && /continue-on-error:\s*true/u.test(auditStep)) {
+    errors.push("the shipped-tree advisory gate must not be marked continue-on-error");
+  }
+  for (const step of steps) {
+    if (/continue-on-error:\s*true/u.test(step) && !step.includes("npm audit")) {
+      errors.push("continue-on-error is only permitted on the advisory-reporting step");
+    }
+  }
+  requireText("permissions:\n  contents: read", "CI must run with read-only repository permissions");
+  requireText("npm run validate", "CI must run the source and unit contract suite");
+  requireText("npm run build", "CI must build the closed production artifact");
+  requireText("npm run verify:reproducible", "CI must verify local byte reproducibility");
+  requireText("npm run test:browser", "CI must run the production-serving browser suite");
+  requireText("npx playwright install", "CI must install pinned browser binaries before the browser suite");
+  requireText(
+    "npm audit --omit=dev --audit-level=high",
+    "CI must fail on known high-severity advisories in the shipped dependency tree",
+  );
+  requireText(
+    "test \"$(npm --version)\" = '11.16.0'",
+    "every CI job must assert the pinned npm runtime before installing",
+  );
+  if (occurrences(text, "test \"$(npm --version)\" = '11.16.0'") !== 2) {
+    errors.push("both the validate and browser jobs must assert the pinned npm runtime");
+  }
+  // A push to main is the commit a release is cut from; cancelling its run
+  // would leave that exact commit with no completed CI result.
+  requireText(
+    "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+    "CI must not cancel in-progress runs for pushes to main",
+  );
+  return errors;
+}
+
 async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
   const workflowDirectory = path.join(root, ".github/workflows");
@@ -135,8 +202,10 @@ async function main() {
     errors.push(...validateActionPins(text, name));
     errors.push(...validateInstallScriptPolicy(text, name));
     if (name === "release.yml") errors.push(...validateReleaseWorkflow(text).filter((error) => !errors.includes(error)));
+    if (name === "ci.yml") errors.push(...validateCiWorkflow(text).filter((error) => !errors.includes(error)));
   }
   if (!names.includes("release.yml")) errors.push("release.yml is missing");
+  if (!names.includes("ci.yml")) errors.push("ci.yml is missing");
   if (errors.length > 0) {
     errors.forEach((error) => process.stderr.write(`workflow validation: ${error}\n`));
     process.exitCode = 1;

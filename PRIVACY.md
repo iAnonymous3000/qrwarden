@@ -26,7 +26,11 @@ After an installed instance reports **Ready offline**, core image and camera sca
 
 Copy sends the reviewed displayed value to the operating-system clipboard. The OS or a configured cloud clipboard may synchronize it outside QRWarden's control.
 
-Open is available only for eligible HTTP(S) reports and requires a direct, reviewed user action. Opening leaves the local inspection boundary and lets the destination, browser, network, extensions, and intermediaries process the request. QRWarden sends no `Referer`, but it cannot make the destination private or safe.
+Open is available only for eligible HTTP(S) reports and requires a direct, reviewed user action. Nothing is sent to a decoded destination before that action: inspection is entirely local, and no request reaches the destination until you choose to open it.
+
+Opening necessarily contacts the destination. That is the point of the action, and it cannot be otherwise. Opening therefore leaves the local inspection boundary and lets the destination, browser, network, extensions, and intermediaries process the request, including your IP address and ordinary connection metadata.
+
+What QRWarden does control is what the navigation carries out of the app. It sends no `Referer`, so the destination is not told that QRWarden sent you or what you were looking at, and it retains no opener relationship, so the opened page cannot reach back into the QRWarden document. QRWarden cannot make the destination itself private or safe.
 
 ## Boundaries
 

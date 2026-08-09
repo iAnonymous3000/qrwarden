@@ -1,0 +1,25 @@
+version: 2
+
+# Dependencies are exact pins and the committed lockfile is authoritative, so
+# these updates exist to surface that a pinned version has a published
+# advisory or has moved on. Every proposal is a reviewed change: it must be
+# checked against DEPENDENCIES.md, keep the pin exact, and regenerate the
+# lockfile on the pinned toolchain before it can be merged.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      prefix: deps
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci

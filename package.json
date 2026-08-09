@@ -43,9 +43,11 @@
     "validate:constants:release": "node scripts/validate-release-constants.mjs --release",
     "validate:metadata": "node scripts/validate-release-metadata.mjs",
     "validate:workflows": "node scripts/release/validate-workflows.mjs",
-    "validate": "npm run validate:runtime && npm run validate:install-policy && npm run validate:data && npm run validate:constants:development && npm run validate:metadata && npm run validate:workflows && npm run lint && npm run typecheck && npm run typecheck:tests && npm run test && npm run test:release",
+    "check:data-freshness": "node scripts/check-data-freshness.mjs",
+    "validate": "npm run validate:runtime && npm run validate:install-policy && npm run validate:data && npm run check:data-freshness && npm run validate:constants:development && npm run validate:metadata && npm run validate:workflows && npm run lint && npm run typecheck && npm run typecheck:tests && npm run test && npm run test:release",
     "release:artifacts": "node scripts/release/assemble-release-candidate.mjs --commit \"$QRWARDEN_COMMIT\" --epoch \"$SOURCE_DATE_EPOCH\"",
     "release:wrangler:check": "node scripts/release/render-wrangler-configs.mjs --check",
+    "release:verify-signed-set": "node scripts/release/verify-signed-set.mjs",
     "release:verify:live": "node scripts/release/verify-cloudflare-live.mjs",
     "release:validate": "npm run validate:constants:release && node scripts/release/verify-local-release-commit.mjs && node scripts/validate-release-readiness.mjs && npm run release:wrangler:check && npm run validate && npm run verify:reproducible && npm run test:browser"
   },
@@ -56,11 +58,13 @@
     "zxing-wasm": "3.1.1"
   },
   "devDependencies": {
-    "@cyclonedx/cyclonedx-npm": "6.0.0",
+    "@axe-core/playwright": "4.11.0",
     "@cyclonedx/cyclonedx-library": "10.1.0",
+    "@cyclonedx/cyclonedx-npm": "6.0.0",
     "@playwright/test": "1.61.1",
     "@preact/preset-vite": "2.10.5",
     "@types/node": "24.13.3",
+    "axe-core": "4.11.0",
     "eslint": "10.7.0",
     "license-checker-rseidelsohn": "5.0.1",
     "spdx-exceptions": "2.5.0",

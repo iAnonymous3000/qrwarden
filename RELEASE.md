@@ -4,7 +4,7 @@ Releases fail closed. `npm run release:validate` rejects placeholder values for 
 
 ## Candidate gate
 
-1. Require protected `main`, a clean signed commit, exact tool/action/container pins, matching version metadata, exactly one dated changelog heading for that version, current PSL/IANA snapshots, reviewed Unicode data, passing CI/security/browser/offline/no-egress gates, and successful `npm run release:validate`. Accessibility verification today consists of the hand-written assertions in `tests/browser/` (forced-colors rendering, the skip link, and view focus handoff) plus manual keyboard, screen-reader, and reduced-motion checks; no automated axe-style scanner runs in CI.
+1. Require protected `main`, a clean signed commit, exact tool/action/container pins, matching version metadata, exactly one dated changelog heading for that version, current PSL/IANA snapshots, reviewed Unicode data, passing CI/security/browser/offline/no-egress gates, and successful `npm run release:validate`. Accessibility verification consists of an axe-core baseline (`tests/browser/accessibility.spec.ts`, run by the CI browser job) asserting no WCAG 2.1 A/AA violations across the home, review, confirmation-dialog, recovery, and privacy states, plus the hand-written assertions in `tests/browser/` (forced-colors rendering, the skip link, and view focus handoff) and manual keyboard, screen-reader, and reduced-motion checks. The automated baseline covers five states in the light theme only; the dark palette, the camera views, and the remaining informational views are still manual.
 2. Build twice in isolated pinned environments and compare every unsigned byte. Verify decoder package integrity and the locked reader WASM SHA-256 `6a858c01e076bab3a1bd413e4f2cf5e5e45f819a0d9441d83c66993bc48ed38f`.
 3. Produce the normalized source/dist archives, dist-files manifest, archive manifest, CycloneDX SBOM, license report, and version changelog. Verify the closed artifact contract, headers, MIME, cache, CSP, release marker, 2 MiB precache limit, and absence of source maps/absolute paths.
 4. The dispatch-only workflow creates GitHub build/SBOM attestations tied to the unsigned candidate digests. Independently read back and verify the subjects, digests, repository, commit, and protected workflow identity; that post-upload attestation verification is a manual gate today. Attestations do not replace Minisign.
@@ -26,4 +26,8 @@ Only after live verification succeeds should maintainers publish the immutable G
 
 ## Stable v1 gate
 
-Stable v1 additionally requires name and domain clearance, independent security review, automated axe-style accessibility scanning wired into CI, physical current and previous platform testing with exact builds, reproducibility proof, signing ceremony, rollback and watchdog drills, permission and lifecycle tests, a 20-minute camera soak, 100 sequential image scans, and all documented acceptance gates on the exact signed candidate.
+Name and domain clearance is not a stable-v1 item: the canonical domain is compiled into `release/constants.json`, so clearance blocks the first signed release and is listed there and in [README.md](README.md).
+
+Stable v1 additionally requires independent security review, physical current and previous platform testing with exact builds, reproducibility proof, signing ceremony, rollback and watchdog drills, permission and lifecycle tests, a 20-minute camera soak, 100 sequential image scans, and all documented acceptance gates on the exact signed candidate.
+
+Rollback and watchdog drills cannot be satisfied by the first deployment: no independently verified OLD artifact exists yet, so the drills require a later release performed against a retained earlier signed artifact.

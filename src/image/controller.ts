@@ -5,7 +5,7 @@ import {
   type DecoderOutcome,
 } from "../decoder";
 
-const MAX_FILE_BYTES = 25_000_000;
+export const MAX_FILE_BYTES = 25_000_000;
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export type ImageIntakeProblem =
@@ -59,10 +59,17 @@ export function installDropNavigationGuard(
     event.preventDefault();
   };
   const onDrop = (event: DragEvent): void => {
+    // Navigation is always cancelled: dropping a link or a file on the
+    // document must never replace it. Only a drop that actually carries files
+    // is an image choice. Dragged text, links and bookmarks produce no files,
+    // and forwarding that empty set would surface a "choose one image" error
+    // and push the user off whatever view they were on. Mirrors the paste
+    // handler, which ignores a clipboard payload with no files.
     event.preventDefault();
-    if (event.dataTransfer !== null && onFiles !== null) {
-      onFiles(filesFromDrop(event.dataTransfer));
-    }
+    if (event.dataTransfer === null || onFiles === null) return;
+    const files = filesFromDrop(event.dataTransfer);
+    if (files.length === 0) return;
+    onFiles(files);
   };
   window.addEventListener("dragover", onDragOver);
   window.addEventListener("drop", onDrop);

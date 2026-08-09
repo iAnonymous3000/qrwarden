@@ -9,6 +9,10 @@ const TEST_FILES = ["tests/**/*.ts"];
 export default [
   {
     ignores: [
+      // Local tooling scratch space, including git worktrees checked out
+      // inside the repository. Linting a second copy of the tree duplicates
+      // every finding and confuses the type-aware project service.
+      ".claude/**",
       "dist/**",
       "coverage/**",
       "node_modules/**",

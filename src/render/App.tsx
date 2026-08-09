@@ -571,6 +571,18 @@ export function App(props: AppProps) {
     void task.then(settle, settle);
   };
 
+  // A camera task must never disable the control that started it: removing a
+  // focused element from the tab order blurs it, stranding keyboard and screen
+  // reader users mid-adjustment with no way back. The controls stay enabled
+  // and focusable, and overlapping camera work is rejected here instead. The
+  // forced re-render snaps a controlled select or slider back to the value the
+  // camera actually committed, so a rejected gesture cannot desync the DOM.
+  const rejectWhileCameraTaskInFlight = (): boolean => {
+    if (cameraTaskCount.current === 0) return false;
+    setCameraTaskRevision((current) => current + 1);
+    return true;
+  };
+
   const transitionView = (next: View): void => {
     const previous = viewRef.current;
     if (previous.kind === "selection" && previous !== next) {
@@ -955,7 +967,23 @@ export function App(props: AppProps) {
       },
       onDevices: (devices, activeDeviceId) => {
         if (lockedRef.current) return;
-        setCameraUi((current) => ({ ...current, devices, activeDeviceId }));
+        setCameraUi((current) => {
+          // The controller blanks the device list while a new stream starts so
+          // choices from the previous stream cannot be acted on. The picker
+          // only renders above one device, so accepting that blank list
+          // mid-switch would unmount the very control the user just operated
+          // and drop keyboard focus to the document body. Hold the previous
+          // choices until fresh enumeration replaces them; the active id below
+          // still updates immediately, so the picker never shows a stale
+          // selection.
+          const switching = cameraTaskCount.current > 0;
+          const retain = switching && devices.length === 0 && current.devices.length > 0;
+          return {
+            ...current,
+            devices: retain ? current.devices : devices,
+            activeDeviceId,
+          };
+        });
       },
       onCapabilities: (capabilities) => {
         if (lockedRef.current) return;
@@ -1254,10 +1282,15 @@ export function App(props: AppProps) {
                 <p>{COPY.privacyStatement}</p>
               </div>
             </div>
-            <div class="steps" aria-label={COPY.stepsLabel}>
-              <div><span>1</span><strong>{COPY.stepScan}</strong><small>{COPY.stepScanDetail}</small></div>
-              <div><span>2</span><strong>{COPY.stepInspect}</strong><small>{COPY.stepInspectDetail}</small></div>
-              <div><span>3</span><strong>{COPY.stepDecide}</strong><small>{COPY.stepDecideDetail}</small></div>
+            {/* A bare div maps to the generic role, which prohibits naming, so
+                assistive technology discarded this group's aria-label entirely.
+                The list roles restore the name and convey the step count; they
+                are applied as roles rather than ol/li because the layout styles
+                select on .steps div. */}
+            <div class="steps" role="list" aria-label={COPY.stepsLabel}>
+              <div role="listitem"><span>1</span><strong>{COPY.stepScan}</strong><small>{COPY.stepScanDetail}</small></div>
+              <div role="listitem"><span>2</span><strong>{COPY.stepInspect}</strong><small>{COPY.stepInspectDetail}</small></div>
+              <div role="listitem"><span>3</span><strong>{COPY.stepDecide}</strong><small>{COPY.stepDecideDetail}</small></div>
             </div>
           </section>
         ) : null}
@@ -1320,14 +1353,15 @@ export function App(props: AppProps) {
                 </p>
               ) : null}
             </div>
-            <div class="camera-controls">
+            <div class="camera-controls" aria-busy={cameraTaskBusy}>
               {cameraUi.devices.length > 1 ? (
                 <label>
                   {COPY.cameraSelectLabel}
                   <select
                     value={cameraUi.activeDeviceId ?? ""}
-                    disabled={locked || cameraTaskBusy}
+                    disabled={locked}
                     onChange={(event) => {
+                      if (rejectWhileCameraTaskInFlight()) return;
                       const task = cameraRef.current?.switchDevice(event.currentTarget.value);
                       if (task !== undefined) trackCameraTask(task);
                     }}
@@ -1358,12 +1392,13 @@ export function App(props: AppProps) {
                   <input
                     type="range"
                     aria-label={COPY.zoomLabel}
-                    disabled={locked || cameraTaskBusy}
+                    disabled={locked}
                     min={cameraUi.zoom.min}
                     max={cameraUi.zoom.max}
                     step={cameraUi.zoom.step}
                     value={cameraUi.zoomValue}
                     onInput={(event) => {
+                      if (rejectWhileCameraTaskInFlight()) return;
                       const value = event.currentTarget.valueAsNumber;
                       const task = cameraRef.current?.setZoom(value);
                       if (task === undefined) return;
@@ -1381,9 +1416,10 @@ export function App(props: AppProps) {
                 <button
                   type="button"
                   class="secondary-button"
-                  disabled={locked || cameraTaskBusy}
+                  disabled={locked}
                   aria-pressed={cameraUi.torchEnabled}
                   onClick={() => {
+                    if (rejectWhileCameraTaskInFlight()) return;
                     const enabled = !cameraUi.torchEnabled;
                     const task = cameraRef.current?.setTorch(enabled);
                     if (task === undefined) return;

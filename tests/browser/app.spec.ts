@@ -766,18 +766,37 @@ test("shows and switches from the camera that is actually active", async ({
     "aria-hidden",
     "true",
   );
+  // An in-flight camera task must never disable the control that started it.
+  // Disabling a focused element removes it from the tab order and blurs it,
+  // which strands a keyboard or screen reader user mid-adjustment. The
+  // controls stay enabled and keep focus; the pending work is announced on the
+  // group and overlapping gestures are rejected without reaching the camera.
+  await zoom.focus();
   await zoom.evaluate((input: HTMLInputElement) => {
     input.value = "2";
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await expect(camera).toBeDisabled();
-  await expect(zoom).toBeDisabled();
-  await expect(torch).toBeDisabled();
+  await expect(page.locator(".camera-controls")).toHaveAttribute("aria-busy", "true");
+  await expect(camera).toBeEnabled();
+  await expect(zoom).toBeEnabled();
+  await expect(torch).toBeEnabled();
+  await expect(zoom).toBeFocused();
+
+  // A gesture arriving while the camera is still applying the previous one is
+  // dropped rather than queued, and must not reach getUserMedia.
+  await camera.selectOption("front");
+  expect(await page.evaluate(() =>
+    (window as unknown as { __qrwardenCameraChoices: { calls: string[] } })
+      .__qrwardenCameraChoices.calls,
+  )).toEqual(["rear"]);
+  await expect(camera).toHaveValue("rear");
+
   await page.evaluate(() =>
     (window as unknown as {
       __qrwardenCameraChoices: { releaseConstraint: () => void };
     }).__qrwardenCameraChoices.releaseConstraint(),
   );
+  await expect(page.locator(".camera-controls")).toHaveAttribute("aria-busy", "false");
   await expect(camera).toBeEnabled();
   await expect(zoom).toBeEnabled();
   await expect(torch).toBeEnabled();

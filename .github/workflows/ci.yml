@@ -11,7 +11,11 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded pull-request pushes are safe to cancel, but a push to main must
+  # always run to completion: a release is cut from a main commit, and a
+  # cancelled run would leave that exact commit with no completed CI result to
+  # gate the release on.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate:
@@ -32,11 +36,28 @@ jobs:
       - name: Install the locked npm runtime
         run: npm install --global --ignore-scripts npm@11.16.0
 
+      - name: Assert the pinned npm runtime
+        run: test "$(npm --version)" = '11.16.0'
+
       - name: Prove the native install-script policy fails closed
         run: node scripts/validate-install-script-policy.mjs
 
       - name: Install from the lockfile
         run: npm ci --ignore-scripts=false --strict-allow-scripts
+
+      # Nothing in this repository otherwise reports that an exactly pinned
+      # dependency has since been found vulnerable. The shipped artifact is
+      # the blocking gate: it must stay free of known high-severity
+      # advisories. Build and test tooling is reported but does not fail the
+      # run, because remediating it means re-pinning an exact dependency and
+      # regenerating the lockfile, which is a reviewed change rather than
+      # something CI should force.
+      - name: Audit the shipped dependency tree
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Report advisories in build and test tooling
+        continue-on-error: true
+        run: npm audit --audit-level=high
 
       - name: Validate source and unit/integration contracts
         run: npm run validate
@@ -66,6 +87,9 @@ jobs:
       - name: Install the locked npm runtime
         run: npm install --global --ignore-scripts npm@11.16.0
 
+      - name: Assert the pinned npm runtime
+        run: test "$(npm --version)" = '11.16.0'
+
       - name: Prove the native install-script policy fails closed
         run: node scripts/validate-install-script-policy.mjs
 
@@ -80,7 +104,7 @@ jobs:
 
       - name: Upload failure traces and screenshots
         if: failure()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-failure-artifacts
           path: test-results/

@@ -26,6 +26,8 @@ All package versions are exact pins. The reviewed `package-lock.json` is the nor
 | spdx-expression-parse | 4.0.0 | MIT | https://github.com/jslicense/spdx-expression-parse.js |
 | spdx-license-ids | 3.0.23 | CC0-1.0 | https://github.com/jslicense/spdx-license-ids |
 | spdx-exceptions | 2.5.0 | CC-BY-3.0 | https://github.com/kemitchell/spdx-exceptions.json |
+| axe-core | 4.11.0 | MPL-2.0 | https://github.com/dequelabs/axe-core |
+| @axe-core/playwright | 4.11.0 | MPL-2.0 | https://github.com/dequelabs/axe-core-npm |
 | Minisign | 0.12 | ISC | https://github.com/jedisct1/minisign |
 
 ## Decoder provenance

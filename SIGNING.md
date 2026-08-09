@@ -44,7 +44,17 @@ Use untrusted comment `QRWarden release signature` and trusted comment:
 QRWarden vX.Y.Z commit <40hex> file <basename> sha256 <64hex>
 ```
 
-Sign any required transition/recovery statement first, then the source archive, dist archive, dist-files manifest, and archive manifest. Detached signatures append `.minisig`. The repository does not yet ship an automated signed-set finalizer. For an ordinary release, a separate verifier must manually check every required filename, commit, digest, trusted comment, public key, signature, and set member before upload, then repeat that verification against the downloaded draft assets before deployment or publication.
+Sign any required transition/recovery statement first, then the source archive, dist archive, dist-files manifest, and archive manifest. Detached signatures append `.minisig`. The repository does not yet ship an automated signed-set finalizer.
+
+For an ordinary release, run the signed-set verifier against the signed directory before upload, and again against the downloaded draft assets before any deployment or publication:
+
+```sh
+npm run release:verify-signed-set -- <signed-artifact-directory> <release-commit-sha>
+```
+
+It checks set membership in both directions, that every required artifact is present, and for each signature the untrusted comment, the trusted comment's version, commit and filename, that the trusted comment's digest equals the artifact's actual SHA-256, and the Minisign signature itself against the public key in `release/constants.json`. It fails closed when `minisign` is not on `PATH` rather than reporting a set as verified on structural checks alone.
+
+The verifier does not replace the second human: a separate verifier still confirms the result independently, in a clean environment, at both points. It replaces the hand-checking of filenames, commits, digests, and comments, which is the part of that review a person performs least reliably.
 
 ## Rotation and recovery
 

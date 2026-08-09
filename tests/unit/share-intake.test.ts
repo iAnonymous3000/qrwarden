@@ -16,7 +16,13 @@ import {
 function imageEntry(name: string): ShareIntakeEntry {
   return {
     kind: "image",
-    file: new File([new Uint8Array([1])], name, { type: "image/png" }),
+    // File.lastModified defaults to Date.now(), so an input fixture and the
+    // expectation it is compared against stopped being deeply equal whenever
+    // the two constructions straddled a millisecond boundary. Pin it.
+    file: new File([new Uint8Array([1])], name, {
+      type: "image/png",
+      lastModified: 0,
+    }),
   };
 }
 

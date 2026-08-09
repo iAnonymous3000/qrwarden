@@ -154,3 +154,30 @@ await emit(
   "aztec-url.png",
   renderSymbol(await symbol("https://example.com/aztec", { format: "Aztec", options: "" }), 8),
 );
+
+// A photograph-like image with no symbol in it at all: the most common
+// everyday failure, and the input that must produce the no-result recovery
+// view rather than an unreadable-image error.
+await emit("no-code.png", (() => {
+  const width = 240;
+  const height = 180;
+  const pixels = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      // A smooth gradient plus a soft blob: plenty of contrast and detail,
+      // no finder patterns for any supported symbology to lock onto.
+      const blob = Math.hypot(x - 150, y - 60) < 40 ? 60 : 0;
+      pixels[y * width + x] = Math.max(0, Math.min(255, 40 + x - blob));
+    }
+  }
+  return { width, height, pixels };
+})());
+
+// Encodes a loopback endpoint the Open-action privacy test actually serves,
+// so the navigation that follows an explicit confirmation can be inspected as
+// a real request rather than an assertion about an anchor element. The port is
+// fixed because the payload is baked into the committed symbol.
+await emit(
+  "open-target.png",
+  renderSymbol(await symbol("http://127.0.0.1:4319/opened?probe=qrwarden"), 8),
+);

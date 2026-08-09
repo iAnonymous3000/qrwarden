@@ -1,0 +1,16 @@
+# Release trust, supply-chain policy, and the automation that enforces them.
+# These paths decide what is built, what is shipped, and what is signed, so
+# they must never be changed without a maintainer review.
+
+/.github/                     @iAnonymous3000
+/scripts/                     @iAnonymous3000
+/release/                     @iAnonymous3000
+/src/sw/                      @iAnonymous3000
+package.json                  @iAnonymous3000
+package-lock.json             @iAnonymous3000
+.npmrc                        @iAnonymous3000
+SIGNING.md                    @iAnonymous3000
+RELEASE.md                    @iAnonymous3000
+SECURITY.md                   @iAnonymous3000
+THREAT_MODEL.md               @iAnonymous3000
+PRIVACY.md                    @iAnonymous3000

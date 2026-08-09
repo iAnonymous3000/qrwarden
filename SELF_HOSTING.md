@@ -17,6 +17,18 @@ npm run test:browser
 
 Plain npm installs honor `.npmrc` and skip lifecycle scripts. The committed policy also keeps strict enforcement enabled if scripts are deliberately turned back on; under the exact pinned npm 11.16.0 runtime, the explicit install flags above enable only the exact reviewed hooks and reject an unclassified lifecycle script. Run `npm run validate:install-policy` to exercise the native approved, denied, and unreviewed-hook behavior with a synthetic local package.
 
+## Give every deployment its own release id
+
+Set `QRWARDEN_COMMIT` to the exact 40-character commit you are building when you build for deployment:
+
+```sh
+QRWARDEN_COMMIT="$(git rev-parse HEAD)" npm run build
+```
+
+Without it the build falls back to a development sentinel of forty zeros, so every deployment you ever publish carries the identical release id `v0.1.0+0000…0`. The release id names the precache and identifies the running version, so reusing it across two different builds means the second deployment is not recognized as an update: installed clients keep serving the older shell and only pick up the change once every tab for the origin is closed. Distinct release ids also make the deployed version visible in the `X-QRWarden-Release` response header, which is how you confirm what an origin is actually serving.
+
+Redeploying under a repeated release id is survivable — an installed client keeps serving its verified shell rather than breaking — but the update is silently deferred, so treat a per-deployment `QRWARDEN_COMMIT` as required rather than optional.
+
 Serve only the verified `dist/` tree. The generated `_headers` file is deployment input for the canonical Cloudflare target, not a portable web-server standard. A non-Cloudflare operator must translate it without weakening the behavior and verify the result: the document, decoder worker, and service worker each receive exactly one intended CSP; common privacy/security headers apply to successful assets; fixed workers and the manifest revalidate; hashed assets are immutable; `_headers` and source maps return 404; `/index.html` redirects 307 to `/`; and unknown paths return 404. A host that merely copies `dist/` while ignoring `_headers` is not a compatible deployment.
 
 The generated `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` header is a commitment, not just a hardening flag: `includeSubDomains` binds every subdomain of the serving domain to HTTPS for a year, and `preload` signals eligibility for browser HSTS preload lists, which effectively extend that commitment to the whole registrable domain and are slow to leave once entered. The HSTS directives are the one place a translated configuration may deliberately differ: an operator who cannot make that domain-wide commitment must knowingly reduce them rather than serve a preload signal that is false for their domain.

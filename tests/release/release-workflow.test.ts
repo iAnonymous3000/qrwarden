@@ -13,8 +13,10 @@ import { sha256 } from "../../scripts/release/release-contract.mjs";
 import { verifyLocalReleaseCommit } from "../../scripts/release/verify-local-release-commit.mjs";
 import { assertGitHubRepository } from "../../scripts/release/verify-release-context.mjs";
 import {
+  ACTIONS,
   RELEASE_IMAGE,
   validateActionPins,
+  validateCiWorkflow,
   validateInstallScriptPolicy,
   validateReleaseWorkflow,
 } from "../../scripts/release/validate-workflows.mjs";
@@ -86,6 +88,53 @@ describe("release workflow policy", () => {
     expect(validateActionPins('steps:\n  - uses: "actions/checkout@v7"\n')).toContainEqual(
       expect.stringContaining("not a full commit SHA"),
     );
+    // A correctly shaped forty-character SHA proves immutability, not
+    // provenance: an attacker-controlled owner or an unreviewed re-pin of a
+    // legitimate action both satisfy the shape check and must still be
+    // rejected for not being reviewed members of the allowlist.
+    expect(
+      validateActionPins(`steps:\n  - uses: attacker/checkout@${commit}\n`),
+    ).toContainEqual(expect.stringContaining("not in the reviewed allowlist"));
+    expect(
+      validateActionPins(`steps:\n  - uses: actions/checkout@${commit}\n`),
+    ).toContainEqual(expect.stringContaining("not in the reviewed allowlist"));
+    expect(
+      validateActionPins(`steps:\n  - uses: ${ACTIONS.setupNode}\n`),
+    ).toEqual([]);
+    // Deleting the browser job used to leave `npm run validate` green, so the
+    // suite a release is gated on could vanish silently.
+    const ci = await readFile(path.join(root, ".github/workflows/ci.yml"), "utf8");
+    expect(validateCiWorkflow(ci)).toEqual([]);
+    expect(validateCiWorkflow(ci.replace(/ {2}browser:[\s\S]*/u, ""))).toContain(
+      "CI must run the production-serving browser suite",
+    );
+    expect(
+      validateCiWorkflow(ci.replace("npm audit --omit=dev --audit-level=high", "true")),
+    ).toContain(
+      "CI must fail on known high-severity advisories in the shipped dependency tree",
+    );
+    expect(
+      validateCiWorkflow(
+        ci.replace(
+          "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+          "cancel-in-progress: true",
+        ),
+      ),
+    ).toContain("CI must not cancel in-progress runs for pushes to main");
+    // A required step that is commented out, or a blocking gate annotated
+    // continue-on-error, both satisfy a naive substring check while doing
+    // nothing.
+    expect(
+      validateCiWorkflow(ci.replace("        run: npm run test:browser", "        # run: npm run test:browser")),
+    ).toContain("CI must run the production-serving browser suite");
+    expect(
+      validateCiWorkflow(
+        ci.replace(
+          "      - name: Audit the shipped dependency tree\n        run:",
+          "      - name: Audit the shipped dependency tree\n        continue-on-error: true\n        run:",
+        ),
+      ),
+    ).toContain("the shipped-tree advisory gate must not be marked continue-on-error");
     expect(validateReleaseWorkflow(release.replace("replica: [first, second]", "replica: [first]"))).toContain(
       "release build must have exactly two named replicas",
     );

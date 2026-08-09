@@ -134,39 +134,88 @@ function cacheKey(entry: VerifiedManifestEntry): string {
   return key;
 }
 
-async function verifyCurrentCache(): Promise<boolean> {
-  const cache = await caches.open(CURRENT_CACHE);
-  const expected = new Map(
-    manifest.map((entry) => [new URL(cacheKey(entry), self.location.origin).href, entry]),
-  );
-  const keys = await cache.keys();
-  if (keys.length !== expected.size) {
+async function cachedEntryIsValid(
+  cache: Cache,
+  entry: VerifiedManifestEntry,
+): Promise<boolean> {
+  const response = await cache.match(cacheKey(entry));
+  if (
+    response === undefined ||
+    !response.ok ||
+    normalizedMediaType(response.headers.get("Content-Type")) !== entry.mediaType
+  ) {
     return false;
   }
-  for (const request of keys) {
-    if (!expected.has(request.url)) {
-      return false;
-    }
-  }
+  const bytes = await response.arrayBuffer();
+  return (
+    bytes.byteLength === entry.size &&
+    (await digestHex("SHA-256", bytes)) === entry.revision &&
+    (await digestIntegrity(bytes)) === entry.integrity
+  );
+}
+
+function expectedCacheKeyHrefs(): Set<string> {
+  return new Set(
+    manifest.map((entry) => new URL(cacheKey(entry), self.location.origin).href),
+  );
+}
+
+// Verification requires every manifest entry to be present with the exact
+// verified bytes, but tolerates foreign cache keys. Deployments that share a
+// release id (self-hosted rebuilds without QRWARDEN_COMMIT) share this cache
+// name, so a sibling install writes its differently-revisioned keys next to
+// ours while we may still be the active worker. Every serving path resolves
+// only exact manifest cache keys, so a foreign entry can never be served by
+// this worker; failing verification on its presence would let a redeploy
+// disable the worker still serving users. Foreign keys are pruned at
+// activation, when this worker is the cache's sole owner.
+async function verifyCurrentCache(): Promise<boolean> {
+  const cache = await caches.open(CURRENT_CACHE);
   for (const entry of manifest) {
-    const response = await cache.match(cacheKey(entry));
-    if (
-      response === undefined ||
-      !response.ok ||
-      normalizedMediaType(response.headers.get("Content-Type")) !== entry.mediaType
-    ) {
+    if (!(await cachedEntryIsValid(cache, entry))) {
       return false;
     }
-    const bytes = await response.arrayBuffer();
-    if (bytes.byteLength !== entry.size) {
-      return false;
-    }
-    if ((await digestHex("SHA-256", bytes)) !== entry.revision) {
-      return false;
-    }
-    if ((await digestIntegrity(bytes)) !== entry.integrity) return false;
   }
   return true;
+}
+
+// Removes this manifest's entries whose cached bytes fail verification, so a
+// retried install refetches them instead of trusting a truncated or tampered
+// response. Entries belonging to other deployments of this cache name are
+// left alone: another worker may still be serving from them.
+async function deleteInvalidExpectedEntries(): Promise<void> {
+  const cache = await caches.open(CURRENT_CACHE);
+  for (const entry of manifest) {
+    const key = cacheKey(entry);
+    if (
+      (await cache.match(key)) !== undefined &&
+      !(await cachedEntryIsValid(cache, entry))
+    ) {
+      await cache.delete(key);
+    }
+  }
+}
+
+// Deletes every cache key that is not part of this worker's manifest. Runs
+// only at activation: an activated worker is the sole owner of CURRENT_CACHE,
+// so leftovers from a same-release sibling deployment (or its failed install)
+// can no longer be in use by anyone.
+async function pruneForeignCacheEntries(): Promise<void> {
+  // A sibling deployment installing right now is writing its own entries into
+  // this same cache, and they are indistinguishable from a superseded build's
+  // leftovers. Deleting them mid-install fails that install for no reason, so
+  // defer to the next activation, exactly as cleanupStaleCaches does. Skipping
+  // is always safe: foreign entries are unservable, never merely stale-but-live.
+  if (self.registration.installing !== null || self.registration.waiting !== null) {
+    return;
+  }
+  const cache = await caches.open(CURRENT_CACHE);
+  const expected = expectedCacheKeyHrefs();
+  for (const request of await cache.keys()) {
+    if (!expected.has(request.url)) {
+      await cache.delete(request);
+    }
+  }
 }
 
 function refreshCacheVerification(): Promise<boolean> {
@@ -231,17 +280,7 @@ async function repairAndVerifyCache(
   const staged: Array<readonly [string, Response]> = [];
   for (const entry of manifest) {
     if (!repairIsLive(nonce, signal)) return false;
-    const current = await cache.match(cacheKey(entry));
-    let valid = false;
-    if (current !== undefined && current.ok) {
-      const currentBytes = await current.clone().arrayBuffer();
-      valid =
-        normalizedMediaType(current.headers.get("Content-Type")) === entry.mediaType &&
-        currentBytes.byteLength === entry.size &&
-        (await digestHex("SHA-256", currentBytes)) === entry.revision &&
-        (await digestIntegrity(currentBytes)) === entry.integrity;
-    }
-    if (valid) {
+    if (await cachedEntryIsValid(cache, entry)) {
       continue;
     }
     const response = await fetch(new URL(entry.url, self.location.origin), {
@@ -549,7 +588,12 @@ self.addEventListener("install", (event) => {
           throw new DOMException("Precache verification failed", "SecurityError");
         }
       } catch (error) {
-        await caches.delete(CURRENT_CACHE);
+        // Never delete the whole cache on failure: under a shared release id
+        // an active sibling worker may still be serving from it, and wiping
+        // it would turn one failed install into an outage for every open tab
+        // and returning visitor. Drop only this manifest's invalid entries so
+        // the browser's retried install refetches them.
+        await deleteInvalidExpectedEntries().catch(() => undefined);
         throw error;
       }
     })(),
@@ -557,7 +601,14 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim().catch(() => undefined));
+  event.waitUntil(
+    (async () => {
+      // Pruning failure is deliberately non-fatal: foreign entries are inert
+      // for serving, so a transient CacheStorage error must not stall claim.
+      await pruneForeignCacheEntries().catch(() => undefined);
+      await self.clients.claim().catch(() => undefined);
+    })(),
+  );
 });
 
 registerRoute(
