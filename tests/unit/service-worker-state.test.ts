@@ -328,6 +328,45 @@ describe("service-worker state contract", () => {
     }));
   });
 
+  it("holds activation for a busy tab served at /index.html with a query", async () => {
+    // The canonicalizing redirect only fires when there is no query, so
+    // '/index.html?utm_source=x' is served the shell verbatim with a 200. That
+    // tab runs the full coordinator and can hold a live report; excluding it
+    // from the quorum lets an activation commit over that work.
+    const busyMessages: Readonly<Record<string, string>>[] = [];
+    let replyHandler: WorkerHandler | null = null;
+    const busyTab: HarnessClient = {
+      id: "busy-index-html",
+      type: "window",
+      url: "https://qrwarden.test/index.html?utm_source=newsletter",
+      postMessage(message: Readonly<Record<string, string>>): void {
+        busyMessages.push(message);
+        if (message.type === "PREPARE_UPDATE" && replyHandler !== null) {
+          replyHandler({
+            data: { type: "BUSY", nonce: message.nonce, release: message.release },
+            source: busyTab,
+            waitUntil: () => undefined,
+          });
+        }
+      },
+    };
+    const harness = await loadWorker(
+      () => Promise.resolve([new Request("https://qrwarden.test/")]),
+      [busyTab],
+    );
+    const install = harness.handlers.get("install");
+    const message = harness.handlers.get("message");
+    replyHandler = message ?? null;
+
+    await Promise.all(invokeWithLifetime(install!, {}));
+    await Promise.all(invokeWithLifetime(message!, {
+      data: { type: "BEGIN_UPDATE_COORDINATION" },
+    }));
+
+    expect(busyMessages.some((entry) => entry.type === "PREPARE_UPDATE")).toBe(true);
+    expect(harness.skipWaiting).not.toHaveBeenCalled();
+  });
+
   it("stays verified when a same-release sibling deployment's keys share the cache", async () => {
     // A self-hosted rebuild without QRWARDEN_COMMIT reuses this release id
     // and cache name, so its install writes foreign revision keys next to

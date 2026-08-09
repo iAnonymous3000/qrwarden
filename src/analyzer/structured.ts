@@ -115,7 +115,7 @@ function inertReport(kind: PayloadKind, fields: ReportFields): AnalysisReport {
   return createReport({ kind, fields: fields.value, actionPolicy: "inspect-only" });
 }
 
-function maskedUnparsedSensitiveReport(text: string): AnalysisReport {
+export function maskedUnparsedSensitiveReport(text: string): AnalysisReport {
   const fields = new ReportFields();
   fields.add("text", "Text", text, {
     sensitive: true,
@@ -210,24 +210,37 @@ function parseWifi(text: string): AnalysisReport | null {
   }
 
   const fields = new ReportFields();
+  // ReportFields.add returns false once the report scalar budget is spent,
+  // and every call below would otherwise discard that answer. A crafted
+  // payload can spend the budget on earlier fields (a long SSID plus the
+  // WPA2-Enterprise identities) so that the password is never added, leaving
+  // a report that looks like an ordinary complete Wi-Fi report while silently
+  // omitting a credential the joining device still uses. Fail closed exactly
+  // as the per-field limit checks above do: an incomplete parse is not
+  // presented as a parsed report at all, and the caller falls back to the
+  // masked unparsed payload.
+  let complete = true;
+  const add = (...args: Parameters<ReportFields["add"]>): void => {
+    if (!fields.add(...args)) complete = false;
+  };
   // The SSID is identifying personal context, so the copied report keeps only
   // its label while the on-screen row still shows the value.
-  fields.add("ssid", "Network name (SSID)", ssid);
+  add("ssid", "Network name (SSID)", ssid);
   // T and H are interoperable but not uniformly validated across scanner
   // ecosystems. Keep them visible for local inspection, while the whole-report
   // export fails closed instead of treating attacker-provided text as safe.
-  fields.add("security", "Declared security type (not validated)", security);
+  add("security", "Declared security type (not validated)", security);
   if (hiddenBoolean !== undefined) {
-    fields.add("hidden", "Declared hidden network (not validated)", hiddenBoolean, {
+    add("hidden", "Declared hidden network (not validated)", hiddenBoolean, {
       reportPolicy: "safe",
     });
   }
   if (eapMethod !== undefined && eapMethod !== "") {
-    fields.add("eap-method", "Declared EAP method (not validated)", eapMethod);
+    add("eap-method", "Declared EAP method (not validated)", eapMethod);
   }
   const phase2 = nonemptyPhase2 ?? legacyPhase2;
   if (phase2 !== undefined) {
-    fields.add(
+    add(
       "phase2-method",
       legacyPhase2 === undefined
         ? "Declared phase 2 method (not validated)"
@@ -236,20 +249,21 @@ function parseWifi(text: string): AnalysisReport | null {
     );
   }
   if (anonymousIdentity !== undefined && anonymousIdentity !== "") {
-    fields.add("anonymous-identity", "Anonymous identity", anonymousIdentity, {
+    add("anonymous-identity", "Anonymous identity", anonymousIdentity, {
       sensitive: true,
       masked: true,
     });
   }
   if (identity !== undefined && identity !== "") {
-    fields.add("identity", "Identity", identity, {
+    add("identity", "Identity", identity, {
       sensitive: true,
       masked: true,
     });
   }
   if (password !== undefined) {
-    fields.add("password", "Password", password, { sensitive: true, masked: true });
+    add("password", "Password", password, { sensitive: true, masked: true });
   }
+  if (!complete) return null;
   return inertReport("wifi", fields);
 }
 
@@ -569,19 +583,34 @@ function parseMecard(text: string): AnalysisReport | null {
   if (!text.toUpperCase().startsWith("MECARD:")) return null;
   const parsed = parseDelimitedFields(text.slice(7));
   if (parsed === null) return null;
-  const fields = new ReportFields();
-  let shown = 0;
+  const candidates: SelectiveFieldCandidate[] = [];
   for (const item of parsed) {
     const label = CONTACT_LABELS[item.key];
     if (label === undefined) continue;
     if (!structuredValueFits(item.value)) return null;
-    fields.add(`${item.key.toLowerCase()}-${shown}`, label, item.value, {
-      collapsed: item.key === "NOTE",
+    candidates.push({
+      id: `${item.key.toLowerCase()}-${candidates.length}`,
+      label,
+      value: item.value,
+      ...(item.key === "NOTE" ? { collapsed: true } : {}),
     });
-    shown += 1;
   }
-  if (shown === 0) return null;
-  return inertReport("contact", fields);
+  if (candidates.length === 0) return null;
+  // MECARD summarises selectively exactly as vCard does: keys outside
+  // CONTACT_LABELS are skipped above, so a payload can carry properties the
+  // report never shows as fields. Routing through the same builder states how
+  // many properties the code held and how many were not surfaced, instead of
+  // presenting a partial contact as if it were the whole payload. The exact
+  // original is retained as masked evidence either way, but the count is what
+  // tells the reader to go look at it.
+  return selectiveStructuredReport(
+    "contact",
+    text,
+    "Contact",
+    "MECARD contact",
+    parsed.length,
+    candidates,
+  );
 }
 
 const CALENDAR_LABELS: Readonly<Record<string, string>> = Object.freeze({

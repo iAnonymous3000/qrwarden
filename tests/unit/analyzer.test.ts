@@ -349,6 +349,77 @@ describe("ordered payload classification", () => {
     });
   });
 
+  it("never presents a structured report that silently lost a parsed field", () => {
+    // ensureExactStructuredSource reserves the exact source before re-adding
+    // the parsed fields, so it has less budget than the parser did. A payload
+    // can be crafted to spend that budget on earlier rows — a long SSID plus
+    // the WPA2-Enterprise identities — so the password is never re-added. The
+    // result rendered as an ordinary complete Wi-Fi report with the password
+    // row simply absent and nothing to indicate it existed, which is exactly
+    // the claim the product must not make. Fail closed instead.
+    // The payload does not need to be large. escapeForbiddenForDisplay turns
+    // each Default_Ignorable code point into an eight-scalar [U+00AD] token,
+    // so a few hundred soft hyphens per field exhaust the budget while every
+    // individual value still passes structuredValueFits. This one is 838
+    // scalars — an ordinary QR code.
+    const soft = "­".repeat(256);
+    const crafted =
+      `WIFI:S:CoffeeShop;T:WPA2-EAP;E:${soft};PH2:${soft};A:${"­".repeat(254)};` +
+      "I:alice@corp.example;P:hunter2;;";
+    expect([...crafted].length).toBeLessThan(1_000);
+    const report = analyzeText(crafted);
+
+    expect(report.displayFields.some((item) => item.id === "password")).toBe(false);
+    // Not a wifi report at all: no partial structured summary is shown.
+    expect(report.kind).toBe("text");
+    const evidence = field(report, "text");
+    expect(evidence).toMatchObject({ masked: true, sensitive: true });
+    expect(evidence.actionValue).toBe(crafted);
+
+    // The same budget drops the body from a mailto report, so the fallback
+    // must cover every structured kind, not just Wi-Fi.
+    const mail = analyzeText(
+      `mailto:a@b.example?cc=${soft}&bcc=${soft}&subject=${soft}&body=Wire%20%2450000`,
+    );
+    expect(mail.kind).toBe("text");
+    expect(mail.displayFields.some((item) => item.id === "body")).toBe(false);
+
+    // An ordinary enterprise payload is unaffected and still shows every row.
+    const ordinary = analyzeText(
+      "WIFI:T:WPA2-EAP;S:Campus;A:anon@example.test;I:user@example.test;P:hunter2secret;;",
+    );
+    expect(ordinary.kind).toBe("wifi");
+    expect(ordinary.displayFields.map((item) => item.id)).toEqual([
+      "ssid",
+      "security",
+      "anonymous-identity",
+      "identity",
+      "password",
+      "original",
+    ]);
+  });
+
+  it("states how many MECARD properties a selective contact report left out", () => {
+    // MECARD skips every key outside CONTACT_LABELS, so a payload can carry
+    // properties the report never shows as a field. Without the count a
+    // partial contact reads as the whole payload, and the URL below is
+    // exactly the sort of property a reader needs to know exists.
+    const selective = analyzeText(
+      "MECARD:N:Doe,John;TEL:+15551234567;URL:https://example.test/x;NICKNAME:jd;;",
+    );
+    expect(selective.kind).toBe("contact");
+    expect(field(selective, "summary")).toMatchObject({ count: 4, omittedCount: 2 });
+    expect(field(selective, "original").actionValue).toBe(
+      "MECARD:N:Doe,John;TEL:+15551234567;URL:https://example.test/x;NICKNAME:jd;;",
+    );
+
+    // A payload whose properties are all supported must not claim omissions.
+    expect(field(analyzeText("MECARD:N:Alice;TEL:+15551234;;"), "summary")).toMatchObject({
+      count: 2,
+      omittedCount: 0,
+    });
+  });
+
   it("recognizes MECARD and retains calendar attachments only in the masked source", () => {
     expect(analyzeText("MECARD:N:Alice;TEL:+15551234;;").kind).toBe("contact");
     const source = [

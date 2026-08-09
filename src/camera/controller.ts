@@ -10,6 +10,7 @@ const ATTEMPT_TIMEOUT_MS = 5_000;
 const USER_MEDIA_TIMEOUT_MS = 30_000;
 const METADATA_TIMEOUT_MS = 10_000;
 const PROBE_TIMEOUT_MS = 5_000;
+const CONSTRAINT_TIMEOUT_MS = 5_000;
 const MAX_INPUT_AXIS = 8_192;
 const MAX_INPUT_PIXELS = 25_000_000;
 const MAX_CAPTURE_AXIS = 2_048;
@@ -422,6 +423,40 @@ export class CameraController<Result> {
     this.#onProblem("camera-could-not-start");
   }
 
+  /**
+   * Applies a track constraint under a deadline.
+   *
+   * Both callers advance the epoch before awaiting, which cancels the scan
+   * loop's pending timer, and only reschedule it once the await returns. A
+   * constraint call that never settles — device firmware work, and torch and
+   * zoom are the two that stall on real Android hardware — therefore ends
+   * scanning for the rest of the session: the preview stays live while nothing
+   * is ever decoded again, with no error and no way back. Rejecting on the
+   * deadline routes an overrun into the existing failure path, which restores
+   * the previous value, reports the control as unavailable, and restarts the
+   * loop. A late settlement afterwards is harmless; the constraint simply
+   * takes effect, and the epoch guard keeps it from writing stale state.
+   */
+  async #applyWithDeadline(
+    track: MediaStreamTrack,
+    constraints: MediaTrackConstraints,
+  ): Promise<void> {
+    let timer: number | undefined;
+    try {
+      await Promise.race([
+        track.applyConstraints(constraints),
+        new Promise<never>((_, reject) => {
+          timer = window.setTimeout(
+            () => reject(new DOMException("Constraint deadline exceeded", "TimeoutError")),
+            CONSTRAINT_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) window.clearTimeout(timer);
+    }
+  }
+
   async setTorch(enabled: boolean): Promise<boolean> {
     const track = this.#stream?.getVideoTracks()[0];
     if (track === undefined) {
@@ -430,7 +465,7 @@ export class CameraController<Result> {
     const previous = this.#torch;
     const epoch = this.#advanceEpoch();
     try {
-      await track.applyConstraints({ advanced: [{ torch: enabled } as MediaTrackConstraintSet] });
+      await this.#applyWithDeadline(track, { advanced: [{ torch: enabled } as MediaTrackConstraintSet] });
       if (epoch !== this.#epoch) {
         return this.#torch;
       }
@@ -454,7 +489,7 @@ export class CameraController<Result> {
     }
     const epoch = this.#advanceEpoch();
     try {
-      await track.applyConstraints({ advanced: [{ zoom: value } as MediaTrackConstraintSet] });
+      await this.#applyWithDeadline(track, { advanced: [{ zoom: value } as MediaTrackConstraintSet] });
       if (epoch !== this.#epoch) {
         return this.#lastZoom;
       }

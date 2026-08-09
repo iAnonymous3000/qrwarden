@@ -972,6 +972,37 @@ describe("CameraController timeout and constraints", () => {
     harness.controller.cancel();
   });
 
+  it("keeps scanning when a constraint call never settles", async () => {
+    // setTorch/setZoom advance the epoch first, which cancels the scan loop's
+    // pending timer, and only reschedule it once applyConstraints returns. A
+    // constraint that never settles — torch and zoom stall on real Android
+    // hardware — would otherwise end scanning for the session: the preview
+    // stays live while nothing is ever decoded again, with no error shown.
+    vi.useFakeTimers();
+    const harness = createHarness();
+    await harness.controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    harness.track.applyConstraints.mockReturnValueOnce(new Promise<void>(() => undefined));
+    const pending = harness.controller.setTorch(true);
+
+    const before = harness.decoder.decodeCameraFrame.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(harness.decoder.decodeCameraFrame.mock.calls.length).toBe(before);
+
+    // The deadline expires, the control is reported unavailable, and the loop
+    // restarts rather than staying dead behind the unsettled call.
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(pending).resolves.toBe(false);
+    expect(harness.onProblem).toHaveBeenCalledWith("torch-unavailable");
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(harness.decoder.decodeCameraFrame.mock.calls.length).toBeGreaterThan(before);
+
+    harness.controller.cancel();
+    vi.useRealTimers();
+  });
+
   it("recovers the previous device after a failed switch", async () => {
     const harness = createHarness();
     const recoveryTrack = new TrackDouble("front");

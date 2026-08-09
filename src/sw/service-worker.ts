@@ -349,10 +349,18 @@ function nonce128(): string {
 // lifetime), and such a document runs the full coordinator — excluding it
 // would skip its BUSY vote and let an activation destroy its live work.
 // An unparseable client URL stays in the quorum: fail closed.
+// '/index.html' belongs in that set too. The canonicalizing redirect below
+// only fires when the request carries no query, so '/index.html?utm_source=x'
+// is served the shell verbatim with a 200 — a real, linkable document running
+// the full coordinator. Judging it by pathname alone dropped it from the
+// quorum, so its BUSY vote was never collected and an activation could commit
+// over a live report and force-reload the tab out from under the reader.
+const SHELL_PATHNAMES: ReadonlySet<string> = new Set(["/", "/index.html"]);
+
 function participatesInCoordination(client: WindowClient): boolean {
   try {
     const url = new URL(client.url);
-    return url.origin === self.location.origin && url.pathname === "/";
+    return url.origin === self.location.origin && SHELL_PATHNAMES.has(url.pathname);
   } catch {
     return true;
   }

@@ -1,7 +1,7 @@
 import dataStatus from "../../release/data-status.json";
 import { hasValidFrozenBytes, ReportFields } from "./limits";
 import { createReport, signal } from "./report";
-import { analyzeStructuredText } from "./structured";
+import { analyzeStructuredText, maskedUnparsedSensitiveReport } from "./structured";
 import type {
   AnalysisReport,
   AnalyzerFrozenBytes,
@@ -131,8 +131,16 @@ function ensureExactStructuredSource(
   });
   const original = fields.value[0]!;
 
+  // Reserving the exact source first leaves less budget than the parser had,
+  // so a field that fit in the parsed report can fail to be re-added here.
+  // Discarding that answer produces a report that looks complete while a row
+  // the parser did surface — a Wi-Fi password, behind a long SSID and the
+  // WPA2-Enterprise identities — is simply absent, with nothing to say so. A
+  // payload can be crafted to land in exactly that state, which turns "this
+  // is what the code contains" into a claim the report cannot support.
+  let retainedEveryField = true;
   for (const field of report.displayFields) {
-    fields.add(field.id, field.label, field.actionValue, {
+    if (!fields.add(field.id, field.label, field.actionValue, {
       kind: field.kind,
       sensitive: field.sensitive,
       masked: field.masked,
@@ -145,8 +153,15 @@ function ensureExactStructuredSource(
       ...(field.reportValue === undefined
         ? {}
         : { reportValue: field.reportValue }),
-    });
+    })) {
+      retainedEveryField = false;
+    }
   }
+
+  // Fail closed, as every other limit in the analyzer does: show the whole
+  // payload as masked, collapsed, inert evidence rather than a structured
+  // summary that quietly omits part of what was decoded.
+  if (!retainedEveryField) return maskedUnparsedSensitiveReport(text);
 
   const highlights = fields.value.slice(1);
   return createReport({
