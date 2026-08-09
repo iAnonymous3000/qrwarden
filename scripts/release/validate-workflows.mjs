@@ -344,6 +344,10 @@ export function validateCiWorkflow(text) {
     "the browser job must use the image's pinned browser path",
   );
   requireText(
+    "HOME: /root",
+    "the root-run Playwright container must use its root-owned home directory",
+  );
+  requireText(
     "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: \"1\"",
     "the browser job must forbid dependency installation from downloading browsers",
   );

@@ -126,6 +126,9 @@ describe("release workflow policy", () => {
       "CI must validate the installed Playwright runtime before the browser suite",
       "CI must not download Playwright browsers or OS dependencies at runtime",
     ]));
+    expect(validateCiWorkflow(ci.replace("HOME: /root", "HOME: /github/home"))).toContain(
+      "the root-run Playwright container must use its root-owned home directory",
+    );
     expect(
       validateCiWorkflow(ci.replace("if: ${{ !cancelled() }}", "if: failure()")),
     ).toContain("CI must retain failed first-attempt browser evidence even when a retry passes");
