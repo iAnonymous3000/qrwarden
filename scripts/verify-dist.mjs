@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -94,6 +95,11 @@ for (const name of REPORTING_HEADER_NAMES) {
     throw new Error(`catch-all rule must detach reporting header: ${name}`);
   }
 }
+// A whole-file substring test accepted these headers anywhere in _headers,
+// including scoped to a path that no request reaches, which would leave every
+// real route unprotected while the check still passed. Require them on the
+// catch-all rule, which is what actually covers every route.
+const catchAllHeaderNames = new Map(catchAllRules[0].headers);
 for (const expected of [
   "Referrer-Policy: no-referrer",
   "X-Content-Type-Options: nosniff",
@@ -103,8 +109,11 @@ for (const expected of [
   "Cross-Origin-Opener-Policy: same-origin",
   "Cross-Origin-Resource-Policy: same-origin",
 ]) {
-  if (!headers.includes(`\n  ${expected}\n`)) {
-    throw new Error(`missing common production header: ${expected}`);
+  const separator = expected.indexOf(":");
+  const name = expected.slice(0, separator);
+  const value = expected.slice(separator + 2);
+  if (catchAllHeaderNames.get(name.toLowerCase()) !== value) {
+    throw new Error(`catch-all rule must set common production header: ${expected}`);
   }
 }
 for (const file of files) {
@@ -126,8 +135,27 @@ if (
 ) {
   throw new Error("service-worker manifest injection did not complete");
 }
-if (!/sha384-/.test(sw) || !/[0-9a-f]{64}/.test(sw)) {
-  throw new Error("service-worker entries lack full integrity metadata");
+// Testing the worker for a "sha384-" substring proved nothing: the worker's
+// own source builds that prefix in a template literal, so the check passed
+// whether or not a single precache entry carried integrity metadata. Recompute
+// the digests here and require the exact strings, which fails closed if an
+// entry is dropped, stale, or injected without integrity.
+for (const file of files) {
+  const rule = rules.find((candidate) => candidate.pattern.test(file));
+  if (rule?.precache !== true) continue;
+  const bytes = await readFile(path.join(dist, file));
+  const url = file === "index.html" ? "/" : `/${file}`;
+  const revision = createHash("sha256").update(bytes).digest("hex");
+  const integrity = `sha384-${createHash("sha384").update(bytes).digest("base64")}`;
+  if (!sw.includes(JSON.stringify(url))) {
+    throw new Error(`service-worker precache manifest omits ${url}`);
+  }
+  if (!sw.includes(revision)) {
+    throw new Error(`service-worker precache revision missing for ${url}`);
+  }
+  if (!sw.includes(integrity)) {
+    throw new Error(`service-worker precache integrity missing for ${url}`);
+  }
 }
 
 process.stdout.write(`verified closed dist contract for ${files.length} files\n`);

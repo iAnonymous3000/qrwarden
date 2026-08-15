@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   copyFile,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
   writeFile,
@@ -53,7 +55,9 @@ async function createDistFixture(): Promise<string> {
     writeFile(path.join(dist, "index.html"), "<!doctype html>\n"),
     writeFile(path.join(dist, "app.webmanifest"), "{}\n"),
     writeFile(path.join(dist, "decoder-worker.js"), "export {};\n"),
-    writeFile(path.join(dist, "sw.js"), `sha384-test ${"a".repeat(64)}\n`),
+    // Replaced below with a manifest carrying real digests: the dist verifier
+    // recomputes them, so a placeholder no longer satisfies it.
+    writeFile(path.join(dist, "sw.js"), ""),
     writeFile(path.join(dist, "assets/reader-abcdefgh.wasm"), "wasm\n"),
     writeFile(path.join(dist, "assets/app-abcdefgh.js"), "export {};\n"),
     writeFile(path.join(dist, "assets/app-abcdefgh.css"), "body {}\n"),
@@ -62,7 +66,47 @@ async function createDistFixture(): Promise<string> {
     writeFile(path.join(dist, ".well-known/security.txt"), "Contact: test@example.invalid\n"),
     writeFile(path.join(dist, "_headers"), generatedHeaders),
   ]);
+  await writeFile(path.join(dist, "sw.js"), await precacheManifestSource(dist));
   return root;
+}
+
+/**
+ * Mirrors the shape finalize-dist injects: one entry per precached file with
+ * the sha256 revision and sha384 integrity the dist verifier recomputes.
+ */
+async function precacheManifestSource(dist: string): Promise<string> {
+  const contract = JSON.parse(
+    await readFile(path.join(projectRoot, "release/artifact-contract.json"), "utf8"),
+  ) as { entries: readonly { sourcePattern: string; precache?: boolean }[] };
+  const precacheRules = contract.entries
+    .filter((entry) => entry.precache === true)
+    .map((entry) => new RegExp(entry.sourcePattern));
+  const entries: string[] = [];
+  for (const relative of await distFiles(dist)) {
+    if (!precacheRules.some((pattern) => pattern.test(relative))) continue;
+    const bytes = await readFile(path.join(dist, relative));
+    entries.push(
+      JSON.stringify({
+        url: relative === "index.html" ? "/" : `/${relative}`,
+        revision: createHash("sha256").update(bytes).digest("hex"),
+        integrity: `sha384-${createHash("sha384").update(bytes).digest("base64")}`,
+      }),
+    );
+  }
+  return `precacheAndRoute([${entries.join(",")}]);\n`;
+}
+
+async function distFiles(directory: string, prefix = ""): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) {
+      found.push(...(await distFiles(path.join(directory, entry.name), relative)));
+    } else {
+      found.push(relative);
+    }
+  }
+  return found;
 }
 
 function runVerifyDist(root: string): ReturnType<typeof spawnSync> {
@@ -102,6 +146,48 @@ describe("exact CSP release contract", () => {
     expect(() => assertDocumentCsp(tampered)).toThrow(
       "CSP for / does not match the exact document policy",
     );
+  });
+
+  it("rejects a precache entry whose integrity does not match its bytes", async () => {
+    // The verifier used to test the worker for a "sha384-" substring, which
+    // the worker's own source template supplies unconditionally, so the check
+    // passed no matter what the manifest contained.
+    const root = await createDistFixture();
+    try {
+      expect(runVerifyDist(root).status).toBe(0);
+      const sw = await readFile(path.join(root, "dist/sw.js"), "utf8");
+      await writeFile(
+        path.join(root, "dist/sw.js"),
+        sw.replace(/sha384-[A-Za-z0-9+/=]+/, "sha384-notTheRealDigest"),
+      );
+      const result = runVerifyDist(root);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("precache integrity missing for");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a common security header scoped away from the catch-all rule", async () => {
+    // A whole-file substring test accepted the header anywhere in _headers,
+    // including on a route no request reaches.
+    const root = await createDistFixture();
+    try {
+      expect(runVerifyDist(root).status).toBe(0);
+      await writeFile(
+        path.join(root, "dist/_headers"),
+        `${generatedHeaders
+          .replace("  X-Frame-Options: DENY\n", "")
+          .trimEnd()}\n\n/never-requested\n  X-Frame-Options: DENY\n`,
+      );
+      const result = runVerifyDist(root);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        "catch-all rule must set common production header: X-Frame-Options: DENY",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("makes the production dist verifier reject a relaxed generated policy", async () => {

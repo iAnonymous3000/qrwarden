@@ -41,7 +41,7 @@ async function main() {
       process.stderr.write(`data freshness: ${entry.label} capture date is missing or invalid\n`);
     } else if (entry.state === "expired") {
       process.stderr.write(
-        `data freshness: ${entry.label} snapshot from ${entry.captured} is OUTSIDE the ${WINDOW_DAYS}-day release window by ${-entry.remainingDays} days; re-pull and run npm run data:generate before releasing\n`,
+        `data freshness: ${entry.label} snapshot from ${entry.captured} is OUTSIDE the ${WINDOW_DAYS}-day release window by ${-entry.remainingDays} days; re-pull the upstream source, update its capture date and provenance in release/data-status.json, then run npm run data:generate before releasing\n`,
       );
     } else if (entry.state === "expiring") {
       process.stderr.write(
