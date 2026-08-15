@@ -13,11 +13,11 @@ const SOURCE_SHA256: Readonly<Record<string, string>> = {
   "index.ts": "234450ba710c6ac8be379a7a6069da5dc6636c8967927e7b93b4a0da9aa9095c",
   "locale.ts": "25d5b29e629a58c0fe772b5ff97830fd68f0064b2fbeb79b0326ff170539055e",
   "evidence.ts": "1307803b3c27a93131567b6a0b2efca539d034c1438920979935927895ca9ce0",
-  "locales/en.ts": "f54576f26bb3cfe7681da8af364800fca7bb6fbcf8b00519fbd6e495709d021c",
-  "locales/es.ts": "8eeaa6370c8c6cf6403d7c73f7113e09a5abd0bba86f6bdb9feba45853576cb8",
+  "locales/en.ts": "3c68589a715546a366a98e7e88d74e8fdd2b1179889d9aa7baab94fcd807625b",
+  "locales/es.ts": "6ed1c008a39f3b4217cf5399e5845963a19c444757d9911ef6f9961ee30844bf",
 };
 const RUNTIME_CONTRACT_SHA256 =
-  "d1f43e7cdcb1f05238af5baf153a2a3c3a30019755c7864cca3a77b9fe9f025e";
+  "7ec190fae8be94f778866bf3108e478186aeb026add6eb40fc9e67bb23a0ed48";
 const COPY_KEY_COUNT = 235;
 
 function sha256(value: string | Uint8Array): string {

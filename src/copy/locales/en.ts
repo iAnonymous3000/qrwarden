@@ -434,6 +434,7 @@ export const EN_COPY = Object.freeze({
     "Forbidden character in the address authority":
       "Forbidden character in the address authority",
     "Web address cannot be opened": "Web address cannot be opened",
+    "Host form could not be verified": "Host form could not be verified",
     "Report is incomplete": "Report is incomplete",
   }),
   kindLabels: Object.freeze<Record<PayloadKind, string>>({
@@ -530,6 +531,11 @@ export const EN_COPY = Object.freeze({
       title: "Web address cannot be opened",
       explanation:
         "The text looks like a web address but does not parse as a complete, absolute HTTP or HTTPS address with a host, so there is no verified destination to open.",
+    },
+    "unverifiable-host-form": {
+      title: "Host form could not be verified",
+      explanation:
+        "The browser accepts this host, but at least one label breaks the naming rules QRWarden pins, so its international form and the look-alike checks that depend on it are unavailable. The host and registrable domain shown come straight from the browser's own parse; opening stays disabled.",
     },
     "incomplete-report": {
       title: "Report is incomplete",

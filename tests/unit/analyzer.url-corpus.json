@@ -5,8 +5,15 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "example.com", "registrable-domain": "example.com", "port": "443 (effective)", "path": "/" },
-    "signals": ["local-or-special-destination"],
+    "displayFields": {
+      "ascii-hostname": "example.com",
+      "registrable-domain": "example.com",
+      "port": "443 (effective)",
+      "path": "/"
+    },
+    "signals": [
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -15,8 +22,12 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "example.com" },
-    "signals": ["local-or-special-destination"],
+    "displayFields": {
+      "ascii-hostname": "example.com"
+    },
+    "signals": [
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -25,8 +36,14 @@
     "parseOutcome": true,
     "canonicalHref": "https://xn--bcher-kva.example/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "xn--bcher-kva.example", "unicode-hostname": "bücher.example" },
-    "signals": ["idn-hostname", "local-or-special-destination"],
+    "displayFields": {
+      "ascii-hostname": "xn--bcher-kva.example",
+      "unicode-hostname": "bücher.example"
+    },
+    "signals": [
+      "idn-hostname",
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -35,8 +52,16 @@
     "parseOutcome": true,
     "canonicalHref": "https://xn--ypal-43d9g.example/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "xn--ypal-43d9g.example", "unicode-hostname": "раypal.example" },
-    "signals": ["idn-hostname", "local-or-special-destination", "mixed-scripts", "confusable-label"],
+    "displayFields": {
+      "ascii-hostname": "xn--ypal-43d9g.example",
+      "unicode-hostname": "раypal.example"
+    },
+    "signals": [
+      "idn-hostname",
+      "local-or-special-destination",
+      "mixed-scripts",
+      "confusable-label"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -45,18 +70,36 @@
     "parseOutcome": true,
     "canonicalHref": "https://xn--e1afmkfd.example/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "xn--e1afmkfd.example", "unicode-hostname": "пример.example" },
-    "signals": ["idn-hostname", "local-or-special-destination", "mixed-scripts"],
+    "displayFields": {
+      "ascii-hostname": "xn--e1afmkfd.example",
+      "unicode-hostname": "пример.example"
+    },
+    "signals": [
+      "idn-hostname",
+      "local-or-special-destination",
+      "mixed-scripts"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
-    "id": "idna-std3-invalid-fails-closed",
+    "id": "idna-std3-invalid-keeps-host-evidence",
     "original": "https://under_score.example",
-    "parseOutcome": false,
+    "parseOutcome": true,
     "kind": "web-url",
-    "displayFields": { "original": "https://under_score.example" },
-    "signals": ["malformed-web-url"],
-    "actionPolicy": "inspect-only"
+    "displayFields": {
+      "ascii-hostname": "under_score.example",
+      "registrable-domain": "under_score.example",
+      "port": "443 (effective)",
+      "path": "/",
+      "original": "https://under_score.example",
+      "destination-category": "IANA special-use example"
+    },
+    "signals": [
+      "local-or-special-destination",
+      "unverifiable-host-form"
+    ],
+    "actionPolicy": "inspect-only",
+    "canonicalHref": "https://under_score.example/"
   },
   {
     "id": "http",
@@ -64,8 +107,15 @@
     "parseOutcome": true,
     "canonicalHref": "http://example.com/path",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "example.com", "port": "80 (effective)", "path": "/path" },
-    "signals": ["http", "local-or-special-destination"],
+    "displayFields": {
+      "ascii-hostname": "example.com",
+      "port": "80 (effective)",
+      "path": "/path"
+    },
+    "signals": [
+      "http",
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -74,8 +124,14 @@
     "parseOutcome": true,
     "canonicalHref": "https://127.0.0.1/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "127.0.0.1", "destination-category": "Loopback" },
-    "signals": ["ip-address", "local-or-special-destination"],
+    "displayFields": {
+      "ascii-hostname": "127.0.0.1",
+      "destination-category": "Loopback"
+    },
+    "signals": [
+      "ip-address",
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -84,8 +140,14 @@
     "parseOutcome": true,
     "canonicalHref": "https://[::1]/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "[::1]", "destination-category": "Loopback Address" },
-    "signals": ["ip-address", "local-or-special-destination"],
+    "displayFields": {
+      "ascii-hostname": "[::1]",
+      "destination-category": "Loopback Address"
+    },
+    "signals": [
+      "ip-address",
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -94,8 +156,14 @@
     "parseOutcome": true,
     "canonicalHref": "https://[::ffff:7f00:1]/",
     "kind": "web-url",
-    "displayFields": { "destination-category": "IPv4-mapped: Loopback" },
-    "signals": ["ip-address", "local-or-special-destination", "material-browser-rewrite"],
+    "displayFields": {
+      "destination-category": "IPv4-mapped: Loopback"
+    },
+    "signals": [
+      "ip-address",
+      "local-or-special-destination",
+      "material-browser-rewrite"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -104,8 +172,12 @@
     "parseOutcome": true,
     "canonicalHref": "https://192.0.0.9/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "192.0.0.9" },
-    "signals": ["ip-address"],
+    "displayFields": {
+      "ascii-hostname": "192.0.0.9"
+    },
+    "signals": [
+      "ip-address"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -114,8 +186,13 @@
     "parseOutcome": true,
     "canonicalHref": "https://192.0.2.1/",
     "kind": "web-url",
-    "displayFields": { "destination-category": "Documentation (TEST-NET-1)" },
-    "signals": ["ip-address", "local-or-special-destination"],
+    "displayFields": {
+      "destination-category": "Documentation (TEST-NET-1)"
+    },
+    "signals": [
+      "ip-address",
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -124,8 +201,12 @@
     "parseOutcome": true,
     "canonicalHref": "https://printer.local/",
     "kind": "web-url",
-    "displayFields": { "destination-category": "Multicast DNS .local" },
-    "signals": ["local-or-special-destination"],
+    "displayFields": {
+      "destination-category": "Multicast DNS .local"
+    },
+    "signals": [
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -134,8 +215,13 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com:8443/a",
     "kind": "web-url",
-    "displayFields": { "port": "8443 (explicit)" },
-    "signals": ["local-or-special-destination", "non-default-port"],
+    "displayFields": {
+      "port": "8443 (explicit)"
+    },
+    "signals": [
+      "local-or-special-destination",
+      "non-default-port"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -144,8 +230,12 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
-    "displayFields": { "port": "443 (explicit)" },
-    "signals": ["local-or-special-destination"],
+    "displayFields": {
+      "port": "443 (explicit)"
+    },
+    "signals": [
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -154,8 +244,14 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com./",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "example.com.", "registrable-domain": "example.com" },
-    "signals": ["trailing-dot-host", "local-or-special-destination"],
+    "displayFields": {
+      "ascii-hostname": "example.com.",
+      "registrable-domain": "example.com"
+    },
+    "signals": [
+      "trailing-dot-host",
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -164,7 +260,9 @@
     "parseOutcome": true,
     "canonicalHref": "https://foo.github.io/",
     "kind": "web-url",
-    "displayFields": { "registrable-domain": "foo.github.io" },
+    "displayFields": {
+      "registrable-domain": "foo.github.io"
+    },
     "signals": [],
     "actionPolicy": "open-web"
   },
@@ -174,8 +272,13 @@
     "parseOutcome": true,
     "canonicalHref": "https://accounts.google.com@evil.example/login",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "evil.example" },
-    "signals": ["local-or-special-destination", "userinfo"],
+    "displayFields": {
+      "ascii-hostname": "evil.example"
+    },
+    "signals": [
+      "local-or-special-destination",
+      "userinfo"
+    ],
     "actionPolicy": "inspect-only"
   },
   {
@@ -184,8 +287,13 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "example.com" },
-    "signals": ["local-or-special-destination", "userinfo"],
+    "displayFields": {
+      "ascii-hostname": "example.com"
+    },
+    "signals": [
+      "local-or-special-destination",
+      "userinfo"
+    ],
     "actionPolicy": "inspect-only"
   },
   {
@@ -194,8 +302,14 @@
     "parseOutcome": true,
     "canonicalHref": "https://a%40b@evil.example/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "evil.example" },
-    "signals": ["local-or-special-destination", "userinfo", "material-browser-rewrite"],
+    "displayFields": {
+      "ascii-hostname": "evil.example"
+    },
+    "signals": [
+      "local-or-special-destination",
+      "userinfo",
+      "material-browser-rewrite"
+    ],
     "actionPolicy": "inspect-only"
   },
   {
@@ -204,8 +318,13 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "example.com" },
-    "signals": ["local-or-special-destination", "material-browser-rewrite"],
+    "displayFields": {
+      "ascii-hostname": "example.com"
+    },
+    "signals": [
+      "local-or-special-destination",
+      "material-browser-rewrite"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -214,8 +333,13 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "example.com" },
-    "signals": ["local-or-special-destination", "material-browser-rewrite"],
+    "displayFields": {
+      "ascii-hostname": "example.com"
+    },
+    "signals": [
+      "local-or-special-destination",
+      "material-browser-rewrite"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -224,8 +348,13 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com/b",
     "kind": "web-url",
-    "displayFields": { "path": "/b" },
-    "signals": ["local-or-special-destination", "material-browser-rewrite"],
+    "displayFields": {
+      "path": "/b"
+    },
+    "signals": [
+      "local-or-special-destination",
+      "material-browser-rewrite"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -234,8 +363,13 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com/admin",
     "kind": "web-url",
-    "displayFields": { "path": "/admin" },
-    "signals": ["local-or-special-destination", "material-browser-rewrite"],
+    "displayFields": {
+      "path": "/admin"
+    },
+    "signals": [
+      "local-or-special-destination",
+      "material-browser-rewrite"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -244,58 +378,87 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com/%2fkeep",
     "kind": "web-url",
-    "displayFields": { "path": "/%2fkeep" },
-    "signals": ["local-or-special-destination"],
+    "displayFields": {
+      "path": "/%2fkeep"
+    },
+    "signals": [
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
     "id": "bidi-outside-authority",
-    "original": "https://example.com/path\u202Efoo",
+    "original": "https://example.com/path‮foo",
     "parseOutcome": true,
     "canonicalHref": "https://example.com/path%E2%80%AEfoo",
     "kind": "web-url",
-    "displayFields": { "original": "https://example.com/path[U+202E]foo" },
-    "signals": ["local-or-special-destination", "hidden-character", "material-browser-rewrite"],
+    "displayFields": {
+      "original": "https://example.com/path[U+202E]foo"
+    },
+    "signals": [
+      "local-or-special-destination",
+      "hidden-character",
+      "material-browser-rewrite"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
     "id": "soft-hyphen-outside-authority",
-    "original": "https://openai.com/pay\u00ADpal",
+    "original": "https://openai.com/pay­pal",
     "parseOutcome": true,
     "canonicalHref": "https://openai.com/pay%C2%ADpal",
     "kind": "web-url",
-    "displayFields": { "original": "https://openai.com/pay[U+00AD]pal" },
-    "signals": ["hidden-character", "material-browser-rewrite"],
+    "displayFields": {
+      "original": "https://openai.com/pay[U+00AD]pal"
+    },
+    "signals": [
+      "hidden-character",
+      "material-browser-rewrite"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
     "id": "tag-character-outside-authority",
-    "original": "https://openai.com/path\uDB40\uDC61",
+    "original": "https://openai.com/path󠁡",
     "parseOutcome": true,
     "canonicalHref": "https://openai.com/path%F3%A0%81%A1",
     "kind": "web-url",
-    "displayFields": { "original": "https://openai.com/path[U+E0061]" },
-    "signals": ["hidden-character", "material-browser-rewrite"],
+    "displayFields": {
+      "original": "https://openai.com/path[U+E0061]"
+    },
+    "signals": [
+      "hidden-character",
+      "material-browser-rewrite"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
     "id": "variation-selector-outside-authority",
-    "original": "https://openai.com/path\uFE0F",
+    "original": "https://openai.com/path️",
     "parseOutcome": true,
     "canonicalHref": "https://openai.com/path%EF%B8%8F",
     "kind": "web-url",
-    "displayFields": { "original": "https://openai.com/path[U+FE0F]" },
-    "signals": ["hidden-character", "material-browser-rewrite"],
+    "displayFields": {
+      "original": "https://openai.com/path[U+FE0F]"
+    },
+    "signals": [
+      "hidden-character",
+      "material-browser-rewrite"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
     "id": "visible-format-character-outside-authority",
-    "original": "https://openai.com/\u0600123",
+    "original": "https://openai.com/؀123",
     "parseOutcome": true,
     "canonicalHref": "https://openai.com/%D8%80123",
     "kind": "web-url",
-    "displayFields": { "original": "https://openai.com/\u0600123" },
-    "signals": ["material-browser-rewrite"],
+    "displayFields": {
+      "original": "https://openai.com/؀123"
+    },
+    "signals": [
+      "material-browser-rewrite"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -304,8 +467,14 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com/",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "example.com" },
-    "signals": ["local-or-special-destination", "forbidden-authority-character", "material-browser-rewrite"],
+    "displayFields": {
+      "ascii-hostname": "example.com"
+    },
+    "signals": [
+      "local-or-special-destination",
+      "forbidden-authority-character",
+      "material-browser-rewrite"
+    ],
     "actionPolicy": "inspect-only"
   },
   {
@@ -314,8 +483,13 @@
     "parseOutcome": true,
     "canonicalHref": "https://example.com/?token=secret&mode=x#section",
     "kind": "web-url",
-    "displayFields": { "query-names": "token, mode", "fragment": "Present" },
-    "signals": ["local-or-special-destination"],
+    "displayFields": {
+      "query-names": "token, mode",
+      "fragment": "Present"
+    },
+    "signals": [
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -323,8 +497,12 @@
     "original": "https://",
     "parseOutcome": false,
     "kind": "web-url",
-    "displayFields": { "original": "https://" },
-    "signals": ["malformed-web-url"],
+    "displayFields": {
+      "original": "https://"
+    },
+    "signals": [
+      "malformed-web-url"
+    ],
     "actionPolicy": "inspect-only"
   },
   {
@@ -332,7 +510,9 @@
     "original": "example.com/path",
     "parseOutcome": false,
     "kind": "text",
-    "displayFields": { "text": "example.com/path" },
+    "displayFields": {
+      "text": "example.com/path"
+    },
     "signals": [],
     "actionPolicy": "inspect-only"
   },
@@ -341,7 +521,10 @@
     "original": "ftp://example.com/file",
     "parseOutcome": false,
     "kind": "custom-uri",
-    "displayFields": { "scheme": "ftp", "summary": "URI scheme recognized; payload not validated" },
+    "displayFields": {
+      "scheme": "ftp",
+      "summary": "URI scheme recognized; payload not validated"
+    },
     "signals": [],
     "actionPolicy": "inspect-only"
   },
@@ -351,8 +534,13 @@
     "parseOutcome": true,
     "canonicalHref": "https://bit.ly/3xample",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "bit.ly", "registrable-domain": "bit.ly" },
-    "signals": ["link-shortener"],
+    "displayFields": {
+      "ascii-hostname": "bit.ly",
+      "registrable-domain": "bit.ly"
+    },
+    "signals": [
+      "link-shortener"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -361,8 +549,13 @@
     "parseOutcome": true,
     "canonicalHref": "https://www.tinyurl.com/abc",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "www.tinyurl.com", "registrable-domain": "tinyurl.com" },
-    "signals": ["link-shortener"],
+    "displayFields": {
+      "ascii-hostname": "www.tinyurl.com",
+      "registrable-domain": "tinyurl.com"
+    },
+    "signals": [
+      "link-shortener"
+    ],
     "actionPolicy": "confirm-web"
   },
   {
@@ -371,8 +564,30 @@
     "parseOutcome": true,
     "canonicalHref": "https://bit.ly.example.com/path",
     "kind": "web-url",
-    "displayFields": { "ascii-hostname": "bit.ly.example.com", "registrable-domain": "example.com" },
-    "signals": ["local-or-special-destination"],
+    "displayFields": {
+      "ascii-hostname": "bit.ly.example.com",
+      "registrable-domain": "example.com"
+    },
+    "signals": [
+      "local-or-special-destination"
+    ],
     "actionPolicy": "confirm-web"
+  },
+  {
+    "id": "idna-std3-invalid-still-names-the-registrable-domain",
+    "original": "https://accounts.google.test._.evil.example/login",
+    "parseOutcome": true,
+    "kind": "web-url",
+    "displayFields": {
+      "ascii-hostname": "accounts.google.test._.evil.example",
+      "registrable-domain": "evil.example",
+      "destination-category": "IANA special-use example"
+    },
+    "signals": [
+      "local-or-special-destination",
+      "unverifiable-host-form"
+    ],
+    "actionPolicy": "inspect-only",
+    "canonicalHref": "https://accounts.google.test._.evil.example/login"
   }
 ]

@@ -24,6 +24,7 @@ const TEXT_FIXTURES: readonly string[] = [
   // Spends the shared report budget before the last rows, so the
   // incomplete-report title is exercised alongside the rest of the table.
   `http://a.com:${"0".repeat(2035)}80/${"1".repeat(2047)}?${"%01".repeat(256)}=X#${"%01".repeat(255)}=X`,
+  "https://accounts.google.test._.evil.example/login",
   "http://user@127.0.0.1:8443/path?token=1#state=2",
   "https://bücher.example/path#frag",
   "https://bit.ly/abc",

@@ -419,6 +419,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "Forbidden character in the address authority":
       "Carácter prohibido en la autoridad de la dirección",
     "Web address cannot be opened": "La dirección web no puede abrirse",
+    "Host form could not be verified": "No se pudo verificar la forma del host",
     "Report is incomplete": "El informe está incompleto",
   }),
   kindLabels: Object.freeze({
@@ -515,6 +516,11 @@ export const ES_COPY: CopyDictionary = Object.freeze({
       title: "La dirección web no puede abrirse",
       explanation:
         "El texto parece una dirección web pero no se analiza como una dirección HTTP o HTTPS completa y absoluta con un host, así que no hay un destino verificado que abrir.",
+    },
+    "unverifiable-host-form": {
+      title: "No se pudo verificar la forma del host",
+      explanation:
+        "El navegador acepta este host, pero al menos una etiqueta incumple las reglas de nomenclatura que QRWarden fija, así que su forma internacional y las comprobaciones de parecido que dependen de ella no están disponibles. El host y el dominio registrable que se muestran provienen del propio análisis del navegador; la apertura sigue desactivada.",
     },
     "incomplete-report": {
       title: "El informe está incompleto",

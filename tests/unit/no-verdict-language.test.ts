@@ -31,6 +31,9 @@ function emittedSignals() {
     analyzeText("https://brand.example@example.com/"),
     analyzeText("http://exa\u0001mple.com/a"),
     analyzeText("https://example.com/a\\b"),
+    // The browser parses this host but the pinned IDNA rules reject the
+    // underscore label, so the unverifiable-host-form signal is exercised.
+    analyzeText("https://accounts.google.test._.evil.example/login"),
     // Exhausts the shared report budget so the incomplete-report signal is
     // exercised alongside the rest of the glossary.
     analyzeText(

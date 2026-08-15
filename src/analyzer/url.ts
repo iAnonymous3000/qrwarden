@@ -258,16 +258,27 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
   let unicode = asciiHostname;
   let pinnedSuppliedHostname: string | null = null;
 
+  // The strict IDNA/STD3 rules this analyzer pins are narrower than the rules
+  // the browser parses with, so a host the browser resolves happily can still
+  // fail to pin. That is a limit on the Unicode-derived checks, not evidence
+  // that the address is unparsable: `_dmarc.example.com` and any host with an
+  // underscore label land here. Reporting them as "did not parse" was false,
+  // and withholding the host cost the reader the registrable domain — the one
+  // row that distinguishes accounts.google.test._.evil.example from Google.
+  let hostFormVerified = true;
   if (ip === null) {
     const pinnedUnicode = toUnicodeDomain(asciiHostname);
-    if (pinnedUnicode === null) return malformedUrlReport(original, lexical, parsed);
-    unicode = pinnedUnicode;
+    if (pinnedUnicode === null) {
+      hostFormVerified = false;
+    } else {
+      unicode = pinnedUnicode;
 
-    const suppliedHostname = raw?.host.replace(/^\[|\]$/g, "") ?? "";
-    if (/[^\x00-\x7f]/.test(suppliedHostname) && !suppliedHostname.includes("%")) {
-      pinnedSuppliedHostname = toAsciiDomain(suppliedHostname);
-      if (pinnedSuppliedHostname === null) {
-        return malformedUrlReport(original, lexical, parsed);
+      const suppliedHostname = raw?.host.replace(/^\[|\]$/g, "") ?? "";
+      if (/[^\x00-\x7f]/.test(suppliedHostname) && !suppliedHostname.includes("%")) {
+        pinnedSuppliedHostname = toAsciiDomain(suppliedHostname);
+        // Without a pinned form there is nothing to compare the browser's
+        // parse against, so the rewrite check below cannot speak either.
+        if (pinnedSuppliedHostname === null) hostFormVerified = false;
       }
     }
   }
@@ -460,7 +471,17 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
       ),
     );
   }
-  if (hasMixedScripts(unicode)) {
+  if (!hostFormVerified) {
+    signals.push(
+      signal(
+        "unverifiable-host-form",
+        "review",
+        "Host form could not be verified",
+        "The browser parses this host, but at least one label is invalid under the pinned IDNA rules, so its Unicode form and the look-alike checks were not run.",
+      ),
+    );
+  }
+  if (hostFormVerified && hasMixedScripts(unicode)) {
     signals.push(
       signal(
         "mixed-scripts",
@@ -470,7 +491,7 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
       ),
     );
   }
-  if (hasAsciiConfusableLabel(unicode)) {
+  if (hostFormVerified && hasAsciiConfusableLabel(unicode)) {
     signals.push(
       signal(
         "confusable-label",
@@ -551,6 +572,9 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
     // A report that could not carry every row it derived must not offer an
     // action: the rows most likely to be missing are the ones added last.
     !complete ||
+    // The look-alike checks did not run, so the opening posture stays exactly
+    // as closed as it was when this path returned a malformed report.
+    !hostFormVerified ||
     (lexical === null && forbiddenCharacters(original).length > 0);
   const actionPolicy = inspectOnly
     ? "inspect-only"
