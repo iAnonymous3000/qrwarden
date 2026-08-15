@@ -1,4 +1,4 @@
-import type { AnalysisReport, DisplayField } from "../analyzer";
+import { urlDelimiterPresence, type AnalysisReport, type DisplayField } from "../analyzer";
 import { COPY } from "../copy";
 import {
   translateFieldLabel,
@@ -28,21 +28,6 @@ function fieldCount(field: DisplayField): number | null {
     field.count >= 0
     ? field.count
     : null;
-}
-
-function urlDelimiterPresence(parsed: URL): {
-  readonly query: boolean;
-  readonly fragment: boolean;
-} {
-  const authority = /^(?:https?):\/\/[^/?#]*/iu.exec(parsed.href)?.[0];
-  if (authority === undefined) return { query: false, fragment: false };
-  const suffix = parsed.href.slice(authority.length);
-  const query = suffix.indexOf("?");
-  const fragment = suffix.indexOf("#");
-  return {
-    query: query >= 0 && (fragment < 0 || query < fragment),
-    fragment: fragment >= 0,
-  };
 }
 
 function isUrlNamesField(report: AnalysisReport, field: DisplayField): boolean {

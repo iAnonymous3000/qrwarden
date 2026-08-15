@@ -71,12 +71,19 @@ function canonicalSuffix(url: URL): string {
   return authority === undefined ? "" : url.href.slice(authority.length);
 }
 
-interface UrlDelimiterPresence {
+export interface UrlDelimiterPresence {
   readonly query: boolean;
   readonly fragment: boolean;
 }
 
-function urlDelimiterPresence(url: URL): UrlDelimiterPresence {
+/**
+ * Which delimiters the canonical URL actually carries. The analyzer picks each
+ * name field's zero-name sentinel from this and the report renderer rebuilds
+ * the structural summary from it, so the two must never disagree — a mismatch
+ * makes the renderer fall back to the redaction placeholder and claim content
+ * is hidden when none is. One owner, one definition.
+ */
+export function urlDelimiterPresence(url: URL): UrlDelimiterPresence {
   const suffix = canonicalSuffix(url);
   const query = suffix.indexOf("?");
   const fragment = suffix.indexOf("#");

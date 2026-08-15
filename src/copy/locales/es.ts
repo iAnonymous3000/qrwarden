@@ -384,6 +384,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "DPP bootstrap data (public key not validated)":
       "Datos de arranque DPP (clave pública no validada)",
     "vCard contact": "Contacto vCard",
+    "MECARD contact": "Contacto MECARD",
     "Calendar entry": "Entrada de calendario",
     "Email details (inspect only)": "Datos de correo (solo inspección)",
     "Message details (inspect only)": "Datos de mensaje (solo inspección)",

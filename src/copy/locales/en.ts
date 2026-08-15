@@ -394,6 +394,7 @@ export const EN_COPY = Object.freeze({
     "DPP bootstrap data (public key not validated)":
       "DPP bootstrap data (public key not validated)",
     "vCard contact": "vCard contact",
+    "MECARD contact": "MECARD contact",
     "Calendar entry": "Calendar entry",
     "Email details (inspect only)": "Email details (inspect only)",
     "Message details (inspect only)": "Message details (inspect only)",

@@ -24,6 +24,7 @@ export type {
   SignalLevel,
 } from "./types";
 export { ANALYZER_LIMITS } from "./limits";
+export { urlDelimiterPresence, type UrlDelimiterPresence } from "./url";
 export { ANALYZER_VERSION, PERMANENT_LIMITATIONS } from "./report";
 
 export const ANALYZER_DATA_STATUS = Object.freeze({

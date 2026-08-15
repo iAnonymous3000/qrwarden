@@ -25,6 +25,9 @@ const TEXT_FIXTURES: readonly string[] = [
   // incomplete-report title is exercised alongside the rest of the table.
   `http://a.com:${"0".repeat(2035)}80/${"1".repeat(2047)}?${"%01".repeat(256)}=X#${"%01".repeat(255)}=X`,
   "https://accounts.google.test._.evil.example/login",
+  // Delimiters present but parsing to zero names, in both branches.
+  "https://openai.com/?&",
+  "https://openai.com/#&",
   "http://user@127.0.0.1:8443/path?token=1#state=2",
   "https://bücher.example/path#frag",
   "https://bit.ly/abc",
@@ -60,6 +63,7 @@ const TEXT_FIXTURES: readonly string[] = [
     "N:Minimal;;;;",
     "END:VCARD",
   ].join("\r\n"),
+  "MECARD:N:Example,Alice;TEL:+15551234567;EMAIL:alice@example.com;;",
   "WIFI:T:WPA;S:Cafe;P:secret;H:true;;",
   "WIFI:T:WPA2-EAP;S:Corp;E:TTLS;PH2:MSCHAPV2;A:anonymous;I:alice;P:secret;;",
   "WIFI:T:WPA2-EAP;S:Legacy;H:MSCHAPV2;;",
@@ -166,9 +170,13 @@ describe("analyzer evidence translation", () => {
           (field.id === "query-names" || field.id === "fragment-names") &&
           field.count === 0
         ) {
-          expect(field.value).toBe("None");
-          expect(enValues.None).toBeDefined();
-          expect(esValues.None).toBeDefined();
+          // A delimiter that is present but parses to zero names reads
+          // "Present (empty)"; an absent delimiter reads "None". Both are
+          // synthesized, so both must translate. Asserting only "None" here
+          // held solely because no fixture exercised the other branch.
+          expect(["None", "Present (empty)"]).toContain(field.value);
+          expect(enValues[field.value], `en: ${field.value}`).toBeDefined();
+          expect(esValues[field.value], `es: ${field.value}`).toBeDefined();
           continue;
         }
         if (!synthesizedIds.has(field.id)) continue;
