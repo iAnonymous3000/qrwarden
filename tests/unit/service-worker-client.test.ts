@@ -1246,6 +1246,39 @@ describe("waiting update activation", () => {
     ).toHaveLength(2);
   });
 
+  it("releases the prepare lease when the requesting worker went redundant", async () => {
+    // A worker that goes redundant between posting PREPARE_UPDATE and this
+    // task being dispatched throws InvalidStateError from postMessage. The
+    // lease is taken and published before the reply, so an escaping exception
+    // left every control disabled for the whole lease window with nothing able
+    // to release it: a redundant worker can never send RELEASE_UPDATE_PREPARE.
+    const active = new FakeWorker(readyState());
+    const waiting = new FakeWorker(waitingState());
+    waiting.state = "installed";
+    const harness = installHarness(active);
+    harness.registration.waiting = waiting;
+    const locks: boolean[] = [];
+    const client = createClient({
+      onLockChange: (locked) => locks.push(locked),
+    });
+    const nonce = "b".repeat(32);
+    const release = waitingState().releaseId;
+
+    await client.gate();
+    const message = harness.workerHandlers.get("message");
+    expect(message).toBeDefined();
+    locks.length = 0;
+
+    waiting.throwsOnPost = true;
+    expect(() =>
+      message?.({
+        data: { type: "PREPARE_UPDATE", nonce, release },
+        source: waiting,
+      }),
+    ).not.toThrow();
+    expect(locks.at(-1) ?? false).toBe(false);
+  });
+
   it("retains update-failed for a genuine activation failure", async () => {
     const active = new FakeWorker(readyState());
     const waiting = new FakeWorker(waitingState());

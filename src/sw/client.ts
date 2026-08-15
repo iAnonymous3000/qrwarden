@@ -641,42 +641,71 @@ export class ServiceWorkerClient {
       const source = event.source;
       if (this.#leaseMatches(message)) {
         if (source !== null) {
-          postClientToWorker(source, {
-            type: "READY",
-            nonce: message.nonce,
-            release: message.release,
-          });
+          try {
+            postClientToWorker(source, {
+              type: "READY",
+              nonce: message.nonce,
+              release: message.release,
+            });
+          } catch {
+            // Same redundant-worker case as below, with the lease already
+            // held from the earlier prepare. Nothing can release it remotely.
+            this.#releaseLease(false);
+          }
         }
         return;
       }
       if (!this.#options.isIdle() || this.#lease !== null) {
         if (source !== null) {
-          postClientToWorker(source, {
-            type: "BUSY",
-            nonce: message.nonce,
-            release: message.release,
-          });
+          try {
+            postClientToWorker(source, {
+              type: "BUSY",
+              nonce: message.nonce,
+              release: message.release,
+            });
+          } catch {
+            // No lease was taken on this path, so a dropped vote costs only
+            // the worker's readiness poll, which times out on its own.
+          }
         }
         return;
       }
       this.#acquireLease(message.nonce, message.release);
       if (source !== null) {
-        postClientToWorker(source, {
-          type: "READY",
-          nonce: message.nonce,
-          release: message.release,
-        });
+        try {
+          postClientToWorker(source, {
+            type: "READY",
+            nonce: message.nonce,
+            release: message.release,
+          });
+        } catch {
+          // A worker that went redundant between posting PREPARE_UPDATE and
+          // this task being dispatched throws InvalidStateError here. The
+          // lease is already held and published, so letting the exception
+          // escape the message listener would leave every control disabled
+          // for the full lease window with no worker able to release it: a
+          // redundant worker can never send RELEASE_UPDATE_PREPARE. Release
+          // what was just taken instead. The lease must not be acquired after
+          // the post: voting READY without holding it would let the worker
+          // commit while this document still believes it is free.
+          this.#releaseLease(false);
+        }
       }
       return;
     }
 
     if (message.type === "REPORT_LOADED_RELEASE") {
       if (event.source !== null) {
-        postClientToWorker(event.source, {
-          type: "LOADED_RELEASE",
-          nonce: message.nonce,
-          release: this.#options.loadedRelease,
-        });
+        try {
+          postClientToWorker(event.source, {
+            type: "LOADED_RELEASE",
+            nonce: message.nonce,
+            release: this.#options.loadedRelease,
+          });
+        } catch {
+          // A dropped reply only makes the worker skip stale-cache cleanup,
+          // which it retries on a later activation. No lease is involved.
+        }
       }
       return;
     }

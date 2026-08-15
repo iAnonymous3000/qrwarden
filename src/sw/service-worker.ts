@@ -447,17 +447,36 @@ async function collectReadiness(
   return false;
 }
 
-function abortTransaction(
+async function abortTransaction(
   clients: readonly WindowClient[],
   type: "RELEASE_UPDATE_PREPARE" | "ACTIVATION_FAILED",
-): void {
+): Promise<void> {
   const nonce = transactionNonce;
-  if (nonce !== null) {
-    postTo(clients, { type, nonce, release: RELEASE_ID });
+  if (nonce === null) {
+    transactionState = "idle";
+    CLIENT_REPLY.clear();
+    return;
+  }
+  // A shell that joined the transaction after the caller took its snapshot —
+  // a tab opened, reloaded, or navigated into the shell during the repair
+  // window — was told to prepare and took a lease, but the abort went only to
+  // the stale snapshot, so its controls stayed locked until the 60s lease
+  // expired. Notify the union of the snapshot and the live set: a client that
+  // left is harmlessly re-attempted, and one that joined is reached.
+  // Polling before the reset keeps this inside the non-idle window, so no new
+  // transaction can start and claim the nonce while the set is being read.
+  const seen = new Set(clients.map((client) => client.id));
+  const targets = [...clients];
+  for (const client of await windowClients()) {
+    if (!seen.has(client.id)) {
+      seen.add(client.id);
+      targets.push(client);
+    }
   }
   transactionState = "idle";
   transactionNonce = null;
   CLIENT_REPLY.clear();
+  postTo(targets, { type, nonce, release: RELEASE_ID });
 }
 
 async function cleanupStaleCaches(nonce: string): Promise<void> {
@@ -536,7 +555,7 @@ async function coordinateActivation(): Promise<void> {
   transactionState = "preparing";
   let prepared = await windowClients();
   if (!(await collectReadiness(prepared, nonce))) {
-    abortTransaction(prepared, "RELEASE_UPDATE_PREPARE");
+    await abortTransaction(prepared, "RELEASE_UPDATE_PREPARE");
     return;
   }
 
@@ -547,7 +566,7 @@ async function coordinateActivation(): Promise<void> {
   }
   cacheVerification = cacheVerified ? "verified" : "failed";
   if (!cacheVerified) {
-    abortTransaction(prepared, "ACTIVATION_FAILED");
+    await abortTransaction(prepared, "ACTIVATION_FAILED");
     return;
   }
 
@@ -555,14 +574,14 @@ async function coordinateActivation(): Promise<void> {
   const finalClients = await windowClients();
   if (!sameClientSet(prepared, finalClients)) {
     if (!(await collectReadiness(finalClients, nonce))) {
-      abortTransaction(finalClients, "RELEASE_UPDATE_PREPARE");
+      await abortTransaction(finalClients, "RELEASE_UPDATE_PREPARE");
       return;
     }
     prepared = finalClients;
   }
   const stableClients = await windowClients();
   if (!sameClientSet(prepared, stableClients)) {
-    abortTransaction(stableClients, "RELEASE_UPDATE_PREPARE");
+    await abortTransaction(stableClients, "RELEASE_UPDATE_PREPARE");
     return;
   }
 
@@ -577,7 +596,7 @@ async function coordinateActivation(): Promise<void> {
     },
   );
   if (!committed) {
-    abortTransaction(stableClients, "ACTIVATION_FAILED");
+    await abortTransaction(stableClients, "ACTIVATION_FAILED");
     return;
   }
   transactionState = "idle";

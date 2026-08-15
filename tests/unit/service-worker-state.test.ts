@@ -297,6 +297,61 @@ describe("service-worker state contract", () => {
     expect(harness.skipWaiting).not.toHaveBeenCalled();
   });
 
+  it("aborts to a shell that joined the transaction after the snapshot", async () => {
+    // windowClients() is polled once at the start of the transaction. A tab
+    // opened, reloaded, or navigated into the shell after that point is still
+    // told to prepare and still takes a 60s lease, but the abort used to go
+    // only to the stale snapshot, leaving that tab's controls disabled until
+    // the lease expired with no worker able to release it.
+    const lateMessages: Readonly<Record<string, string>>[] = [];
+    const late: HarnessClient = {
+      id: "late-joiner",
+      type: "window",
+      url: "https://qrwarden.test/",
+      postMessage(message) {
+        lateMessages.push(message);
+      },
+    };
+    const extras: HarnessClient[] = [];
+    const busy: HarnessClient = {
+      id: "busy",
+      type: "window",
+      url: "https://qrwarden.test/",
+      postMessage(message) {
+        if (message.type !== "PREPARE_UPDATE") return;
+        // Join the transaction while readiness is still being collected.
+        if (!extras.includes(late)) extras.push(late);
+        replyHandler?.({
+          data: { type: "BUSY", nonce: message.nonce, release: message.release },
+          source: busy,
+          waitUntil: () => undefined,
+        });
+      },
+    };
+    let replyHandler: WorkerHandler | null = null;
+    extras.push(busy);
+
+    const harness = await loadWorker(
+      () => Promise.resolve([new Request("https://qrwarden.test/")]),
+      extras,
+    );
+    const install = harness.handlers.get("install");
+    const message = harness.handlers.get("message");
+    expect(install).toBeDefined();
+    expect(message).toBeDefined();
+    replyHandler = message ?? null;
+
+    await Promise.all(invokeWithLifetime(install!, {}));
+    await Promise.all(invokeWithLifetime(message!, {
+      data: { type: "BEGIN_UPDATE_COORDINATION" },
+    }));
+
+    expect(harness.skipWaiting).not.toHaveBeenCalled();
+    expect(lateMessages.map((entry) => entry.type)).toContain(
+      "RELEASE_UPDATE_PREPARE",
+    );
+  });
+
   it("resets a successful commit to idle after preserving client notification", async () => {
     const harness = await loadWorker(() => Promise.resolve([
       new Request("https://qrwarden.test/"),
