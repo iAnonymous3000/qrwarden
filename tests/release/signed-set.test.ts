@@ -9,6 +9,7 @@ import { renderHashManifest } from "../../scripts/release/release-contract.mjs";
 import {
   parseSignature,
   signedArtifactNames,
+  bareMinisignKey,
   verifySignedSet,
 } from "../../scripts/release/verify-signed-set.mjs";
 
@@ -209,5 +210,25 @@ describe("signed release set", () => {
         "a.minisig",
       ).errors,
     ).toContainEqual(expect.stringContaining("does not match the signature contract"));
+  });
+});
+
+describe("minisign public-key argument", () => {
+  const key = "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3";
+
+  it("strips the untrusted comment line the constants file carries", () => {
+    // release/constants.json holds the public-key FILE body, comment included:
+    // validate-release-constants.mjs tolerates the comment line and
+    // validate-release-readiness.mjs byte-matches it against
+    // .well-known/qrwarden-release-key.pub. `minisign -P` takes a bare key.
+    expect(
+      bareMinisignKey(`untrusted comment: QRWarden release key\n${key}\n`),
+    ).toBe(key);
+    expect(bareMinisignKey(`untrusted comment: x\r\n${key}\r\n`)).toBe(key);
+  });
+
+  it("passes a bare key through unchanged", () => {
+    expect(bareMinisignKey(key)).toBe(key);
+    expect(bareMinisignKey(`${key}\n`)).toBe(key);
   });
 });

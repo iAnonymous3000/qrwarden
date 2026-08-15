@@ -69,6 +69,24 @@ async function minisignAvailable() {
   }
 }
 
+/**
+ * `minisign -P` takes the bare base64 key, but release/constants.json holds the
+ * public-key FILE body: validate-release-constants.mjs explicitly tolerates an
+ * "untrusted comment:" line, and validate-release-readiness.mjs byte-matches
+ * the whole constant against .well-known/qrwarden-release-key.pub, which always
+ * carries one. Passing the comment line through made every signature check fail
+ * at the ceremony, where there is no automated coverage to catch it.
+ */
+export function bareMinisignKey(publicKey) {
+  const line = publicKey
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== "" && !entry.startsWith("untrusted comment:"))
+    .at(-1);
+  return line ?? publicKey.trim();
+}
+
 export async function verifySignedSet({
   directory,
   version,
@@ -152,7 +170,7 @@ export async function verifySignedSet({
         await execFileAsync("minisign", [
           "-V",
           "-P",
-          publicKey,
+          bareMinisignKey(publicKey),
           "-x",
           signaturePath,
           "-m",
