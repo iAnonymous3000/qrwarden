@@ -11,7 +11,6 @@ export const ANALYZER_LIMITS = Object.freeze({
   fieldScalars: 2_048,
   reportScalars: 8_192,
   expandedBytes: 8_192,
-  hexPreviewBytes: 256,
   urlNames: 64,
 });
 

@@ -7,6 +7,17 @@ import { ES_COPY } from "../../src/copy/locales/es";
 const EN_VERDICT_LABEL = /\b(?:safe|malicious|trusted)\b/iu;
 const ES_VERDICT_LABEL = /\b(?:segur[oa]s?|malicios[oa]s?|confiables?)\b/iu;
 
+/**
+ * aboutLead promises four words, but "verified" cannot go in the denylists
+ * above: it is used legitimately about the app's own artifacts ("a verified
+ * update activates"), and negated about the parse. What the promise forbids is
+ * applying it to the destination, so match that pairing in either order.
+ */
+const EN_VERIFIED_DESTINATION =
+  /\b(?:destination|site|address|link|host)\b[^.]{0,40}\bverified\b|\bverified\b[^.]{0,20}\b(?:destination|site|address|link|host)\b/iu;
+const ES_VERIFIED_DESTINATION =
+  /\b(?:destino|sitio|dirección|enlace|host)\b[^.]{0,40}\bverificad[oa]s?\b|\bverificad[oa]s?\b[^.]{0,20}\b(?:destino|sitio|dirección|enlace|host)\b/iu;
+
 function authoredStrings(
   value: unknown,
   path = "",
@@ -65,10 +76,12 @@ describe("signals-only product language", () => {
     for (const [path, value] of authoredStrings(EN_COPY)) {
       if (path === "aboutLead") continue;
       expect(value, `English copy at ${path}`).not.toMatch(EN_VERDICT_LABEL);
+      expect(value, `English copy at ${path}`).not.toMatch(EN_VERIFIED_DESTINATION);
     }
     for (const [path, value] of authoredStrings(ES_COPY)) {
       if (path === "aboutLead") continue;
       expect(value, `Spanish copy at ${path}`).not.toMatch(ES_VERDICT_LABEL);
+      expect(value, `Spanish copy at ${path}`).not.toMatch(ES_VERIFIED_DESTINATION);
     }
   });
 
@@ -80,6 +93,12 @@ describe("signals-only product language", () => {
     for (const signal of signals) {
       expect(signal.title, `${signal.code} title`).not.toMatch(EN_VERDICT_LABEL);
       expect(signal.detail, `${signal.code} detail`).not.toMatch(EN_VERDICT_LABEL);
+      expect(signal.title, `${signal.code} title`).not.toMatch(
+        EN_VERIFIED_DESTINATION,
+      );
+      expect(signal.detail, `${signal.code} detail`).not.toMatch(
+        EN_VERIFIED_DESTINATION,
+      );
     }
   });
 });

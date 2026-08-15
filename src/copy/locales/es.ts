@@ -137,13 +137,10 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "El escaneo se detuvo mientras QRWarden estaba en segundo plano. Toca Reanudar el escaneo para continuar.",
   lookingForCode: "Buscando un código…",
   startingCamera: "Iniciando la cámara…",
-  torchUnavailableHeading: "Linterna no disponible.",
   torchUnavailableBody:
     "No se pudo cambiar el ajuste de la linterna. El escaneo sigue activo.",
-  zoomUnavailableHeading: "Zoom no disponible.",
   zoomUnavailableBody:
     "No se pudo cambiar el ajuste del zoom. El escaneo sigue activo.",
-  switchUnavailableHeading: "Cambio de cámara no disponible.",
   switchUnavailableBody:
     "QRWarden no pudo cambiar de cámara. El escaneo continúa con la cámara anterior.",
   credentialsExplanation: (host: string): string =>
@@ -419,7 +416,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "Forbidden character in the address authority":
       "Carácter prohibido en la autoridad de la dirección",
     "Web address cannot be opened": "La dirección web no puede abrirse",
-    "Host form could not be verified": "No se pudo verificar la forma del host",
+    "Host form could not be checked": "No se pudo comprobar la forma del host",
     "Report is incomplete": "El informe está incompleto",
   }),
   kindLabels: Object.freeze({
@@ -515,10 +512,10 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "malformed-web-url": {
       title: "La dirección web no puede abrirse",
       explanation:
-        "El texto parece una dirección web pero no se analiza como una dirección HTTP o HTTPS completa y absoluta con un host, así que no hay un destino verificado que abrir.",
+        "El texto parece una dirección web pero no se analiza como una dirección HTTP o HTTPS completa y absoluta con un host, así que no hay ningún destino que abrir.",
     },
     "unverifiable-host-form": {
-      title: "No se pudo verificar la forma del host",
+      title: "No se pudo comprobar la forma del host",
       explanation:
         "El navegador acepta este host, pero al menos una etiqueta incumple las reglas de nomenclatura que QRWarden fija, así que su forma internacional y las comprobaciones de parecido que dependen de ella no están disponibles. El host y el dominio registrable que se muestran provienen del propio análisis del navegador; la apertura sigue desactivada.",
     },

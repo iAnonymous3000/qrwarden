@@ -137,13 +137,10 @@ export const EN_COPY = Object.freeze({
     "Scanning stopped while QRWarden was in the background. Tap Resume scanning to continue.",
   lookingForCode: "Looking for a code…",
   startingCamera: "Starting camera…",
-  torchUnavailableHeading: "Torch unavailable.",
   torchUnavailableBody:
     "The torch setting could not be changed. Scanning is still active.",
-  zoomUnavailableHeading: "Zoom unavailable.",
   zoomUnavailableBody:
     "The zoom setting could not be changed. Scanning is still active.",
-  switchUnavailableHeading: "Camera switch unavailable.",
   switchUnavailableBody:
     "QRWarden could not switch cameras. Scanning continues with the previous camera.",
   credentialsExplanation: (host: string): string =>
@@ -434,7 +431,7 @@ export const EN_COPY = Object.freeze({
     "Forbidden character in the address authority":
       "Forbidden character in the address authority",
     "Web address cannot be opened": "Web address cannot be opened",
-    "Host form could not be verified": "Host form could not be verified",
+    "Host form could not be checked": "Host form could not be checked",
     "Report is incomplete": "Report is incomplete",
   }),
   kindLabels: Object.freeze<Record<PayloadKind, string>>({
@@ -515,7 +512,7 @@ export const EN_COPY = Object.freeze({
     "material-browser-rewrite": {
       title: "Material browser rewrite",
       explanation:
-        "A browser would materially rewrite this address while parsing it, so what you read in the code is not exactly what would open. QRWarden shows the parsed destination it verified.",
+        "A browser would materially rewrite this address while parsing it, so what you read in the code is not exactly what would open. QRWarden shows the destination the browser parsed.",
     },
     userinfo: {
       title: "Text before @ is not the destination",
@@ -530,10 +527,10 @@ export const EN_COPY = Object.freeze({
     "malformed-web-url": {
       title: "Web address cannot be opened",
       explanation:
-        "The text looks like a web address but does not parse as a complete, absolute HTTP or HTTPS address with a host, so there is no verified destination to open.",
+        "The text looks like a web address but does not parse as a complete, absolute HTTP or HTTPS address with a host, so there is no destination to open.",
     },
     "unverifiable-host-form": {
-      title: "Host form could not be verified",
+      title: "Host form could not be checked",
       explanation:
         "The browser accepts this host, but at least one label breaks the naming rules QRWarden pins, so its international form and the look-alike checks that depend on it are unavailable. The host and registrable domain shown come straight from the browser's own parse; opening stays disabled.",
     },

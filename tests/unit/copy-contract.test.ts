@@ -13,12 +13,12 @@ const SOURCE_SHA256: Readonly<Record<string, string>> = {
   "index.ts": "234450ba710c6ac8be379a7a6069da5dc6636c8967927e7b93b4a0da9aa9095c",
   "locale.ts": "25d5b29e629a58c0fe772b5ff97830fd68f0064b2fbeb79b0326ff170539055e",
   "evidence.ts": "1307803b3c27a93131567b6a0b2efca539d034c1438920979935927895ca9ce0",
-  "locales/en.ts": "3c68589a715546a366a98e7e88d74e8fdd2b1179889d9aa7baab94fcd807625b",
-  "locales/es.ts": "6ed1c008a39f3b4217cf5399e5845963a19c444757d9911ef6f9961ee30844bf",
+  "locales/en.ts": "16f262904f330e8ea6a52d086f5f8c9a730b80ec450eab53c1312ef113cbcbd7",
+  "locales/es.ts": "e23f44a13a46c48c48afff5635c4099fb54d7c9320f5e234add7cd10f69afa9c",
 };
 const RUNTIME_CONTRACT_SHA256 =
-  "7ec190fae8be94f778866bf3108e478186aeb026add6eb40fc9e67bb23a0ed48";
-const COPY_KEY_COUNT = 235;
+  "cf9eccc5dfdc5d40589cf8448f4302bc56bef254124322b21a8e9ad1e8a6de4e";
+const COPY_KEY_COUNT = 232;
 
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");

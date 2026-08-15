@@ -126,8 +126,3 @@ export interface AnalyzerInput {
   readonly decoding: AnalyzerTextDecoding;
 }
 
-export interface AnalyzeTextInput {
-  readonly text: string;
-  readonly contentType?: string;
-  readonly rawBytes?: AnalyzerFrozenBytes;
-}

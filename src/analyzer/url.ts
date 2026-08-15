@@ -483,7 +483,7 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
       signal(
         "unverifiable-host-form",
         "review",
-        "Host form could not be verified",
+        "Host form could not be checked",
         "The browser parses this host, but at least one label is invalid under the pinned IDNA rules, so its Unicode form and the look-alike checks were not run.",
       ),
     );
