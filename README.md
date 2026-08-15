@@ -34,9 +34,21 @@ The current source implements the local inspection pipeline, report and action b
 
 ### Pending before the first signed public release
 
-The first signed public release is still blocked on real operator-controlled facts and external evidence: name/domain clearance, canonical domain and DNS release-key owner, two maintainer identities, an offline Minisign key, final privacy/operator details, protected release settings, a dated version changelog, independent review, physical-device evidence, the signing ceremony, and a successful deployment/rollback rehearsal. Placeholder values in `release/constants.json` are deliberate development sentinels; they keep ordinary development builds possible, while the release gate rejects them.
+The first signed public release is still blocked on real operator-controlled facts and external evidence: name/domain clearance, canonical domain and DNS release-key owner, two maintainer identities, an offline Minisign key, final privacy/operator details, protected release settings, a dated version changelog, independent review, physical-device evidence, and the signing ceremony. Placeholder values in `release/constants.json` are deliberate development sentinels; they keep ordinary development builds possible, while the release gate rejects them.
 
-Release automation currently stops at an approved unsigned candidate. Before approval, it reads back and fail-closed verifies both SLSA provenance and CycloneDX attestations for the exact seven-file candidate, requiring at least two distinct matching bundles for each predicate. Offline signing, independent signed-set verification, draft upload/readback, deployment, and publication remain operator-run gates. An automated signed-set finalizer and the deterministic key-transition/recovery statement path are not implemented yet; [RELEASE.md](RELEASE.md) and [SIGNING.md](SIGNING.md) state the current boundary.
+**Two maintainer identities means two people, not two rows in a config file.** [SIGNING.md](SIGNING.md) requires a second human to independently re-verify the complete signed set offline in a clean environment, both before upload and again against the downloaded draft assets. A sole maintainer can satisfy every automated gate listed here and still be unable to ship. This is the largest human blocker in the project.
+
+**The first public deployment ships as a signed beta or release rehearsal, not as stable v1.** No independently verified previous artifact exists yet, so it is verified through a route-less Access-protected preview and deployed **with the canonical domain detached**; the domain is attached only after preview success. Its only failure rollback is Workers Domains API deletion of the captured immutable domain ID, followed by exact absence readback.
+
+Release automation currently stops at an approved unsigned candidate. Before approval, it reads back and fail-closed verifies both SLSA provenance and CycloneDX attestations for the exact seven-file candidate, requiring at least two distinct matching bundles for each predicate. Offline signing, independent signed-set verification by a second maintainer, draft upload/readback, deployment, and publication remain operator-run gates that one person cannot complete alone. An automated signed-set finalizer and the deterministic key-transition/recovery statement path are not implemented yet; [RELEASE.md](RELEASE.md) and [SIGNING.md](SIGNING.md) state the current boundary.
+
+### Pending before stable v1
+
+Stable v1 additionally requires independent security review, physical current and previous platform testing with the exact signed build, and the rollback and watchdog drills. **Those drills cannot be satisfied by the first deployment**: they require a later release performed against the retained earlier signed artifact as the verified previous version. The initial launch must not be described as satisfying that gate. [RELEASE.md](RELEASE.md) is authoritative for both gates.
+
+### Dated maintenance work
+
+The pinned Public Suffix List, IANA special-purpose, and Unicode snapshots were captured on 2026-07-15 and carry a 90-day release window. From **2026-10-13** `scripts/validate-release-readiness.mjs` fails and no release can be cut until the data is refreshed. `npm run check:data-freshness` reports the remaining window and starts warning 21 days ahead. Refreshing means updating `data-src/*/provenance.json` and `release/data-status.json` by hand before `npm run data:generate`, because no script writes those files.
 
 ## Quick start
 
@@ -65,11 +77,18 @@ npm run test:browser
 
 ## Release engineering
 
-Releases are produced by a fail-closed pipeline. The source is not presented as a signed public release until operator identity, canonical-domain, signing, deployment, and live-verification gates all pass. `npm run release:validate` is the automated local release gate: it requires `git verify-commit HEAD` to succeed against the maintainer's local trust configuration, rejects placeholder release constants, and runs the repository's source, build, reproducibility, unit, release, and browser checks. It does not perform the manual or hosted evidence gates in the release runbook.
+Releases are produced by a fail-closed pipeline. The source is not presented as a signed public release until operator identity, canonical-domain, signing, deployment, and live-verification gates all pass. `npm run release:validate` is the automated local release gate: it requires `git verify-commit HEAD` to succeed against the maintainer's local trust configuration, requires the exact reproducible-release environment described below, rejects placeholder release constants, and runs the repository's source, build, reproducibility, unit, release, and browser checks. It does not perform the manual or hosted evidence gates in the release runbook.
 
 ```sh
 npm run validate:constants:development
 npm run validate:constants:release
+
+# release:validate enforces the reproducible-release environment contract and
+# fails with five environment errors if these are not set. See REPRODUCIBLE_BUILDS.md.
+export QRWARDEN_COMMIT="$(git rev-parse HEAD)"
+export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+export TZ=UTC LC_ALL=C LANG=C
+umask 022
 npm run release:validate
 ```
 
