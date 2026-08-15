@@ -6,7 +6,7 @@ import {
 } from "./characters";
 import { classifyIp, classifyLocalHostname } from "./ip";
 import { toAsciiDomain, toUnicodeDomain } from "./idna";
-import { ANALYZER_LIMITS, ReportFields } from "./limits";
+import { ANALYZER_LIMITS, type FieldOptions, ReportFields } from "./limits";
 import { matchLinkShortener } from "./linkShorteners";
 import { registrableDomain } from "./publicSuffix";
 import { createReport, signal } from "./report";
@@ -235,6 +235,20 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
 
   const fields = new ReportFields();
   const signals: AnalysisSignal[] = [];
+  // Every sibling analyzer treats a refused field as a failure to report
+  // faithfully. ReportFields.add returns false once the shared report budget
+  // is spent, and a discarded return leaves a report that renders as complete
+  // while a derived row has vanished with no indicator, so track it here and
+  // declare the shortfall below rather than dropping rows silently.
+  let complete = true;
+  const addField = (
+    id: string,
+    label: string,
+    value: string,
+    options?: FieldOptions,
+  ): void => {
+    if (!fields.add(id, label, value, options)) complete = false;
+  };
   const asciiHostname = parsed.hostname;
   const ip = classifyIp(asciiHostname);
   const localCategory = ip === null ? classifyLocalHostname(asciiHostname) : null;
@@ -258,12 +272,12 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
     }
   }
 
-  fields.add("ascii-hostname", "Destination host", asciiHostname, {
+  addField("ascii-hostname", "Destination host", asciiHostname, {
     kind: "hostname",
     reportPolicy: "safe",
   });
   if (unicode !== asciiHostname) {
-    fields.add("unicode-hostname", "Unicode host", unicode, {
+    addField("unicode-hostname", "Unicode host", unicode, {
       kind: "hostname",
       reportPolicy: "safe",
     });
@@ -279,7 +293,7 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
 
   if (ip === null) {
     const domain = registrableDomain(asciiHostname);
-    fields.add(
+    addField(
       "registrable-domain",
       "Registrable domain",
       domain.registrableDomain ?? "Not available",
@@ -288,7 +302,7 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
   }
 
   const effectivePort = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
-  fields.add(
+  addField(
     "port",
     "Port",
     raw?.port === null || raw?.port === undefined
@@ -303,7 +317,7 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
     pathSegments === 0
       ? parsed.pathname
       : "/";
-  fields.add("path", "Path", parsed.pathname, {
+  addField("path", "Path", parsed.pathname, {
     kind: "path",
     collapsed: true,
     count: pathSegments,
@@ -316,7 +330,7 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
 
   const query = summarizeNames(parsed.searchParams);
   const queryEmptyValue = delimiters.query ? "Present (empty)" : "None";
-  fields.add(
+  addField(
     "query-names",
     "Query names",
     query.count === 0 ? queryEmptyValue : query.names,
@@ -334,7 +348,7 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
   );
 
   if (parsed.hash === "") {
-    fields.add(
+    addField(
       "fragment",
       "Fragment",
       delimiters.fragment ? "Present (empty)" : "Not present",
@@ -350,7 +364,7 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
       // renderer only translates a count-0 name field when they match, and a
       // mismatch degrades the whole reviewed-URL summary to "(hidden)".
       const fragmentEmptyValue = "Present (empty)";
-      fields.add(
+      addField(
         "fragment-names",
         "Fragment names",
         fragment.count === 0 ? fragmentEmptyValue : fragment.names,
@@ -364,14 +378,14 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
         },
       );
     } else {
-      fields.add("fragment", "Fragment", "Present", {
+      addField("fragment", "Fragment", "Present", {
         kind: "presence",
         collapsed: true,
         reportPolicy: "safe",
       });
     }
   }
-  fields.add("original", "Original QR content", original, {
+  addField("original", "Original QR content", original, {
     collapsed: true,
     // Only the origin is safe as an analyzer-owned fallback. The report
     // renderer reconstructs the localized path/query/fragment structure from
@@ -413,7 +427,7 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
   const specialCategory =
     ip !== null && ip.special && !ip.globallyReachable ? ip.category : localCategory;
   if (specialCategory !== undefined && specialCategory !== null) {
-    fields.add("destination-category", "Destination category", specialCategory, {
+    addField("destination-category", "Destination category", specialCategory, {
       reportPolicy: "safe",
     });
     signals.push(
@@ -519,10 +533,24 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
     );
   }
 
+  if (!complete) {
+    signals.push(
+      signal(
+        "incomplete-report",
+        "review",
+        "Report is incomplete",
+        "The payload exhausted the report budget, so at least one row was left out of this report.",
+      ),
+    );
+  }
+
   const inspectOnly =
     rawUserinfo ||
     parsedUserinfo ||
     authorityControls.length > 0 ||
+    // A report that could not carry every row it derived must not offer an
+    // action: the rows most likely to be missing are the ones added last.
+    !complete ||
     (lexical === null && forbiddenCharacters(original).length > 0);
   const actionPolicy = inspectOnly
     ? "inspect-only"

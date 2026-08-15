@@ -78,6 +78,7 @@ export type AnalysisSignalCode =
   | "userinfo"
   | "forbidden-authority-character"
   | "malformed-web-url"
+  | "incomplete-report"
   | "assumed-iso-8859-1";
 
 export interface AnalysisSignal {

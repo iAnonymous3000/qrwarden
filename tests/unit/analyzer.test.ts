@@ -507,6 +507,41 @@ describe("ordered payload classification", () => {
     expect(original.truncated).toBe(true);
   });
 
+  it("never presents a web report that silently lost a derived row", () => {
+    // analyzeHttpUrl shares the same report budget but, unlike every
+    // structured parser, it used to discard ReportFields.add's false return.
+    // A single in-spec QR payload can spend the budget on the port, path,
+    // query and fragment rows, after which "Original QR content" — and with
+    // it the reviewed-destination summary — vanished from a report that still
+    // rendered as complete. Declare the shortfall and withdraw the action.
+    const starved = analyzeText(
+      `http://a.com:${"0".repeat(2035)}80/${"1".repeat(2047)}?${"%01".repeat(256)}=X#${"%01".repeat(255)}=X`,
+    );
+    expect(starved.kind).toBe("web-url");
+    expect(starved.displayFields.some((item) => item.id === "original")).toBe(false);
+    expect(starved.signals.map((item) => item.code)).toContain("incomplete-report");
+    expect(starved.actionPolicy).toBe("inspect-only");
+
+    // The last row added is the first starved, so the local/special-purpose
+    // destination category is lost before anything else — the same silent
+    // drop, on the row that matters most for a loopback destination.
+    const category = analyzeText(
+      `http://127.0.0.1/${"1".repeat(2047)}?${"%01".repeat(256)}=X#${"%01".repeat(256)}=X`,
+    );
+    expect(
+      category.displayFields.some((item) => item.id === "destination-category"),
+    ).toBe(false);
+    expect(category.signals.map((item) => item.code)).toContain("incomplete-report");
+    expect(category.actionPolicy).toBe("inspect-only");
+
+    // An ordinary address keeps every row and stays actionable.
+    const ordinary = analyzeText("https://example.org/a?b=1#c=2");
+    expect(ordinary.signals.map((item) => item.code)).not.toContain(
+      "incomplete-report",
+    );
+    expect(ordinary.displayFields.some((item) => item.id === "original")).toBe(true);
+  });
+
   it("reserves exact structured source before report-scalar highlight budgeting", () => {
     const source = [
       "BEGIN:VCARD",

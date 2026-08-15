@@ -419,6 +419,7 @@ export const ES_COPY: CopyDictionary = Object.freeze({
     "Forbidden character in the address authority":
       "Carácter prohibido en la autoridad de la dirección",
     "Web address cannot be opened": "La dirección web no puede abrirse",
+    "Report is incomplete": "El informe está incompleto",
   }),
   kindLabels: Object.freeze({
     "web-url": "Enlace web",
@@ -514,6 +515,11 @@ export const ES_COPY: CopyDictionary = Object.freeze({
       title: "La dirección web no puede abrirse",
       explanation:
         "El texto parece una dirección web pero no se analiza como una dirección HTTP o HTTPS completa y absoluta con un host, así que no hay un destino verificado que abrir.",
+    },
+    "incomplete-report": {
+      title: "El informe está incompleto",
+      explanation:
+        "El contenido era demasiado extenso para que QRWarden lo describiera por completo, así que falta al menos una fila en este informe. Trate el informe como evidencia parcial y no interprete las filas ausentes como hallazgos inexistentes.",
     },
   }),
 });

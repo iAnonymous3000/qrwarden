@@ -434,6 +434,7 @@ export const EN_COPY = Object.freeze({
     "Forbidden character in the address authority":
       "Forbidden character in the address authority",
     "Web address cannot be opened": "Web address cannot be opened",
+    "Report is incomplete": "Report is incomplete",
   }),
   kindLabels: Object.freeze<Record<PayloadKind, string>>({
     "web-url": "Web link",
@@ -529,6 +530,11 @@ export const EN_COPY = Object.freeze({
       title: "Web address cannot be opened",
       explanation:
         "The text looks like a web address but does not parse as a complete, absolute HTTP or HTTPS address with a host, so there is no verified destination to open.",
+    },
+    "incomplete-report": {
+      title: "Report is incomplete",
+      explanation:
+        "The payload was too large for QRWarden to describe in full, so at least one row is missing from this report. Treat the report as partial evidence and do not read the missing rows as absent findings.",
     },
   }),
 });

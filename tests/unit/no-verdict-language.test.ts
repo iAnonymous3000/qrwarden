@@ -31,6 +31,11 @@ function emittedSignals() {
     analyzeText("https://brand.example@example.com/"),
     analyzeText("http://exa\u0001mple.com/a"),
     analyzeText("https://example.com/a\\b"),
+    // Exhausts the shared report budget so the incomplete-report signal is
+    // exercised alongside the rest of the glossary.
+    analyzeText(
+      `http://a.com:${"0".repeat(2035)}80/${"1".repeat(2047)}?${"%01".repeat(256)}=X#${"%01".repeat(255)}=X`,
+    ),
     analyzeDecodeResult({
       rawBytes: { byteLength: 4, hex: "636166e9" },
       contentType: "Text",
