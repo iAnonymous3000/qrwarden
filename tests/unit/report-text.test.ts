@@ -152,6 +152,28 @@ describe("report text rendering", () => {
     },
   );
 
+  it.each([
+    ["https://openai.com/?&", "Query names", "?", COPY.reportQueryHidden],
+    ["https://openai.com/#&", "Fragment names", "#", COPY.reportFragmentHidden],
+  ] as const)(
+    "keeps a zero-name %s delimiter honest instead of claiming hidden content",
+    (url, label, delimiter, hiddenCopy) => {
+      const text = reportAsText({
+        report: analyzeText(url),
+        kindLabel: "Web link",
+        statusHeading: COPY.noReviewHeading,
+      });
+      // A delimiter that parses to zero names hides nothing, so the report must
+      // say so rather than fall back to the redaction placeholder, and the
+      // retained origin summary must survive.
+      expect(text).toContain(`- ${label}: Present (empty)`);
+      expect(text).not.toContain(`- ${label}: ${COPY.reportHiddenValue}`);
+      expect(text).toContain(
+        `- Original QR content: https://openai.com/${delimiter}${hiddenCopy}`,
+      );
+    },
+  );
+
   it("fails closed when the canonical URL and analyzer-owned origin drift", () => {
     const report = analyzeText(
       "https://example.com/private-path?PRIVATE_QUERY_NAME=secret",

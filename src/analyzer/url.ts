@@ -344,14 +344,25 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
     const fragmentText = parsed.hash.slice(1);
     if (fragmentText.includes("=") || fragmentText.includes("&")) {
       const fragment = summarizeNames(new URLSearchParams(fragmentText));
-      fields.add("fragment-names", "Fragment names", fragment.names, {
-        kind: "names",
-        collapsed: true,
-        count: fragment.count,
-        omittedCount: fragment.omitted,
-        reportPolicy: "safe",
-        reportValue: safeNameAggregate(fragment, "Present (empty)"),
-      });
+      // The fragment delimiter is present by construction here, so the
+      // zero-name state is "Present (empty)" exactly as for the query twin.
+      // The displayed value and the report replacement must agree: the report
+      // renderer only translates a count-0 name field when they match, and a
+      // mismatch degrades the whole reviewed-URL summary to "(hidden)".
+      const fragmentEmptyValue = "Present (empty)";
+      fields.add(
+        "fragment-names",
+        "Fragment names",
+        fragment.count === 0 ? fragmentEmptyValue : fragment.names,
+        {
+          kind: "names",
+          collapsed: true,
+          count: fragment.count,
+          omittedCount: fragment.omitted,
+          reportPolicy: "safe",
+          reportValue: safeNameAggregate(fragment, fragmentEmptyValue),
+        },
+      );
     } else {
       fields.add("fragment", "Fragment", "Present", {
         kind: "presence",
