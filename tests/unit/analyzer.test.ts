@@ -507,6 +507,52 @@ describe("ordered payload classification", () => {
     expect(original.truncated).toBe(true);
   });
 
+  it("does not blame the authority for characters it cannot locate", () => {
+    const soft = "­";
+    // With "//" the payload splits cleanly and the soft hyphen in the path is
+    // reported where it is.
+    const delimited = analyzeText(`https://openai.com/pay${soft}pal`);
+    expect(delimited.signals.map((item) => item.code)).toContain("hidden-character");
+    expect(delimited.signals.map((item) => item.code)).not.toContain(
+      "forbidden-authority-character",
+    );
+
+    // The scheme-relative form has no lexical authority boundary. The host is
+    // still openai.com, so calling the path's soft hyphen a forbidden
+    // character "in the address authority" was false, and it displaced the
+    // truthful signal entirely.
+    const relative = analyzeText(`https:openai.com/pay${soft}pal`);
+    expect(new URL(`https:openai.com/pay${soft}pal`).hostname).toBe("openai.com");
+    const relativeCodes = relative.signals.map((item) => item.code);
+    expect(relativeCodes).toContain("hidden-character");
+    expect(relativeCodes).not.toContain("forbidden-authority-character");
+    expect(
+      relative.signals.find((item) => item.code === "hidden-character")?.detail,
+    ).toContain("cannot tell whether they fall inside the destination authority");
+    // Unchanged posture: an unlocatable character still refuses to open.
+    expect(relative.actionPolicy).toBe("inspect-only");
+  });
+
+  it("calls a written port explicit even without a // separator", () => {
+    // Both forms carry a written 8443. Reporting the scheme-relative one as
+    // "(effective)" contradicted the non-default-port signal beside it.
+    for (const original of [
+      "https://openai.com:8443/",
+      "https:openai.com:8443/",
+    ]) {
+      const report = analyzeText(original);
+      expect(field(report, "port").value, original).toBe("8443 (explicit)");
+      expect(report.signals.map((item) => item.code), original).toContain(
+        "non-default-port",
+      );
+    }
+    // A written default is elided by the browser and cannot be recovered from
+    // the parse alone, so it stays "(effective)".
+    expect(field(analyzeText("https://openai.com/"), "port").value).toBe(
+      "443 (effective)",
+    );
+  });
+
   it("never presents a web report that silently lost a derived row", () => {
     // analyzeHttpUrl shares the same report budget but, unlike every
     // structured parser, it used to discard ReportFields.add's false return.

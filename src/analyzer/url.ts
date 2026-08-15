@@ -313,12 +313,19 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
   }
 
   const effectivePort = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+  // The raw authority is the best source for what was actually typed, but it
+  // is unavailable for the scheme-relative form ("https:host:8443/"), where a
+  // written port survives in parsed.port. Falling back to "(effective)" there
+  // called an explicit port implicit while the non-default-port signal in the
+  // same report said the opposite. An empty parsed.port stays "(effective)":
+  // the browser elides a written default, so the two are indistinguishable.
+  const writtenPort = raw?.port ?? (parsed.port === "" ? null : parsed.port);
   addField(
     "port",
     "Port",
-    raw?.port === null || raw?.port === undefined
+    writtenPort === null
       ? `${effectivePort} (effective)`
-      : `${raw.port} (explicit)`,
+      : `${writtenPort} (explicit)`,
     { kind: "port", reportPolicy: "safe" },
   );
   // Path segments routinely carry capability tokens such as password-reset
@@ -502,23 +509,30 @@ export function analyzeHttpUrl(original: string): AnalysisReport | null {
     );
   }
 
-  const afterAuthorityControls =
-    lexical === null ? [] : forbiddenCharacters(lexical.suffix);
-  if (afterAuthorityControls.length > 0) {
+  // Without a "//" the authority has no lexical boundary, so the payload
+  // cannot be split into authority and remainder. Scanning the whole original
+  // for "authority" characters blamed a soft hyphen in the path on the
+  // destination authority — false, and it suppressed the truthful signal.
+  // Report what can be shown: which characters are present, and that their
+  // position is what could not be established.
+  const locatedControls =
+    lexical === null ? forbiddenCharacters(original) : forbiddenCharacters(lexical.suffix);
+  if (locatedControls.length > 0) {
+    const found = locatedControls.map(escapeCodePoint).join(", ");
     signals.push(
       signal(
         "hidden-character",
         "review",
         "Hidden or control character",
-        `Outside the authority, the original contains ${afterAuthorityControls
-          .map(escapeCodePoint)
-          .join(", ")}.`,
+        lexical === null
+          ? `The original contains ${found}. Opening is disabled because the address has no "//" separator, so QRWarden cannot tell whether they fall inside the destination authority.`
+          : `Outside the authority, the original contains ${found}.`,
       ),
     );
   }
 
   const authorityControls =
-    lexical === null ? forbiddenCharacters(original) : forbiddenCharacters(lexical.rawAuthority);
+    lexical === null ? [] : forbiddenCharacters(lexical.rawAuthority);
   const rawUserinfo = lexical?.rawAuthority.includes("@") ?? false;
   const parsedUserinfo = parsed.username !== "" || parsed.password !== "";
   if (rawUserinfo || parsedUserinfo) {
