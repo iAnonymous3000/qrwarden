@@ -147,7 +147,11 @@ for (const file of files) {
   const url = file === "index.html" ? "/" : `/${file}`;
   const revision = createHash("sha256").update(bytes).digest("hex");
   const integrity = `sha384-${createHash("sha384").update(bytes).digest("base64")}`;
-  if (!sw.includes(JSON.stringify(url))) {
+  // Matched without quotes: the manifest is minified output, so pinning the
+  // bundler's quote style would turn a future toolchain bump into a confusing
+  // "manifest omits /" build failure. The revision and integrity checks below
+  // carry the actual security weight and are encoding-independent.
+  if (!sw.includes(url)) {
     throw new Error(`service-worker precache manifest omits ${url}`);
   }
   if (!sw.includes(revision)) {

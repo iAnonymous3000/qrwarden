@@ -67,3 +67,23 @@ Some exact npm artifacts, especially platform-native optional packages, declare 
 ## Update procedure
 
 Open one reviewed pull request per dependency or coherent data update. Update the exact pin and lock integrity, upstream provenance, licenses/notices, SBOM fixtures, decoder hash/toolchain where applicable, corpus/security results, browser compatibility evidence, and reproducibility snapshot. Never renovate during a release build.
+
+### The dependency roster is pinned in two places
+
+`scripts/validate-release-metadata.mjs` holds its own copy of the complete runtime and development dependency roster and compares it to `package.json`. That duplication is the mechanism, not an oversight: a check that read the roster from the file it is checking would pass unconditionally. It means every dependency change is a deliberate two-file edit, and the second edit is visible in the diff for review.
+
+A bump that touches only `package.json` fails CI with:
+
+```
+release metadata: development dependency pins differs from the locked contract
+```
+
+To accept a dependency update:
+
+1. Change the exact pin in `package.json`.
+2. Mirror the identical pin into `expectedDependencies` or `expectedDevDependencies` in `scripts/validate-release-metadata.mjs`.
+3. Regenerate the lockfile on the pinned toolchain (Node 24.18.0, npm 11.16.0) so the root `dependencies`/`devDependencies` blocks match; the validator compares those too.
+4. If the package runs an install script, add or update its reviewed `name@version` entry in `package.json`'s `allowScripts` and in the same validator's allowlist.
+5. Run `npm run validate`.
+
+Dependabot cannot perform steps 2 through 4, so **every Dependabot pull request is red by construction**. Treat those pull requests as notifications that a pin has moved, then apply the update by hand as above and close the automated one.

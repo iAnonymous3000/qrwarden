@@ -1670,7 +1670,14 @@ export function App(props: AppProps) {
                   {COPY.openLink}
                 </button>
               ) : null}
-              {report.actionPolicy === "confirm-web" ? (
+              {/* Gated on destination as well as the policy, so this button
+                  and the confirmation dialog below share one condition. With
+                  only the policy check, a report whose reviewed summary is
+                  unavailable rendered an enabled button that could open no
+                  dialog, and the confirmation it created held the runtime
+                  non-idle. There is nothing to confirm without a destination
+                  to show, so the button must not appear either. */}
+              {report.actionPolicy === "confirm-web" && destination !== null ? (
                 <button
                   ref={confirmationTriggerRef}
                   type="button"
