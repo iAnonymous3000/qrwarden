@@ -61,7 +61,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.0",
-    "@cyclonedx/cyclonedx-library": "10.1.0",
+    "@cyclonedx/cyclonedx-library": "10.2.0",
     "@cyclonedx/cyclonedx-npm": "6.0.0",
     "@playwright/test": "1.61.1",
     "@preact/preset-vite": "2.10.5",
