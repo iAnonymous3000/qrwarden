@@ -38,8 +38,7 @@ if (packageJson) {
       "fsevents@2.3.2": false,
       "fsevents@2.3.3": false,
       "libxmljs2@0.37.0": true,
-      "sharp@0.34.5": true,
-      "workerd@1.20260710.1": true
+      "workerd@1.20260811.1": true
     },
     "reviewed install-script allowlist"
   );
@@ -64,10 +63,10 @@ if (packageJson) {
     "spdx-license-ids": "3.0.23",
     typescript: "6.0.3",
     "typescript-eslint": "8.64.0",
-    vite: "8.1.4",
+    vite: "8.2.1",
     vitest: "4.1.10",
     "workbox-build": "7.4.1",
-    wrangler: "4.111.0"
+    wrangler: "4.123.0"
   };
   equal(packageJson.dependencies, expectedDependencies, "runtime dependency pins");
   equal(packageJson.devDependencies, expectedDevDependencies, "development dependency pins");

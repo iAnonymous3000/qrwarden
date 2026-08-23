@@ -8,7 +8,7 @@ All package versions are exact pins. The reviewed `package-lock.json` is the nor
 | npm | 11.16.0 | Artistic-2.0 | https://github.com/npm/cli |
 | Preact | 10.29.7 | MIT | https://github.com/preactjs/preact |
 | TypeScript | 6.0.3 | Apache-2.0 | https://github.com/microsoft/TypeScript |
-| Vite | 8.1.4 | MIT | https://github.com/vitejs/vite |
+| Vite | 8.2.1 | MIT | https://github.com/vitejs/vite |
 | @preact/preset-vite | 2.10.5 | MIT | https://github.com/preactjs/preset-vite |
 | Vitest | 4.1.10 | MIT | https://github.com/vitest-dev/vitest |
 | @playwright/test | 1.61.1 | Apache-2.0 | https://github.com/microsoft/playwright |
@@ -19,7 +19,7 @@ All package versions are exact pins. The reviewed `package-lock.json` is the nor
 | workbox-precaching | 7.4.1 | MIT | https://github.com/googlechrome/workbox |
 | workbox-routing | 7.4.1 | MIT | https://github.com/googlechrome/workbox |
 | zxing-wasm | 3.1.1 | MIT | https://github.com/Sec-ant/zxing-wasm |
-| Wrangler | 4.111.0 | MIT OR Apache-2.0 | https://github.com/cloudflare/workers-sdk |
+| Wrangler | 4.123.0 | MIT OR Apache-2.0 | https://github.com/cloudflare/workers-sdk |
 | @cyclonedx/cyclonedx-npm | 6.0.0 | Apache-2.0 | https://github.com/CycloneDX/cyclonedx-node-npm |
 | @cyclonedx/cyclonedx-library | 10.1.0 | Apache-2.0 | https://github.com/CycloneDX/cyclonedx-javascript-library |
 | license-checker-rseidelsohn | 5.0.1 | BSD-3-Clause | https://github.com/RSeidelsohn/license-checker-rseidelsohn |
@@ -39,7 +39,7 @@ All package versions are exact pins. The reviewed `package-lock.json` is the nor
 
 The build verifies lockfile integrity and the reader hash before copying the unchanged, self-hosted artifact. Updating decoder provenance requires an isolated security-reviewed dependency change.
 
-The root `allowScripts` policy narrowly approves only the exact versions of the four transitive packages whose lifecycle scripts are required by the pinned build/release toolchain (`esbuild`, `libxmljs2`, `sharp`, and `workerd`). The optional hooks for `fsevents@2.3.2` and `fsevents@2.3.3` are explicit version-scoped denials, not approvals. Every registry package in `package-lock.json` carries its resolved URL and integrity digest, and CI/release installation enables strict script enforcement so a newly introduced or upgraded lifecycle-script package fails before dependency installation until it is reviewed and explicitly classified. `npm run validate:install-policy` uses a packed local marker fixture to prove that unreviewed hooks fail before installation, approved hooks run, and denied hooks remain skipped under the pinned runtime.
+The root `allowScripts` policy narrowly approves only the exact versions of the three transitive packages whose lifecycle scripts are required by the pinned build/release toolchain (`esbuild`, `libxmljs2`, and `workerd`). The optional hooks for `fsevents@2.3.2` and `fsevents@2.3.3` are explicit version-scoped denials, not approvals. Every registry package in `package-lock.json` carries its resolved URL and integrity digest, and CI/release installation enables strict script enforcement so a newly introduced or upgraded lifecycle-script package fails before dependency installation until it is reviewed and explicitly classified. `npm run validate:install-policy` uses a packed local marker fixture to prove that unreviewed hooks fail before installation, approved hooks run, and denied hooks remain skipped under the pinned runtime.
 
 Some exact npm artifacts, especially platform-native optional packages, declare a valid SPDX license but publish no package-root `LICENSE*`, `COPYING*`, or `NOTICE*` file. `release/license-overrides.json` enumerates those exact purls and uses empty selected-text lists only for that verified absence. The release generator still rejects an unlisted omission, a stale non-optional override, a checker/package identity mismatch, and any incompatible or unreviewed SPDX expression; optional platform overrides must resolve to an exact package-lock entry.
 
@@ -81,9 +81,9 @@ release metadata: development dependency pins differs from the locked contract
 To accept a dependency update:
 
 1. Change the exact pin in `package.json`.
-2. Mirror the identical pin into `expectedDependencies` or `expectedDevDependencies` in `scripts/validate-release-metadata.mjs`.
+2. Mirror the identical pin into `expectedDependencies` or `expectedDevDependencies` in `scripts/validate-release-metadata.mjs`, and update the version recorded in the table above.
 3. Regenerate the lockfile on the pinned toolchain (Node 24.18.0, npm 11.16.0) so the root `dependencies`/`devDependencies` blocks match; the validator compares those too.
-4. If the package runs an install script, add or update its reviewed `name@version` entry in `package.json`'s `allowScripts` and in the same validator's allowlist.
+4. Reconcile install-script approvals. The validator compares `allowScripts` against every lockfile entry carrying `hasInstallScript`, so an entry must be added when a package starts running one, updated when an approved package changes version, and **removed when it stops running one** — an approval for a package that no longer has a hook fails the same check as a missing one. Update `package.json`'s `allowScripts` and the validator's copy together.
 5. Run `npm run validate`.
 
 Dependabot cannot perform steps 2 through 4, so **every Dependabot pull request is red by construction**. Treat those pull requests as notifications that a pin has moved, then apply the update by hand as above and close the automated one.
