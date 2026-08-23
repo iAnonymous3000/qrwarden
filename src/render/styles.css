@@ -30,6 +30,10 @@
   --info-border: #60a5fa;
   --scan-guide: #fbbf24;
   --canvas: #0c0a09;
+  /* Evidence is set in the platform monospace face so decoded values read as
+     measured data rather than as interface prose. No webfont: the production
+     CSP has no font-src and default-src is 'none'. */
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 :root[data-theme="light"] {
@@ -137,10 +141,16 @@ h1[tabindex="-1"]:focus-visible { outline: 3px solid var(--focus); outline-offse
 .status-dot { width: 9px; height: 9px; flex: 0 0 auto; border: 2px solid currentColor; border-radius: 50%; }
 .offline-ready .status-dot { background: var(--ink); }
 .offline-update-ready { border-color: var(--accent); background: var(--accent-surface); }
-.offline-incomplete { border-color: var(--accent); background: var(--accent-surface); }
+.offline-incomplete { border-color: var(--info-border); background: var(--info-surface); }
 .offline-update-failed { border-color: var(--danger-border); background: var(--danger-surface); }
 .compact-button { margin-left: auto; border: 1px solid var(--ink); background: var(--paper); color: var(--ink); border-radius: .45rem; padding: .35rem .7rem; font-weight: 700; }
 .strip-feedback { margin: .45rem .85rem 0; color: var(--muted); font-size: .8rem; }
+/* The strip stays mounted so its live region never re-announces on a view
+   change, but only the home view can act on it: "Install update" renders
+   there alone, and every offline-state assertion runs on home before a scan.
+   Off home it was spending the most valuable rows on screen. */
+.app-shell:not(.view-home) .offline-strip,
+.app-shell:not(.view-home) .strip-feedback { display: none; }
 .version-lock-banner { display: flex; align-items: center; gap: .9rem; margin: .75rem 0 0; padding: .9rem 1rem; border: 1px solid var(--info-border); border-radius: .65rem; background: var(--info-surface); }
 .version-lock-banner > div { min-width: 0; flex: 1; }
 .version-lock-banner p { margin: .15rem 0 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
@@ -171,7 +181,7 @@ button.source-card { width: 100%; text-align: left; }
 .steps span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 50%; margin-bottom: .35rem; color: var(--ink); font-weight: 800; }
 .steps strong { color: var(--ink); }
 
-.center-card, .prose-card, .result-layout, .scanner-panel { margin: clamp(2rem, 6vw, 5rem) auto; }
+.center-card, .prose-card, .result-layout, .scanner-panel { margin: clamp(1.5rem, 4vw, 3rem) auto; }
 .center-card { max-width: 560px; padding: clamp(2rem, 6vw, 4rem); border: 1px solid var(--line); border-radius: 1.2rem; background: var(--paper); text-align: center; }
 .center-card h1 { margin: 1rem 0 .5rem; font-size: clamp(1.6rem, 5vw, 2.4rem); }
 .center-card p { color: var(--muted); line-height: 1.6; }
@@ -206,9 +216,20 @@ button.source-card { width: 100%; text-align: left; }
 .camera-search-status { margin: .9rem 0 0; color: var(--muted); text-align: center; font-size: .88rem; }
 
 .result-layout { max-width: 760px; }
+.result-rail { display: grid; gap: 1rem; }
+.result-rail .destination-card { margin: 0; }
+.result-evidence { min-width: 0; }
+/* Desktop puts the decision (what it is, where it points) in a rail that
+   stays put while the evidence scrolls beside it. Below this width the two
+   groups stack, which keeps the reading order identical in both layouts:
+   status, destination, signals, actions, contents, limits. */
+@media (min-width: 1024px) {
+  .result-layout { max-width: 1060px; display: grid; grid-template-columns: minmax(0, 21rem) minmax(0, 1fr); column-gap: 2.75rem; align-items: start; }
+  .result-topline { grid-column: 1 / -1; }
+  .result-rail { position: sticky; top: 1.25rem; }
+}
 .result-topline { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
 .kind-chip, .sensitive-chip { display: inline-flex; align-items: center; min-height: 28px; padding: .2rem .55rem; border-radius: 99px; background: var(--raised); font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
-.about-grid dd { overflow-wrap: anywhere; }
 .sensitive-chip { background: var(--accent-surface); color: var(--accent-text); }
 .result-status { display: flex; gap: 1rem; padding: 1.4rem; border: 1px solid var(--line); border-radius: .9rem; background: var(--paper); }
 .result-status h1 { margin: 0 0 .35rem; font-size: clamp(1.45rem, 4vw, 2rem); }
@@ -219,16 +240,30 @@ button.source-card { width: 100%; text-align: left; }
 .status-unavailable { border-color: var(--info-border); background: var(--info-surface); }
 .status-unavailable .status-symbol { color: var(--on-ink); background: var(--ink); }
 .destination-card { margin: 1rem 0 2rem; padding: 1rem 1.2rem; border-left: 4px solid var(--ink); background: var(--raised); }
-.destination-card span { display: block; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }
-.destination-card bdi { display: block; max-block-size: 12rem; margin-top: .2rem; overflow: auto; overflow-wrap: anywhere; font-size: clamp(1.15rem, 4vw, 1.75rem); font-weight: 800; }
-.result-layout h2 { margin: 2rem 0 .8rem; font-size: 1.1rem; }
+.destination-card > span { display: block; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }
+.destination-card bdi { display: block; max-block-size: 12rem; margin-top: .25rem; overflow: auto; overflow-wrap: anywhere; font-family: var(--mono); font-size: clamp(1rem, 3vw, 1.3rem); line-height: 1.45; }
+/* The origin is the fact that decides, so it leads and carries the weight;
+   the path is checked evidence; the query and fragment spans hold QRWarden's
+   own redaction placeholders and must not read as part of the address. Each
+   part takes its own line so a break never lands inside a placeholder. */
+.destination-origin, .destination-path, .destination-elided { display: block; }
+.destination-origin:empty, .destination-path:empty, .destination-elided:empty { display: none; }
+.destination-origin { font-weight: 700; }
+.destination-path { color: var(--ink); }
+.destination-elided { color: var(--muted); }
+.result-layout h2 { margin: 1.6rem 0 .7rem; font-size: .95rem; font-weight: 700; letter-spacing: .01em; }
+.result-evidence > section:first-child > h2 { margin-top: 0; }
 .signal-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .65rem; }
-.signal-list li { display: flex; gap: .8rem; padding: .9rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--paper); }
-.signal-list li > span { display: grid; place-items: center; width: 25px; height: 25px; flex: 0 0 auto; border-radius: 50%; background: var(--ink); color: var(--on-ink); font-weight: 900; }
+.signal-list li { padding: .7rem .9rem; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: .65rem; background: var(--paper); }
 .signal-list li > div { min-width: 0; }
-.signal-list .signal-review { border-color: var(--accent); background: var(--accent-surface); }
-.signal-list .signal-review > span { color: var(--on-accent); background: var(--accent-fill); }
-.signal-level { display: block; margin-bottom: .15rem; color: var(--muted); font-size: .68rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.signal-list strong { font-weight: 700; }
+/* Amber marks the rows the status card is counting. It is a rule, not a
+   filled panel: four filled panels read as four alarms, which is the one
+   thing an evidence report must not do. */
+.signal-list .signal-review { border-left-color: var(--accent-fill); }
+/* Kept in the accessibility tree and in the copied report; the left rule
+   carries it on screen. */
+.signal-level { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .signal-list p { margin: .2rem 0 0; color: var(--muted); line-height: 1.45; }
 .signal-explainer { margin-top: .2rem; }
 .signal-explainer summary { min-height: 44px; display: flex; align-items: center; padding: .4rem 0; color: var(--accent-text); font-size: .82rem; font-weight: 700; }
@@ -238,26 +273,41 @@ button.source-card { width: 100%; text-align: left; }
 .glossary-list dt { font-weight: 800; }
 .glossary-list dd { margin: .3rem 0 0; color: var(--muted); line-height: 1.55; }
 .field-list { border: 1px solid var(--line); border-radius: .8rem; overflow: hidden; }
-.field-row { padding: 1rem 1.1rem; background: var(--paper); }
+.field-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: .75rem; align-items: start; padding: .7rem 1rem; background: var(--paper); }
+.field-row > * { grid-column: 1; min-width: 0; }
 .field-row + .field-row { border-top: 1px solid var(--line); }
-.field-heading { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .45rem; color: var(--muted); font-size: .76rem; font-weight: 750; text-transform: uppercase; letter-spacing: .06em; }
-.field-value { display: block; max-width: 100%; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.55; white-space: pre-wrap; }
+.field-heading { display: flex; flex-wrap: wrap; gap: .4rem .6rem; margin-bottom: .2rem; color: var(--muted); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.field-value { display: block; max-width: 100%; overflow-wrap: anywhere; font-family: var(--mono); font-size: .92rem; line-height: 1.55; white-space: pre-wrap; }
 .field-value-long { padding: .75rem 0; }
 details:not([open]) > summary .summary-open-label { display: none; }
 details[open] > summary .summary-closed-label { display: none; }
-.field-actions { display: flex; gap: .6rem; margin-top: .65rem; }
+.field-actions { grid-column: 2; grid-row: 1 / span 2; align-self: center; display: flex; align-items: center; gap: .4rem; margin-top: 0; }
 .microcopy, .clipboard-warning, .copy-status, .copy-feedback { color: var(--muted); font-size: .77rem; line-height: 1.45; }
 .copy-feedback { align-self: center; }
 .copy-status { margin: .5rem 0 0; text-align: center; }
 .intake-hint { max-width: 760px; margin: .8rem auto 0; text-align: center; }
-.limitations { padding: 1rem 1.2rem; border: 1px dashed var(--line); background: var(--soft); }
+.limitations { padding: .9rem 1.1rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--soft); }
 .limitations h2 { margin-top: 0; }
 .limitations p { color: var(--muted); line-height: 1.5; }
 .primary-button, .review-button, .secondary-button { min-height: 46px; padding: .7rem 1.1rem; border-radius: .55rem; font-weight: 800; transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
 .primary-button { border: 1px solid var(--ink); background: var(--ink); color: var(--on-ink); }
 .review-button { border: 1px solid var(--accent-fill); background: var(--accent-fill); color: var(--on-accent); }
 .secondary-button { border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
+/* Icon-only controls get no width from their text, so the 44px floor the
+   touch-target sweep measures has to be declared on both axes, exactly as
+   .theme-toggle does. */
+.icon-button { display: inline-grid; place-items: center; min-width: 44px; min-height: 44px; padding: .35rem; border: 1px solid var(--line); border-radius: .45rem; background: var(--paper); color: var(--muted); }
+.icon-button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .text-button { min-height: 44px; padding: .4rem .2rem; border: 0; background: transparent; color: var(--accent-text); font-weight: 800; text-decoration: underline; text-underline-offset: 3px; transition: color .15s ease, transform .15s ease; }
+.result-actions { display: grid; gap: .7rem; margin: 1.75rem 0 2rem; }
+.result-actions .action-button { width: 100%; margin-top: 0; }
+.result-actions .copy-status { grid-column: 1 / -1; margin: 0; }
+/* auto-fit, never a fixed three-column track: the open action is conditional,
+   so a two-button report must not leave a gap where a control would be. */
+@media (min-width: 34rem) {
+  .result-actions { grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
+  .result-actions .primary-button, .result-actions .review-button { grid-column: 1 / -1; }
+}
 .action-button { width: 100%; margin-top: 1rem; }
 .selection-canvas { display: block; width: 100%; height: auto; border-radius: .8rem; background: var(--canvas); }
 .selection-list { list-style: none; padding: 0; display: grid; gap: .65rem; }
@@ -278,7 +328,7 @@ html:has(dialog[open]), body:has(dialog[open]) { overflow: hidden; }
 .confirm-dialog h2 { margin: 0; font-size: 1.6rem; }
 .confirm-dialog p { color: var(--muted); line-height: 1.55; }
 .confirm-full-url span { display: block; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
-.confirm-full-url bdi { display: block; margin-top: .2rem; overflow-wrap: anywhere; word-break: break-all; color: var(--ink); }
+.confirm-full-url bdi { display: block; margin-top: .2rem; overflow-wrap: anywhere; word-break: break-all; font-family: var(--mono); color: var(--ink); }
 .dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
 
 .prose-card { max-width: 720px; padding: clamp(1.4rem, 5vw, 3rem); border: 1px solid var(--line); border-radius: 1rem; background: var(--paper); }
@@ -288,9 +338,10 @@ html:has(dialog[open]), body:has(dialog[open]) { overflow: hidden; }
 .prose-card p { color: var(--muted); line-height: 1.7; }
 .prose-card .lead { color: var(--ink); font-size: 1.15rem; }
 .about-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; margin: 2rem 0; background: var(--line); border: 1px solid var(--line); }
+@media (min-width: 900px) { .about-grid { grid-template-columns: repeat(3, 1fr); } }
 .about-grid div { min-width: 0; padding: .9rem; background: var(--paper); }
 .about-grid dt { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
-.about-grid dd { margin: .3rem 0 0; overflow-wrap: anywhere; font-weight: 750; }
+.about-grid dd { margin: .3rem 0 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: .88rem; font-weight: 500; }
 .install-card, .appearance-card { margin: 2rem 0; padding: 1rem 1.2rem; background: var(--raised); }
 .install-card h2, .appearance-card h2 { margin-top: 0; }
 .technical-details { margin: 2rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -389,9 +440,9 @@ footer p { margin: 0; }
   .brand-mark span { background: CanvasText; }
   .brand-mark span:last-child { background: Highlight; }
   .source-icon { forced-color-adjust: none; border-color: CanvasText; background: Canvas; color: CanvasText; }
-  .status-symbol, .error-glyph, .recovery-glyph, .number-badge, .signal-list li > span { forced-color-adjust: none; border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
+  .status-symbol, .error-glyph, .recovery-glyph, .number-badge { forced-color-adjust: none; border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
   .source-card, .result-status, .signal-list li, .field-list, .selection-option { border-color: CanvasText; }
-  .signal-list .signal-review { border-color: Highlight; }
+  .signal-list .signal-review { border-left-color: Highlight; }
 }
 
 .noscript-fallback { max-width: 34rem; margin: 15vh auto 0; padding: 1.5rem; border: 1px solid var(--line); border-radius: .75rem; background: var(--paper); }

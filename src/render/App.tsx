@@ -56,7 +56,12 @@ import { AboutView } from "./AboutView";
 import { detectBraveIos } from "./braveGuidance";
 import { fieldLabelForSentence, presentFieldValue } from "./fieldPresentation";
 import { ProblemView } from "./ProblemView";
-import { reportAsText, reviewedUrlSummary } from "./reportText";
+import {
+  joinUrlSummary,
+  reportAsText,
+  reviewedUrlParts,
+  type UrlSummaryParts,
+} from "./reportText";
 import { SIGNAL_GLOSSARY, SIGNAL_GLOSSARY_CODES } from "./signalGlossary";
 import type { ThemeController } from "./theme";
 import {
@@ -221,6 +226,7 @@ function statusForReport(report: AnalysisReport): {
 
 interface ReviewedDestination {
   readonly summary: string;
+  readonly parts: UrlSummaryParts;
   readonly href: string;
 }
 
@@ -228,11 +234,11 @@ function reviewedDestination(report: AnalysisReport): ReviewedDestination | null
   if (report.kind !== "web-url" || report.canonicalHref === undefined) return null;
   try {
     const parsed = new URL(report.canonicalHref);
-    const summary = reviewedUrlSummary(report);
+    const parts = reviewedUrlParts(report);
     return parsed.protocol === "https:" || parsed.protocol === "http:"
-      ? summary === null
+      ? parts === null
         ? null
-        : { summary, href: parsed.href }
+        : { summary: joinUrlSummary(parts), parts, href: parsed.href }
       : null;
   } catch {
     return null;
@@ -1525,36 +1531,60 @@ export function App(props: AppProps) {
           const report = view.active.report;
           const status = statusForReport(report);
           const destination = reviewedDestination(report);
+          // Review-level signals first so the reasons the status card is
+          // counting lead the list. Sorted here rather than in the analyzer:
+          // tests/unit/analyzer.test.ts pins report.signals against the URL
+          // corpus, and reportAsText keeps the analyzer's own order.
+          const orderedSignals = [
+            ...report.signals.filter((signal) => signal.level === "review"),
+            ...report.signals.filter((signal) => signal.level !== "review"),
+          ];
           return (
             <section class="result-layout" aria-labelledby="result-title">
               <div class="result-topline">
                 <span class="kind-chip">{kindLabel(report)}</span>
               </div>
-              <div class={`result-status status-${status.tone}`}>
-                <span class="status-symbol" aria-hidden="true">{status.tone === "review" ? "!" : "i"}</span>
-                <div>
-                  <h1 id="result-title" ref={viewHeadingRef} tabIndex={-1}>
-                    {status.heading}
-                  </h1>
-                  <p>{status.body}</p>
+              <div class="result-rail">
+                <div class={`result-status status-${status.tone}`}>
+                  <span class="status-symbol" aria-hidden="true">{status.tone === "review" ? "!" : "i"}</span>
+                  <div>
+                    <h1 id="result-title" ref={viewHeadingRef} tabIndex={-1}>
+                      {status.heading}
+                    </h1>
+                    <p>{status.body}</p>
+                  </div>
                 </div>
+                {destination !== null ? (
+                  <div class="destination-card">
+                    <span>{COPY.actualDestination}</span>
+                    {/* One span per validated part so the origin can carry the
+                        weight and QRWarden's own redaction placeholders can
+                        recede. The parts join with no separator, so the
+                        element's text is byte-identical to the summary the
+                        copied report and the confirmation dialog use. */}
+                    <bdi dir="auto">
+                      <span class="destination-origin">{destination.parts.origin}</span>
+                      <span class="destination-path">{destination.parts.path}</span>
+                      <span class="destination-elided">{destination.parts.query}</span>
+                      <span class="destination-elided">{destination.parts.fragment}</span>
+                    </bdi>
+                  </div>
+                ) : null}
               </div>
-              {destination !== null ? (
-                <div class="destination-card">
-                  <span>{COPY.actualDestination}</span>
-                  <bdi dir="auto">{destination.summary}</bdi>
-                </div>
-              ) : null}
-              {report.signals.length > 0 ? (
+              <div class="result-evidence">
+              {orderedSignals.length > 0 ? (
                 <section aria-labelledby="signals-title">
                   <h2 id="signals-title">{COPY.signalsHeading}</h2>
                   <ul class="signal-list">
-                    {report.signals.map((signal) => {
+                    {orderedSignals.map((signal) => {
                       const title = translateSignalTitle(signal.title);
                       return (
                         <li class={`signal-${signal.level}`} key={signal.code}>
-                          <span aria-hidden="true">{signal.level === "review" ? "!" : "i"}</span>
                           <div>
+                            {/* The level stays in the accessibility tree and
+                                in the copied report; on screen the rule down
+                                the left edge carries it, so four review rows
+                                no longer read as four separate alarms. */}
                             <small class="signal-level">
                               {signal.level === "review"
                                 ? COPY.signalNeedsReview
@@ -1573,91 +1603,11 @@ export function App(props: AppProps) {
                   </ul>
                 </section>
               ) : null}
-              <section aria-labelledby="contents-title">
-                <h2 id="contents-title">{COPY.contentsHeading}</h2>
-                <p class="clipboard-warning">{COPY.clipboardWarning}</p>
-                <div class="field-list">
-                  {report.displayFields.map((field) => {
-                    const revealRequested = revealed.has(field.id);
-                    const isRevealed = revealRequested && !locked;
-                    const valueId = `field-value-${field.id}`;
-                    const fieldLabel = translateFieldLabel(field.label);
-                    const sentenceLabel = fieldLabelForSentence(fieldLabel.text);
-                    const copyTarget = `field:${field.id}`;
-                    return (
-                      <div class="field-row" key={field.id}>
-                        <div class="field-heading">
-                          <span lang={fieldLabel.lang}>{fieldLabel.text}</span>
-                          {field.sensitive ? <span class="sensitive-chip">{COPY.sensitiveChip}</span> : null}
-                        </div>
-                        <FieldValue
-                          field={field}
-                          label={fieldLabel.text}
-                          revealRequested={revealRequested}
-                          locked={locked}
-                          valueId={valueId}
-                        />
-                        <div class="field-actions">
-                          {field.sensitive ? (
-                            <button
-                              type="button"
-                              class="text-button"
-                              disabled={locked}
-                              aria-controls={valueId}
-                              aria-expanded={isRevealed}
-                              aria-label={`${isRevealed ? COPY.mask : COPY.reveal} ${sentenceLabel}`}
-                              onClick={() => {
-                                setRevealed((current) => {
-                                  const next = new Set(current);
-                                  if (next.has(field.id)) next.delete(field.id);
-                                  else next.add(field.id);
-                                  return next;
-                                });
-                              }}
-                            >
-                              {isRevealed ? COPY.mask : COPY.reveal}
-                            </button>
-                          ) : null}
-                          {(!field.sensitive || isRevealed) ? (
-                            <button
-                              type="button"
-                              class="text-button"
-                              disabled={locked}
-                              onClick={(event) => {
-                                copyTargetRef.current = copyTarget;
-                                clipboard.copy(event, view.active, field);
-                              }}
-                            >
-                              {COPY.copyField(sentenceLabel)}
-                            </button>
-                          ) : null}
-                          {copyFeedback !== null && copyFeedback.target === copyTarget ? (
-                            <span class="copy-feedback" aria-hidden="true">
-                              {copyFeedbackText(copyFeedback.status)}
-                            </span>
-                          ) : null}
-                        </div>
-                        {field.omittedCount !== undefined && field.omittedCount > 0 ? (
-                          <p class="microcopy">
-                            {COPY.omittedFromDisplay(field.omittedCount, field.count)}
-                          </p>
-                        ) : null}
-                        {field.truncated ? (
-                          <p class="microcopy">{COPY.truncatedNote}</p>
-                        ) : null}
-                        {field.sensitive ? <p class="microcopy">{COPY.revealWarning}</p> : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-              {report.kind === "web-url" ? (
-                <section class="limitations" aria-labelledby="limits-title">
-                  <h2 id="limits-title">{COPY.limitsHeading}</h2>
-                  <p>{COPY.offlineLimitations}</p>
-                  <p>{COPY.launchNotice}</p>
-                </section>
-              ) : null}
+              {/* The decision sits directly under the reasons for it. Before,
+                  the whole decoded-contents table and the offline-limits note
+                  came first, which put the primary action about 950px below
+                  the last signal on a desktop viewport. */}
+              <div class="result-actions">
               {report.actionPolicy === "open-web" ? (
                 <button
                   type="button"
@@ -1739,6 +1689,100 @@ export function App(props: AppProps) {
               >
                 {COPY.scanAnother}
               </button>
+              </div>
+              <section aria-labelledby="contents-title">
+                <h2 id="contents-title">{COPY.contentsHeading}</h2>
+                <div class="field-list">
+                  {report.displayFields.map((field) => {
+                    const revealRequested = revealed.has(field.id);
+                    const isRevealed = revealRequested && !locked;
+                    const valueId = `field-value-${field.id}`;
+                    const fieldLabel = translateFieldLabel(field.label);
+                    const sentenceLabel = fieldLabelForSentence(fieldLabel.text);
+                    const copyTarget = `field:${field.id}`;
+                    return (
+                      <div class="field-row" key={field.id}>
+                        <div class="field-heading">
+                          <span lang={fieldLabel.lang}>{fieldLabel.text}</span>
+                          {field.sensitive ? <span class="sensitive-chip">{COPY.sensitiveChip}</span> : null}
+                        </div>
+                        <FieldValue
+                          field={field}
+                          label={fieldLabel.text}
+                          revealRequested={revealRequested}
+                          locked={locked}
+                          valueId={valueId}
+                        />
+                        <div class="field-actions">
+                          {field.sensitive ? (
+                            <button
+                              type="button"
+                              class="text-button"
+                              disabled={locked}
+                              aria-controls={valueId}
+                              aria-expanded={isRevealed}
+                              aria-label={`${isRevealed ? COPY.mask : COPY.reveal} ${sentenceLabel}`}
+                              onClick={() => {
+                                setRevealed((current) => {
+                                  const next = new Set(current);
+                                  if (next.has(field.id)) next.delete(field.id);
+                                  else next.add(field.id);
+                                  return next;
+                                });
+                              }}
+                            >
+                              {isRevealed ? COPY.mask : COPY.reveal}
+                            </button>
+                          ) : null}
+                          {(!field.sensitive || isRevealed) ? (
+                            /* Icon-only: the label repeated the row heading
+                               seven times down the table and outweighed the
+                               evidence. The accessible name is unchanged. */
+                            <button
+                              type="button"
+                              class="icon-button"
+                              disabled={locked}
+                              aria-label={COPY.copyField(sentenceLabel)}
+                              onClick={(event) => {
+                                copyTargetRef.current = copyTarget;
+                                clipboard.copy(event, view.active, field);
+                              }}
+                            >
+                              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                <rect x="9" y="9" width="11" height="11" rx="2" />
+                                <path d="M5 15V5a2 2 0 0 1 2-2h8" />
+                              </svg>
+                            </button>
+                          ) : null}
+                          {copyFeedback !== null && copyFeedback.target === copyTarget ? (
+                            <span class="copy-feedback" aria-hidden="true">
+                              {copyFeedbackText(copyFeedback.status)}
+                            </span>
+                          ) : null}
+                        </div>
+                        {field.omittedCount !== undefined && field.omittedCount > 0 ? (
+                          <p class="microcopy">
+                            {COPY.omittedFromDisplay(field.omittedCount, field.count)}
+                          </p>
+                        ) : null}
+                        {field.truncated ? (
+                          <p class="microcopy">{COPY.truncatedNote}</p>
+                        ) : null}
+                        {field.sensitive ? <p class="microcopy">{COPY.revealWarning}</p> : null}
+                      </div>
+                    );
+                  })}
+                </div>
+                <p class="clipboard-warning">{COPY.clipboardWarning}</p>
+              </section>
+              {report.kind === "web-url" ? (
+                <section class="limitations" aria-labelledby="limits-title">
+                  <h2 id="limits-title">{COPY.limitsHeading}</h2>
+                  <p>{COPY.offlineLimitations}</p>
+                  <p>{COPY.launchNotice}</p>
+                </section>
+              ) : null}
+              </div>
             </section>
           );
         })() : null}

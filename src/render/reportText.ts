@@ -64,40 +64,58 @@ function urlPathReportValue(field: DisplayField): string {
     : COPY.reportHiddenValue;
 }
 
+/**
+ * The reviewed address, split into the four spans the result view renders
+ * separately. `origin` and `path` are analyzer-checked evidence; `query` and
+ * `fragment` may carry QRWarden's own redaction placeholders. Joining them
+ * with no separator reproduces the exact string the copied report and the
+ * confirmation dialog use, so the split is presentation only.
+ */
+export interface UrlSummaryParts {
+  readonly origin: string;
+  readonly path: string;
+  readonly query: string;
+  readonly fragment: string;
+}
+
+export function joinUrlSummary(parts: UrlSummaryParts): string {
+  return parts.origin + parts.path + parts.query + parts.fragment;
+}
+
 function safeOriginalUrlSummary(
   report: AnalysisReport,
   field: DisplayField,
-): string {
+): UrlSummaryParts | null {
   if (report.canonicalHref === undefined || field.reportValue === undefined) {
-    return COPY.reportHiddenValue;
+    return null;
   }
 
   let parsed: URL;
   try {
     parsed = new URL(report.canonicalHref);
   } catch {
-    return COPY.reportHiddenValue;
+    return null;
   }
   if (
     (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
     parsed.hostname === "" ||
     parsed.origin !== field.reportValue
   ) {
-    return COPY.reportHiddenValue;
+    return null;
   }
   const delimiters = urlDelimiterPresence(parsed);
 
   const pathField = report.displayFields.find((candidate) => candidate.id === "path");
-  if (pathField === undefined) return COPY.reportHiddenValue;
+  if (pathField === undefined) return null;
   const pathCount = fieldCount(pathField);
   const canonicalPathCount = parsed.pathname
     .split("/")
     .filter((part) => part !== "").length;
   if (pathCount === null || pathCount !== canonicalPathCount) {
-    return COPY.reportHiddenValue;
+    return null;
   }
   const safePath = urlPathReportValue(pathField);
-  if (safePath === COPY.reportHiddenValue) return COPY.reportHiddenValue;
+  if (safePath === COPY.reportHiddenValue) return null;
 
   const queryField = report.displayFields.find(
     (candidate) => candidate.id === "query-names",
@@ -110,11 +128,11 @@ function safeOriginalUrlSummary(
     queryField === undefined ||
     urlNamesReportValue(queryField) === COPY.reportHiddenValue
   ) {
-    return COPY.reportHiddenValue;
+    return null;
   }
   if (canonicalQueryCount === 0) {
     const expected = delimiters.query ? "Present (empty)" : "None";
-    if (queryField?.value !== expected) return COPY.reportHiddenValue;
+    if (queryField?.value !== expected) return null;
   }
 
   if (parsed.hash !== "") {
@@ -129,43 +147,45 @@ function safeOriginalUrlSummary(
         new URLSearchParams(fragmentText),
       ).length;
       if (fragmentCount === null || fragmentCount !== canonicalFragmentCount) {
-        return COPY.reportHiddenValue;
+        return null;
       }
       if (
         fragmentField === undefined ||
         urlNamesReportValue(fragmentField) === COPY.reportHiddenValue
       ) {
-        return COPY.reportHiddenValue;
+        return null;
       }
     } else if (
       !report.displayFields.some(
         (candidate) => candidate.id === "fragment" && candidate.value === "Present",
       )
     ) {
-      return COPY.reportHiddenValue;
+      return null;
     }
   } else {
     const fragmentField = report.displayFields.find(
       (candidate) => candidate.id === "fragment",
     );
     const expected = delimiters.fragment ? "Present (empty)" : "Not present";
-    if (fragmentField?.value !== expected) return COPY.reportHiddenValue;
+    if (fragmentField?.value !== expected) return null;
   }
 
-  return (
-    parsed.origin +
-    safePath +
-    (parsed.search === ""
-      ? delimiters.query
-        ? "?"
-        : ""
-      : `?${COPY.reportQueryHidden}`) +
-    (parsed.hash === ""
-      ? delimiters.fragment
-        ? "#"
-        : ""
-      : `#${COPY.reportFragmentHidden}`)
-  );
+  return {
+    origin: parsed.origin,
+    path: safePath,
+    query:
+      parsed.search === ""
+        ? delimiters.query
+          ? "?"
+          : ""
+        : `?${COPY.reportQueryHidden}`,
+    fragment:
+      parsed.hash === ""
+        ? delimiters.fragment
+          ? "#"
+          : ""
+        : `#${COPY.reportFragmentHidden}`,
+  };
 }
 
 /**
@@ -173,14 +193,20 @@ function safeOriginalUrlSummary(
  * always-visible result card. The complete canonical URL remains reserved for
  * the explicit open confirmation.
  */
-export function reviewedUrlSummary(report: AnalysisReport): string | null {
+export function reviewedUrlParts(
+  report: AnalysisReport,
+): UrlSummaryParts | null {
   if (report.kind !== "web-url") return null;
   const original = report.displayFields.find(
     (candidate) => candidate.id === "original",
   );
   if (original === undefined || original.reportPolicy !== "safe") return null;
-  const summary = safeOriginalUrlSummary(report, original);
-  return summary === COPY.reportHiddenValue ? null : summary;
+  return safeOriginalUrlSummary(report, original);
+}
+
+export function reviewedUrlSummary(report: AnalysisReport): string | null {
+  const parts = reviewedUrlParts(report);
+  return parts === null ? null : joinUrlSummary(parts);
 }
 
 function reportFieldValue(report: AnalysisReport, field: DisplayField): string {
@@ -192,7 +218,8 @@ function reportFieldValue(report: AnalysisReport, field: DisplayField): string {
     return urlPathReportValue(field);
   }
   if (report.kind === "web-url" && field.id === "original") {
-    return safeOriginalUrlSummary(report, field);
+    const parts = safeOriginalUrlSummary(report, field);
+    return parts === null ? COPY.reportHiddenValue : joinUrlSummary(parts);
   }
   return translateFieldValue({
     id: field.id,

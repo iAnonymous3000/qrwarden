@@ -38,41 +38,49 @@ export const PROBLEM_COPY: Readonly<Record<ProblemCode, ProblemCopy>> =
     "no-result": {
       heading: COPY.noQrHeading,
       body: COPY.noQrBody,
+      imageFallback: true,
       tone: "recovery",
     },
     unsupported: {
       heading: COPY.unsupportedCodeHeading,
       body: COPY.unsupportedCodeBody,
+      imageFallback: true,
       tone: "recovery",
     },
     overflow: {
       heading: COPY.tooManyHeading,
       body: COPY.tooManyBody,
+      imageFallback: true,
       tone: "recovery",
     },
     "image-too-large": {
       heading: COPY.imageTooLargeHeading,
       body: COPY.imageTooLargeBody,
+      imageFallback: true,
       tone: "recovery",
     },
     "unsupported-image-type": {
       heading: COPY.unsupportedImageHeading,
       body: COPY.unsupportedImageBody,
+      imageFallback: true,
       tone: "recovery",
     },
     "image-unreadable": {
       heading: COPY.imageUnreadableHeading,
       body: COPY.imageUnreadableBody,
+      imageFallback: true,
       tone: "recovery",
     },
     "took-too-long": {
       heading: COPY.timeoutHeading,
       body: COPY.timeoutBody,
+      imageFallback: true,
       tone: "recovery",
     },
     "choose-one-image": {
       heading: COPY.chooseOneImageHeading,
       body: COPY.chooseOneImageBody,
+      imageFallback: true,
       tone: "recovery",
     },
     "share-busy": {
@@ -108,6 +116,7 @@ export const PROBLEM_COPY: Readonly<Record<ProblemCode, ProblemCopy>> =
     "image-stopped": {
       heading: COPY.imageStoppedHeading,
       body: COPY.imageStoppedBody,
+      imageFallback: true,
       tone: "recovery",
     },
     "reader-stopped": {
